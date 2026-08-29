@@ -92,6 +92,7 @@ class AnthropicCompanyDetector:
         message = client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
+            temperature=0,
             system=DETECTION_SYSTEM_PROMPT,
             messages=[
                 {"role": "user", "content": build_detection_prompt(question, companies)}
