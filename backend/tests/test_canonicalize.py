@@ -29,18 +29,31 @@ def test_sids_sequential_and_offsets_align(result):
         assert result.canonical_text[s.char_start:s.char_end] == s.text
 
 
-def test_viewer_html_spans_align_with_sentences(result):
+def test_viewer_html_data_sids_align_with_sentences(result):
+    """Prose sentences carry data-sid on a <span>; table rows carry it on the
+    <tr> itself (a <span> cannot wrap <td> elements). Either way every sid
+    appears exactly once in viewer_html (spec 2026-08-12 §6)."""
     viewer = BeautifulSoup(result.viewer_html, "lxml")
-    span_tags = viewer.find_all("span", attrs={"data-sid": True})
-    spans = {int(el["data-sid"]): el.get_text() for el in span_tags}
-    assert len(spans) == len(result.sentences)
+    tagged = viewer.select("[data-sid]")
+    marked = {int(el["data-sid"]): el.get_text(" ", strip=True) for el in tagged}
+    assert len(marked) == len(result.sentences)
     for s in result.sentences:
-        assert spans[s.sid] == s.text
+        assert marked[s.sid] == s.text
 
 
-def test_tables_are_viewer_only(result):
-    assert "table text must stay viewer-only" not in result.canonical_text
-    assert "table text must stay viewer-only" in result.viewer_html
+def test_table_rows_are_indexed_and_preserved_in_viewer_html(result):
+    """Superseded invariant: tables used to stay viewer-only (design.md §4.2,
+    pre spec 2026-08-12). A row is now indexed as a sentence with a table_id,
+    and the <table>/<tr>/<td> markup survives into viewer_html so the row
+    still renders as a table row, not a run-on paragraph."""
+    by_text = {s.text: s for s in result.sentences}
+    row = by_text["Item 7 table text must stay viewer-only"]
+    assert row.table_id is not None
+    assert "table text must stay viewer-only" in result.canonical_text
+    viewer = BeautifulSoup(result.viewer_html, "lxml")
+    tr = viewer.find("tr", attrs={"data-sid": str(row.sid)})
+    assert tr is not None
+    assert tr.find("td") is not None
 
 
 def test_scripts_and_xbrl_header_are_stripped(result):

@@ -30,6 +30,11 @@ def store_filing(
         )
         if replace:
             cur.execute(
+                "DELETE FROM chunks WHERE filing_id IN"
+                " (SELECT id FROM filings WHERE accession = %s)",
+                (ref.accession,),
+            )
+            cur.execute(
                 "DELETE FROM sentences WHERE filing_id IN"
                 " (SELECT id FROM filings WHERE accession = %s)",
                 (ref.accession,),
@@ -49,12 +54,34 @@ def store_filing(
         )
         filing_id = cur.fetchone()[0]
         with cur.copy(
-            "COPY sentences (filing_id, sid, section, text, char_start, char_end)"
-            " FROM STDIN"
+            "COPY sentences (filing_id, sid, section, text, char_start, char_end,"
+            " table_id) FROM STDIN"
         ) as copy:
             for s in canonical.sentences:
-                copy.write_row((filing_id, s.sid, s.section, s.text, s.char_start, s.char_end))
+                copy.write_row(
+                    (filing_id, s.sid, s.section, s.text, s.char_start, s.char_end, s.table_id)
+                )
     return filing_id
+
+
+def delete_derived(conn: psycopg.Connection, filing_id: int) -> None:
+    """Drop a filing's chunks and sentences, keeping the filings row itself."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
+        cur.execute("DELETE FROM sentences WHERE filing_id = %s", (filing_id,))
+
+
+def replace_sentences(
+    conn: psycopg.Connection, filing_id: int, sentences: list[Sentence]
+) -> None:
+    with conn.cursor() as cur, cur.copy(
+        "COPY sentences (filing_id, sid, section, text, char_start, char_end,"
+        " table_id) FROM STDIN"
+    ) as copy:
+        for s in sentences:
+            copy.write_row(
+                (filing_id, s.sid, s.section, s.text, s.char_start, s.char_end, s.table_id)
+            )
 
 
 def to_pgvector(vector: list[float]) -> str:
@@ -64,7 +91,7 @@ def to_pgvector(vector: list[float]) -> str:
 def load_sentences(conn: psycopg.Connection, filing_id: int) -> list[Sentence]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT sid, section, text, char_start, char_end"
+            "SELECT sid, section, text, char_start, char_end, table_id"
             " FROM sentences WHERE filing_id = %s ORDER BY sid",
             (filing_id,),
         )

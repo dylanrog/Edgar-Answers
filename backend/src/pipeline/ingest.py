@@ -93,3 +93,57 @@ def recanonicalize_filings(
         store.update_viewer_html(conn, filing_id, canonical.viewer_html)
         stats.updated += 1
     return stats
+
+
+@dataclass
+class ReprocessStats:
+    reprocessed: int = 0
+    missing: int = 0
+    # (accession, sentences before, sentences after)
+    moved: list[tuple[str, int, int]] = field(default_factory=list)
+
+
+def reprocess_filings(
+    conn,
+    embedder,
+    *,
+    cache_dir: Path,
+    ticker: str | None = None,
+    dry_run: bool = False,
+) -> ReprocessStats:
+    """Rebuild sentences, chunks and embeddings from cached raw HTML.
+
+    The deliberate opposite of recanonicalize_filings, which refuses to write
+    when sentences move. This one expects them to move -- it is how a change
+    to extraction reaches an already-ingested corpus. Every stored citation
+    and every pinned gold sid is invalidated by design, so run
+    `python -m evals repin` afterwards.
+
+    One transaction per filing: a crash between deleting the old sentences and
+    writing the new chunks would leave chunks pointing at sid ranges that no
+    longer exist.
+    """
+    stats = ReprocessStats()
+    for filing_id, cik, accession, form_type in store.filings_to_recanonicalize(
+        conn, ticker=ticker
+    ):
+        path = Path(cache_dir) / str(cik) / f"{accession}.html"
+        if not path.exists():
+            stats.missing += 1
+            continue
+        canonical = canonicalize(path.read_text(encoding="utf-8"), form_type)
+        before = len(store.load_sentences(conn, filing_id))
+        after = len(canonical.sentences)
+        if before != after:
+            stats.moved.append((accession, before, after))
+        if dry_run:
+            continue
+        with conn.transaction():
+            store.delete_derived(conn, filing_id)
+            store.replace_sentences(conn, filing_id, canonical.sentences)
+            store.update_viewer_html(conn, filing_id, canonical.viewer_html)
+            chunks = chunk_sentences(canonical.sentences)
+            vectors = embedder.embed_texts([c.text for c in chunks])
+            store.store_chunks(conn, filing_id, chunks, vectors)
+        stats.reprocessed += 1
+    return stats
