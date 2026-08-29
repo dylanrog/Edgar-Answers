@@ -53,3 +53,24 @@ def load_companies(conn: psycopg.Connection) -> list[dict]:
             {"cik": cik, "ticker": ticker, "name": name, "filings": count}
             for cik, ticker, name, count in cur.fetchall()
         ]
+
+
+def load_filings_for_ticker(conn: psycopg.Connection, ticker: str) -> list[dict]:
+    """A company's filings, oldest first -- the candidate list a period
+    detector picks specific accessions from."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT f.accession, f.form_type, f.filing_date, f.period_end"
+            " FROM filings f JOIN companies c ON c.cik = f.cik"
+            " WHERE c.ticker = %s ORDER BY f.filing_date",
+            (ticker.upper(),),
+        )
+        return [
+            {
+                "accession": accession,
+                "form_type": form_type,
+                "filing_date": filing_date.isoformat(),
+                "period_end": period_end.isoformat() if period_end else None,
+            }
+            for accession, form_type, filing_date, period_end in cur.fetchall()
+        ]
