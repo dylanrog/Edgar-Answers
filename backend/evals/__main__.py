@@ -96,6 +96,29 @@ def cmd_repin(args) -> None:
         print(f"LEFT UNCHANGED, fix by hand: {', '.join(unresolved)}")
 
 
+def cmd_entities(args) -> None:
+    from api import queries
+    from api.detect import AnthropicCompanyDetector
+
+    from . import entity_resolution
+
+    cases = entity_resolution.load_cases()
+    with db.connect() as conn:
+        companies = queries.load_companies(conn)
+    metrics = entity_resolution.run_entity_resolution_eval(
+        AnthropicCompanyDetector(), companies, cases
+    )
+    for mismatch in metrics["mismatches"]:
+        print(
+            f"FAIL {mismatch['id']}: expected {mismatch['expected']},"
+            f" got {mismatch['actual']}"
+        )
+    print(
+        f"\n{metrics['correct']}/{metrics['cases']} correct"
+        f" ({metrics['accuracy']:.2%})"
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     load_env()
     parser = argparse.ArgumentParser(prog="evals")
@@ -114,11 +137,16 @@ def main(argv: list[str] | None = None) -> None:
     p_repin.add_argument(
         "--apply", action="store_true", help="write the proposals into golden.yaml"
     )
+    sub.add_parser(
+        "entities", help="score entity-resolution detection against hand-labeled cases"
+    )
     args = parser.parse_args(argv)
     if args.cmd == "run":
         cmd_run(args)
     elif args.cmd == "repin":
         cmd_repin(args)
+    elif args.cmd == "entities":
+        cmd_entities(args)
     else:
         cmd_verify(args)
 
