@@ -128,3 +128,17 @@ def test_ticker_filter_excludes_other_companies(seeded_conn):
 def test_k_final_caps_results(seeded_conn):
     results = retrieve(seeded_conn, FakeEmbedder(), "zebra revenue escrow", k_final=1)
     assert len(results) == 1
+
+
+@pytest.mark.db
+def test_accessions_filter_narrows_to_one_filing_within_a_ticker(seeded_conn):
+    # Both ALPHA filings mention "zebra" (TESTC-24-000001's covenant text and
+    # TESTC-24-000002's logistics text), so an unscoped or ticker-only query
+    # would surface both. Pinning accessions must exclude the other one even
+    # though it belongs to the same company.
+    results = retrieve(
+        seeded_conn, FakeEmbedder(), "zebra imports",
+        ticker="TSTC", accessions=["TESTC-24-000001"],
+    )
+    accessions = {r.accession for r in results}
+    assert accessions == {"TESTC-24-000001"}
