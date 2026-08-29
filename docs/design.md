@@ -397,5 +397,13 @@ supply chain risk" retrieves whichever filer's boilerplate scores highest
 rather than both, so a comparison question is still answered from one company.
 Splitting such a question into per-company retrievals is the v2 work.
 
+**Stock price chart.** Raised (2026-08-28) as filling the blank space under an
+answer with a customizable price chart, with the cited period highlighted on
+it. Out of scope as stated: it needs a market-data source the pipeline never
+touches today, which is a new data source, not filing content. Needs its own
+scoping pass — what "customizable" means, where the price data comes from,
+how a cited sentence maps to a highlighted range on the chart — before any
+implementation.
+
 Each of these is a clean extension because of the unit boundaries in §3 — none
 requires reworking the citation machinery.
