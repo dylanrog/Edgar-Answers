@@ -1,0 +1,36 @@
+# Hand-labeled cases for entity resolution (spec
+# docs/superpowers/specs/2026-08-29-entity-resolution-design.md). Scored by
+# `python -m evals entities` directly against the live detector -- this is
+# not retrieval-scored, so it does not append to results.jsonl. Given this
+# repo's own observed LLM run-to-run variance (see CLAUDE.md on
+# gold_sid_hit_rate), re-run more than once before trusting a single score.
+
+- id: e001
+  question: Who achieved more revenue growth from fiscal 2023 to fiscal 2024,
+    Microsoft or Amazon?
+  expected_tickers: [MSFT, AMZN]
+- id: e002
+  question: Compare Apple's and Google's research and development spending.
+  expected_tickers: [AAPL, GOOGL]
+- id: e003
+  question: What were Apple's total net sales in fiscal 2024?
+  expected_tickers: [AAPL]
+- id: e004
+  question: How much did the iPhone maker spend on research and development?
+  expected_tickers: [AAPL]
+- id: e005
+  question: What risks does the Seattle-based online retailer disclose in its
+    filings?
+  expected_tickers: [AMZN]
+- id: e006
+  question: How did Microsft's cloud revenue grow last year?
+  expected_tickers: [MSFT]
+- id: e007
+  question: What is the capital of France?
+  expected_tickers: []
+- id: e008
+  question: What is a 10-K filing and who has to file one?
+  expected_tickers: []
+- id: e009
+  question: Compare the risk factors disclosed by JPMorgan, Walmart, and Tesla.
+  expected_tickers: [JPM, WMT, TSLA]

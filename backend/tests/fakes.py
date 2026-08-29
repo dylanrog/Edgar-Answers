@@ -37,3 +37,16 @@ class StubGenerator:
         text = self.responses[index]
         for start in range(0, len(text), 7):
             yield text[start : start + 7]
+
+
+class StubCompanyDetector:
+    """Returns a canned ticker list per exact question text, for testing
+    consumers of CompanyDetector without hitting the live API."""
+
+    def __init__(self, answers: dict[str, list[str]] | None = None):
+        self.answers = answers or {}
+        self.calls: list[str] = []
+
+    def detect(self, question, companies):
+        self.calls.append(question)
+        return self.answers.get(question, [])
