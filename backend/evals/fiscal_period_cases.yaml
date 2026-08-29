@@ -7,6 +7,17 @@
 # separate AAPL's near-identical quarterly boilerplate by period. Re-run more
 # than once before trusting a single score (see entity_resolution_cases.yaml
 # for why).
+#
+# p001 is a special case: both the FY2023 10-K (sid 1108) and the FY2024
+# 10-K (sid 1131) contain this exact RSU-exclusion sentence verbatim, since
+# it appears as a prior-year comparative in the following year's 10-K.
+# p001's expected_accessions value follows golden.yaml's q004 sid-anchor
+# (the FY2024 10-K), not because it's the only correct filing -- the FY2023
+# 10-K is an equally valid answer to this specific question. A live-model
+# "miss" on p001 alone is not evidence of a detector defect. Do not chase a
+# better score here by tuning the prompt to prefer comparative filings over
+# primary ones -- that would teach the wrong generalization for every other
+# question, which should resolve to the primary period filing.
 
 - id: p001
   question: How many RSUs were excluded from Apple's diluted earnings per share
