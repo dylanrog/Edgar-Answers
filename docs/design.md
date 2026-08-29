@@ -92,9 +92,19 @@ same sids. Both outputs are produced in a **single traversal** of the parsed DOM
   pysbd is replaceable if it disappoints.
 - **Section detection:** regex over heading text for 10-K items (1, 1A, 3, 7, 7A, 8)
   and 10-Q parts/items. Unmatched content gets section `"other"` — never a crash.
-- **Tables:** remain visible in viewer HTML; **excluded** from sentence extraction in
-  v1. Numeric questions are answered from narrative text (MD&A restates the headline
-  figures). Table linearization is a v2 item.
+- **Tables:** indexed, one sentence per table row, and preserved in viewer HTML.
+  A row is never sentence-segmented (it is not prose) and carries `data-sid` on
+  the `<tr>` itself, since a `<span>` cannot wrap `<td>` elements. A table's
+  rows are chunked as one atomic unit even past the token budget, so a header
+  row always travels with its data. Numeric questions are answered from these
+  rows as well as from narrative text. Column-aware parsing of a row into a
+  record remains a v2 item — a row is a flat string.
+- **Reprocessing:** `python -m pipeline recanonicalize` rebuilds `viewer_html`
+  only and refuses to write when sentences move. `python -m pipeline reprocess`
+  is its opposite: it rebuilds sentences, chunks and embeddings from cached raw
+  HTML and expects sids to move, so every stored citation and pinned gold sid
+  is invalidated. Run `python -m evals repin --snapshot` **before** it and
+  `python -m evals repin` after.
 - **Inline styles:** colour-bearing declarations (`color`, `background`,
   `background-color`) are stripped from inline `style` attributes during the
   same traversal; layout declarations are kept, because EDGAR tables rely on
