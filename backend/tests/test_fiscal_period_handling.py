@@ -64,3 +64,7 @@ def test_run_period_resolution_eval_passes_each_case_its_own_ticker_filings():
     }
     metrics = run_period_resolution_eval(detector, filings_by_ticker, cases)
     assert metrics["accuracy"] == 1.0
+    assert detector.calls == [
+        ("AAPL question", "AAPL", filings_by_ticker["AAPL"]),
+        ("MSFT question", "MSFT", filings_by_ticker["MSFT"]),
+    ]

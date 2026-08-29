@@ -168,7 +168,7 @@ Rules:
 def build_period_prompt(question: str, ticker: str, filings: list[dict]) -> str:
     roster = "\n".join(
         f"{f['accession']} | {f['form_type']} | filed {f['filing_date']}"
-        f" | period_end {f['period_end']}"
+        f" | period_end {f['period_end'] or 'unknown'}"
         for f in filings
     )
     return f"Company: {ticker}\nFilings:\n{roster}\n\nQuestion: {question}"

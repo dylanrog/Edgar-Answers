@@ -58,8 +58,8 @@ class StubPeriodDetector:
 
     def __init__(self, answers: dict[str, list[str]] | None = None):
         self.answers = answers or {}
-        self.calls: list[str] = []
+        self.calls: list[tuple[str, str, list[dict]]] = []
 
     def detect(self, question, ticker, filings):
-        self.calls.append(question)
+        self.calls.append((question, ticker, filings))
         return self.answers.get(question, [])
