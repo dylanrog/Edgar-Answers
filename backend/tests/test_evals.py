@@ -5,9 +5,14 @@ from datetime import date
 import psycopg
 import pytest
 from evals import harness
+from evals.entity_resolution import (
+    EntityResolutionCase,
+    load_cases,
+    run_entity_resolution_eval,
+)
 from evals.faithfulness import run_faithfulness_eval
 from evals.harness import GoldenQuestion
-from tests.fakes import FakeEmbedder
+from tests.fakes import FakeEmbedder, StubCompanyDetector
 
 from api.retrieval import RetrievedChunk
 
@@ -223,3 +228,48 @@ def test_faithfulness_metrics_are_computed_from_the_event_stream(monkeypatch):
     assert metrics["gold_sid_hit_rate"] == 1.0
     assert metrics["answered_rate"] == 1.0
     assert metrics["unverified_answers"] == 0
+
+
+def test_load_cases_validates_fields(tmp_path):
+    good = tmp_path / "cases.yaml"
+    good.write_text(
+        "- id: e001\n"
+        "  question: Compare Microsoft and Amazon's growth.\n"
+        "  expected_tickers: [MSFT, AMZN]\n",
+        encoding="utf-8",
+    )
+    cases = load_cases(good)
+    assert cases[0].id == "e001"
+    assert cases[0].expected_tickers == ["MSFT", "AMZN"]
+
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("- id: e002\n  question: Missing expected_tickers\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="e002"):
+        load_cases(bad)
+
+
+def test_run_entity_resolution_eval_scores_exact_set_match():
+    cases = [
+        EntityResolutionCase("e001", "Compare MSFT and AMZN.", ["MSFT", "AMZN"]),
+        EntityResolutionCase("e002", "What is a 10-K?", []),
+    ]
+    detector = StubCompanyDetector(
+        {
+            "Compare MSFT and AMZN.": ["MSFT", "AMZN"],
+            "What is a 10-K?": ["AAPL"],
+        }
+    )
+    metrics = run_entity_resolution_eval(detector, [], cases)
+    assert metrics["cases"] == 2
+    assert metrics["correct"] == 1
+    assert metrics["accuracy"] == 0.5
+    assert metrics["mismatches"] == [
+        {"id": "e002", "expected": [], "actual": ["AAPL"]}
+    ]
+
+
+def test_run_entity_resolution_eval_ignores_ticker_order():
+    cases = [EntityResolutionCase("e001", "Compare A and B.", ["AAPL", "AMZN"])]
+    detector = StubCompanyDetector({"Compare A and B.": ["AMZN", "AAPL"]})
+    metrics = run_entity_resolution_eval(detector, [], cases)
+    assert metrics["accuracy"] == 1.0
