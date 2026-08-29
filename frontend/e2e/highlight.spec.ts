@@ -10,6 +10,7 @@ const API = "http://localhost:8000";
 const SSE_BODY = [
   'event: token\ndata: {"text":"Total net sales were $391,035 million [1]."}\n\n',
   `event: citation\ndata: {"marker":1,"verified":true,"accession":"${ACCESSION}",`,
+  '"ticker":"AAPL","form_type":"10-K","filing_date":"2024-11-01",',
   '"sids":[647],"quote":"Total net sales $ 391,035"}\n\n',
   'event: done\ndata: {"chunks_retrieved":8,"citations_total":1,',
   '"citations_verified":1,"unverified_answer":false}\n\n',
@@ -70,6 +71,7 @@ test("an unverified citation is badged and not clickable", async ({ page }) => {
       body:
         'event: token\ndata: {"text":"Sales fell [1]."}\n\n' +
         'event: citation\ndata: {"marker":1,"verified":false,"accession":"",' +
+        '"ticker":"","form_type":"","filing_date":"",' +
         '"sids":[],"quote":"fabricated"}\n\n' +
         'event: done\ndata: {"chunks_retrieved":8,"citations_total":1,' +
         '"citations_verified":0,"unverified_answer":false}\n\n',
