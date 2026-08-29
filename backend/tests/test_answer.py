@@ -3,7 +3,7 @@ from datetime import date
 
 import psycopg
 import pytest
-from tests.fakes import FakeEmbedder, StubGenerator
+from tests.fakes import FakeEmbedder, StubCompanyDetector, StubGenerator
 
 from api.answer import answer_stream
 from pipeline import db, store
@@ -79,7 +79,13 @@ def chunk_id_of(conn) -> int:
 def collect(conn, *responses):
     generator = StubGenerator(*responses)
     events = list(
-        answer_stream(conn, FakeEmbedder(), generator, "What were total net sales?")
+        answer_stream(
+            conn,
+            FakeEmbedder(),
+            generator,
+            StubCompanyDetector(),
+            "What were total net sales?",
+        )
     )
     return events, generator
 
@@ -157,7 +163,13 @@ def test_generator_failure_becomes_an_error_event(seeded_conn):
             yield  # pragma: no cover
 
     events = list(
-        answer_stream(seeded_conn, FakeEmbedder(), Boom(), "What were net sales?")
+        answer_stream(
+            seeded_conn,
+            FakeEmbedder(),
+            Boom(),
+            StubCompanyDetector(),
+            "What were net sales?",
+        )
     )
     assert events[-1].name == "error"
     assert "message" in events[-1].data
