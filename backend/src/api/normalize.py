@@ -18,6 +18,14 @@ _REPLACEMENTS = {
     "−": "-",
 }
 
+# Financial tables read "$ 383,285" and "(3) %"; a model quoting them writes
+# "$383,285" and "(3)%". Dropping the space on exactly these boundaries makes
+# the two forms match. Deliberately narrow -- a general "ignore whitespace"
+# rule would let a quote match across word boundaries that never existed in
+# the source, and verification's whole value is that it is strict.
+_NO_SPACE_AFTER = "$€£#("
+_NO_SPACE_BEFORE = ")%"
+
 
 def normalize(text: str) -> tuple[str, list[int]]:
     """Normalize for citation matching, returning a normalized->original offset map.
@@ -47,6 +55,13 @@ def normalize(text: str) -> tuple[str, list[int]]:
                 in_space_run = True
             continue
         in_space_run = False
+        if out and out[-1] == " " and (
+            (len(out) >= 2 and out[-2] in _NO_SPACE_AFTER) or char in _NO_SPACE_BEFORE
+        ):
+            # Retract the space we already emitted, dropping its offset with
+            # it so the map stays one entry per emitted character.
+            out.pop()
+            offsets.pop()
         piece = unicodedata.normalize("NFKC", _REPLACEMENTS.get(char, char)).casefold()
         for produced in piece:
             out.append(produced)
