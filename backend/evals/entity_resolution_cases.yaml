@@ -34,3 +34,7 @@
 - id: e009
   question: Compare the risk factors disclosed by JPMorgan, Walmart, and Tesla.
   expected_tickers: [JPM, WMT, TSLA]
+- id: e010
+  question: Compare risk factors across Apple, Microsoft, Amazon, Google, and
+    Meta.
+  expected_tickers: [AAPL, MSFT, AMZN, GOOGL]

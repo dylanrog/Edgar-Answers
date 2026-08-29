@@ -8,8 +8,9 @@ from typing import Protocol
 
 from .generate import MODEL
 
-# design.md §14 / spec: at most this many companies decompose into separate
-# retrievals downstream. Defined here since this module is the producer.
+# entity-resolution spec §3.3: at most this many companies decompose into
+# separate retrievals downstream (query decomposition). Defined here since
+# this module is the producer.
 MAX_COMPANIES = 4
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
@@ -80,7 +81,7 @@ def build_detection_prompt(question: str, companies: list[dict]) -> str:
 @dataclass
 class AnthropicCompanyDetector:
     model: str = MODEL
-    max_tokens: int = 100
+    max_tokens: int = 256
     api_key: str | None = None
 
     def detect(self, question: str, companies: list[dict]) -> list[str]:
