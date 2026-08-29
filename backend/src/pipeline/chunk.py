@@ -57,7 +57,15 @@ def chunk_sentences(sentences: list[Sentence], *, max_tokens: int = MAX_TOKENS) 
     for sentence in sentences:
         n = count_tokens(sentence.text)
         new_section = current and sentence.section != current[0].section
-        over_budget = current and current_tokens + n > max_tokens
+        # Rows of the table already in progress never trigger a flush: a table
+        # is chunked whole so a header row always travels with its data, the
+        # same escape hatch an over-long single sentence already gets.
+        continues_table = (
+            bool(current)
+            and sentence.table_id is not None
+            and sentence.table_id == current[-1].table_id
+        )
+        over_budget = current and current_tokens + n > max_tokens and not continues_table
         if new_section or over_budget:
             flush()
         current.append(sentence)
