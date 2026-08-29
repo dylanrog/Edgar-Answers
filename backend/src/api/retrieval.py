@@ -73,6 +73,9 @@ def _filters(
     if form_type:
         clauses.append("f.form_type = %s")
         params.append(form_type)
+    # An empty list means "no confident period pin" (per the fiscal period
+    # handling spec) and is deliberately treated the same as None — scope to
+    # the ticker only, never "match zero filings".
     if accessions:
         clauses.append("f.accession = ANY(%s)")
         params.append(accessions)
