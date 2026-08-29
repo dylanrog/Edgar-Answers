@@ -77,10 +77,26 @@ def propose_from_sentences(
                 new_sids.extend(exact)
                 notes.append("exact")
                 continue
-            contained = [s.sid for s in sentences if s.text and s.text in text]
+            contained = [s for s in sentences if s.text and s.text in text]
             if contained:
-                new_sids.extend(contained)
-                notes.append(f"contained ({len(contained)} rows)")
+                # A short, generic row ('Products', 'Services') recurs across
+                # many unrelated tables in a real filing, so naive containment
+                # against every sentence in the accession pulls in rows from
+                # tables that have nothing to do with this gold entry. The old
+                # text came from exactly one table, so the correct group is
+                # whichever table_id contributes the most matching rows here.
+                by_table: dict[int | None, list[int]] = {}
+                for s in contained:
+                    by_table.setdefault(s.table_id, []).append(s.sid)
+                table_groups = {tid: sids for tid, sids in by_table.items() if tid is not None}
+                if table_groups:
+                    best_tid = max(table_groups, key=lambda tid: len(table_groups[tid]))
+                    rows = sorted(table_groups[best_tid])
+                    notes.append(f"contained ({len(rows)} rows from table {best_tid})")
+                else:
+                    rows = [s.sid for s in contained]
+                    notes.append(f"contained ({len(rows)} rows)")
+                new_sids.extend(rows)
                 continue
             notes.append("no match")
         resolved = bool(new_sids) and "no match" not in notes

@@ -41,6 +41,34 @@ def test_exact_text_match_maps_one_to_one():
     assert proposals[0].resolved is True
 
 
+def test_containment_ignores_matches_from_an_unrelated_table():
+    """A short generic row ('Products', 'Services') recurs across many
+    unrelated tables in a real filing. Naive substring containment against
+    *every* sentence in the accession pulls in rows from those unrelated
+    tables; the correct group is the table with the most matching rows."""
+    snap = {
+        "q001": {
+            "accession": "ACC-1",
+            "sids": [12],
+            "texts": [
+                "Gross margin percentage: Products 37.2 % Services 73.9 %"
+                " Total gross margin percentage 46.2 %"
+            ],
+        }
+    }
+    new_sentences = [
+        Sentence(10, "item7", "Products", 0, 8, None),  # unrelated prose elsewhere
+        Sentence(11, "item7", "Services", 0, 8, 2),  # unrelated table elsewhere
+        Sentence(20, "item7", "Gross margin percentage:", 0, 25, 9),
+        Sentence(21, "item7", "Products 37.2 %", 0, 15, 9),
+        Sentence(22, "item7", "Services 73.9 %", 0, 15, 9),
+        Sentence(23, "item7", "Total gross margin percentage 46.2 %", 0, 37, 9),
+    ]
+    proposals = repin.propose_from_sentences([question([12])], snap, {"ACC-1": new_sentences})
+    assert proposals[0].resolved is True
+    assert proposals[0].new_sids == [20, 21, 22, 23]
+
+
 def test_unmappable_entry_is_reported_not_guessed():
     snap = {"q001": {"accession": "ACC-1", "sids": [12], "texts": ["Vanished text."]}}
     new_sentences = [Sentence(0, "item7", "Nothing alike.", 0, 14, None)]
