@@ -70,6 +70,32 @@ def cmd_verify(args) -> None:
     print(f"all {len(questions)} entries verified")
 
 
+def cmd_repin(args) -> None:
+    from . import repin
+
+    questions = harness.load_golden()
+    with db.connect() as conn:
+        if args.snapshot:
+            repin.write_snapshot(repin.snapshot(conn, questions))
+            print(f"snapshot written to {repin.SNAPSHOT_PATH}")
+            return
+        proposals = repin.propose(conn, questions, repin.read_snapshot())
+
+    for proposal in proposals:
+        flag = "ok " if proposal.resolved else "MANUAL"
+        print(f"{flag} {proposal.question_id}: {proposal.old_sids} -> {proposal.new_sids}"
+              f"  [{proposal.note}]")
+    unresolved = [p.question_id for p in proposals if not p.resolved]
+
+    if not args.apply:
+        print("\nproposal only. Re-run with --apply to write golden.yaml.")
+        return
+    changed = repin.apply_to_golden(harness.GOLDEN_PATH, proposals)
+    print(f"\nrewrote {changed} entries")
+    if unresolved:
+        print(f"LEFT UNCHANGED, fix by hand: {', '.join(unresolved)}")
+
+
 def main(argv: list[str] | None = None) -> None:
     load_env()
     parser = argparse.ArgumentParser(prog="evals")
@@ -78,9 +104,21 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("--retrieval-only", action="store_true")
     p_run.add_argument("--debug", action="store_true", help="print per-arm top results")
     sub.add_parser("verify", help="validate golden entries against the DB")
+    p_repin = sub.add_parser(
+        "repin", help="re-anchor golden gold_sids after a reprocess"
+    )
+    p_repin.add_argument(
+        "--snapshot", action="store_true",
+        help="capture current gold sentence text; run this BEFORE reprocess",
+    )
+    p_repin.add_argument(
+        "--apply", action="store_true", help="write the proposals into golden.yaml"
+    )
     args = parser.parse_args(argv)
     if args.cmd == "run":
         cmd_run(args)
+    elif args.cmd == "repin":
+        cmd_repin(args)
     else:
         cmd_verify(args)
 
