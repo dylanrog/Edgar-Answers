@@ -1,4 +1,4 @@
-from api.detect import MAX_COMPANIES, parse_detected_companies
+from api.detect import MAX_COMPANIES, build_detection_prompt, parse_detected_companies
 
 KNOWN = {"AAPL", "AMZN", "GOOGL", "JNJ", "JPM", "META", "MSFT", "NVDA", "TSLA", "WMT"}
 
@@ -44,3 +44,14 @@ def test_output_is_capped_at_max_companies_in_mention_order():
     result = parse_detected_companies(raw, KNOWN)
     assert result == ["AAPL", "AMZN", "GOOGL", "JPM"]
     assert len(result) == MAX_COMPANIES
+
+
+def test_detection_prompt_lists_each_company_and_the_question():
+    companies = [
+        {"cik": 320193, "ticker": "AAPL", "name": "Apple Inc.", "filings": 13},
+        {"cik": 1018724, "ticker": "AMZN", "name": "Amazon.com, Inc.", "filings": 12},
+    ]
+    prompt = build_detection_prompt("Compare Apple and Amazon's margins.", companies)
+    assert "AAPL: Apple Inc." in prompt
+    assert "AMZN: Amazon.com, Inc." in prompt
+    assert "Compare Apple and Amazon's margins." in prompt
