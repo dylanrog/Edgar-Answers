@@ -96,6 +96,15 @@ company-less questions, so detector failure costs nothing extra. This must
 never surface as a user-facing error; it degrades to today's unscoped
 retrieval.
 
+This degrade-to-`[]` behavior is the caller's responsibility, not `detect()`'s
+own: `AnthropicCompanyDetector.detect()` does not itself catch exceptions (a
+missing API key or network failure propagates), because the only caller
+before query decomposition lands is the eval CLI, where a loud failure is
+more useful than a silent one. The query-decomposition plan's
+`resolve_targets()` is where this guarantee must actually be implemented and
+tested, since that is the first caller a real user-facing `/ask` request
+reaches.
+
 ## 4. Testing and evaluation
 
 This is scored differently from `golden.yaml`: that file measures retrieval

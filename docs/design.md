@@ -397,6 +397,14 @@ supply chain risk" retrieves whichever filer's boilerplate scores highest
 rather than both, so a comparison question is still answered from one company.
 Splitting such a question into per-company retrievals is the v2 work.
 
+Three specs now implement this: `docs/superpowers/specs/2026-08-29-entity-resolution-design.md`
+(detecting which corpus companies a question names — implemented, this
+branch), `docs/superpowers/specs/2026-08-29-fiscal-period-handling-design.md`
+(identifying which filing period a question means — not yet implemented), and
+`docs/superpowers/specs/2026-08-29-query-decomposition-design.md` (running
+retrieval per resolved company and merging — not yet implemented, depends on
+entity resolution).
+
 **Stock price chart.** Raised (2026-08-28) as filling the blank space under an
 answer with a customizable price chart, with the cited period highlighted on
 it. Out of scope as stated: it needs a market-data source the pipeline never
