@@ -62,7 +62,9 @@ class RetrievedChunk:
     score: float
 
 
-def _filters(ticker: str | None, form_type: str | None) -> tuple[str, list[object]]:
+def _filters(
+    ticker: str | None, form_type: str | None, accessions: list[str] | None = None
+) -> tuple[str, list[object]]:
     clauses: list[str] = []
     params: list[object] = []
     if ticker:
@@ -71,6 +73,12 @@ def _filters(ticker: str | None, form_type: str | None) -> tuple[str, list[objec
     if form_type:
         clauses.append("f.form_type = %s")
         params.append(form_type)
+    # An empty list means "no confident period pin" (per the fiscal period
+    # handling spec) and is deliberately treated the same as None — scope to
+    # the ticker only, never "match zero filings".
+    if accessions:
+        clauses.append("f.accession = ANY(%s)")
+        params.append(accessions)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     return where, params
 
@@ -82,8 +90,9 @@ def vector_search(
     k: int = 20,
     ticker: str | None = None,
     form_type: str | None = None,
+    accessions: list[str] | None = None,
 ) -> list[tuple]:
-    where, params = _filters(ticker, form_type)
+    where, params = _filters(ticker, form_type, accessions)
     sql = _BASE + where + " ORDER BY ch.embedding <=> %s::vector LIMIT %s"
     with conn.cursor() as cur:
         cur.execute(sql, [*params, to_pgvector(query_vector), k])
@@ -97,8 +106,9 @@ def lexical_search(
     k: int = 20,
     ticker: str | None = None,
     form_type: str | None = None,
+    accessions: list[str] | None = None,
 ) -> list[tuple]:
-    where, params = _filters(ticker, form_type)
+    where, params = _filters(ticker, form_type, accessions)
     match = f"{_TSVECTOR} @@ {_OR_TSQUERY}"
     where = where + (" AND " if where else " WHERE ") + match
     sql = (
@@ -120,14 +130,17 @@ def retrieve(
     k_final: int = 8,
     ticker: str | None = None,
     form_type: str | None = None,
+    accessions: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Hybrid retrieval per design §6.1: vector + lexical arms fused with RRF."""
     query_vector = embedder.embed_query(question)
     vector_rows = vector_search(
-        conn, query_vector, k=k_each, ticker=ticker, form_type=form_type
+        conn, query_vector, k=k_each, ticker=ticker, form_type=form_type,
+        accessions=accessions,
     )
     lexical_rows = lexical_search(
-        conn, question, k=k_each, ticker=ticker, form_type=form_type
+        conn, question, k=k_each, ticker=ticker, form_type=form_type,
+        accessions=accessions,
     )
 
     scores: dict[int, float] = {}

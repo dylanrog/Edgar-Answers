@@ -119,6 +119,32 @@ def cmd_entities(args) -> None:
     )
 
 
+def cmd_periods(args) -> None:
+    from api import queries
+    from api.detect import AnthropicPeriodDetector
+
+    from . import fiscal_period_handling
+
+    cases = fiscal_period_handling.load_cases()
+    tickers = {case.ticker for case in cases}
+    with db.connect() as conn:
+        filings_by_ticker = {
+            ticker: queries.load_filings_for_ticker(conn, ticker) for ticker in tickers
+        }
+    metrics = fiscal_period_handling.run_period_resolution_eval(
+        AnthropicPeriodDetector(), filings_by_ticker, cases
+    )
+    for mismatch in metrics["mismatches"]:
+        print(
+            f"FAIL {mismatch['id']}: expected {mismatch['expected']},"
+            f" got {mismatch['actual']}"
+        )
+    print(
+        f"\n{metrics['correct']}/{metrics['cases']} correct"
+        f" ({metrics['accuracy']:.2%})"
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     load_env()
     parser = argparse.ArgumentParser(prog="evals")
@@ -140,6 +166,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "entities", help="score entity-resolution detection against hand-labeled cases"
     )
+    sub.add_parser(
+        "periods", help="score fiscal-period-resolution detection against hand-labeled cases"
+    )
     args = parser.parse_args(argv)
     if args.cmd == "run":
         cmd_run(args)
@@ -147,6 +176,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_repin(args)
     elif args.cmd == "entities":
         cmd_entities(args)
+    elif args.cmd == "periods":
+        cmd_periods(args)
     else:
         cmd_verify(args)
 

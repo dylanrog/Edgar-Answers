@@ -105,6 +105,7 @@ previously-missing gold sid now appears in the top-k.
 | --- | --- |
 | a wrong pin actively excludes the correct filing, which is worse than no pin | detector must abstain (return `[]`) when uncertain; §5's targeted check confirms no accession-pinned question regresses versus its ticker-only baseline before this ships |
 | an accession is hallucinated or belongs to a different company | validated against the resolved ticker's own filing list; dropped if it doesn't match |
+| exact-set-equality scoring can't express "multiple filings are equally correct" (e.g. a comparative figure repeated verbatim in two consecutive 10-Ks) | recorded per-case in fiscal_period_cases.yaml (see p001); do not treat this as a reason to tune the prompt toward preferring later comparative filings |
 
 ## 7. Deferred
 

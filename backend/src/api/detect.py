@@ -102,3 +102,102 @@ class AnthropicCompanyDetector:
         raw = "".join(block.text for block in message.content if block.type == "text")
         known_tickers = {c["ticker"] for c in companies}
         return parse_detected_companies(raw, known_tickers)
+
+
+class PeriodDetector(Protocol):
+    """The LLM, narrowed to the one thing fiscal period handling needs."""
+
+    def detect(self, question: str, ticker: str, filings: list[dict]) -> list[str]:
+        """Return the accessions (from `filings`) the question refers to."""
+        ...
+
+
+def parse_detected_periods(raw: str, known_accessions: set[str]) -> list[str]:
+    """Defensive parse of a period detector's raw response into an accession list.
+
+    Mirrors parse_detected_companies's contract: a hallucinated or
+    wrong-company accession, malformed JSON, or a response with no JSON
+    object at all all degrade to `[]` -- "no period pin" means "scope to
+    the ticker only," which is always a safe fallback.
+    """
+    text = _FENCE.sub("", raw.strip())
+    match = _OBJECT.search(text)
+    if match is None:
+        return []
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return []
+    accessions = payload.get("accessions")
+    if not isinstance(accessions, list):
+        return []
+    seen: list[str] = []
+    for accession in accessions:
+        if (
+            isinstance(accession, str)
+            and accession in known_accessions
+            and accession not in seen
+        ):
+            seen.append(accession)
+    return seen
+
+
+DETECTION_PERIOD_SYSTEM_PROMPT = (
+    """You identify which specific SEC filing(s) of one company a question refers to.
+
+You will be given the company's filings, each shown as its accession number,
+form type, filing date, and period-end date. Decide which filing(s), if any,
+the question is asking about, based on the fiscal year, quarter, or other
+period language in the question.
+
+Respond with strict JSON and nothing else:
+
+{"accessions": ["0000320193-24-000123"]}
+
+Rules:
+1. Only use accession numbers that appear in the filing list you were given.
+   Never invent one.
+2. If the question does not reference a specific period, or you are not
+   confident which filing(s) it means, respond with {"accessions": []}.
+   Do not guess.
+3. A question comparing two periods may name two filings.
+"""
+)
+
+
+def build_period_prompt(question: str, ticker: str, filings: list[dict]) -> str:
+    roster = "\n".join(
+        f"{f['accession']} | {f['form_type']} | filed {f['filing_date']}"
+        f" | period_end {f['period_end'] or 'unknown'}"
+        for f in filings
+    )
+    return f"Company: {ticker}\nFilings:\n{roster}\n\nQuestion: {question}"
+
+
+@dataclass
+class AnthropicPeriodDetector:
+    model: str = MODEL
+    max_tokens: int = 256
+    api_key: str | None = None
+
+    def detect(self, question: str, ticker: str, filings: list[dict]) -> list[str]:
+        import anthropic
+
+        client = anthropic.Anthropic(
+            api_key=self.api_key or os.environ["ANTHROPIC_API_KEY"]
+        )
+        message = client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=0,
+            system=DETECTION_PERIOD_SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_period_prompt(question, ticker, filings),
+                }
+            ],
+        )
+        raw = "".join(block.text for block in message.content if block.type == "text")
+        known_accessions = {f["accession"] for f in filings}
+        return parse_detected_periods(raw, known_accessions)

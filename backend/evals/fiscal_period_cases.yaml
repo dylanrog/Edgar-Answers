@@ -1,0 +1,48 @@
+# Hand-labeled cases for fiscal period handling (spec
+# docs/superpowers/specs/2026-08-29-fiscal-period-handling-design.md).
+# Scored by `python -m evals periods` directly against the live detector and
+# the real AAPL filing list -- not retrieval-scored, so this does not append
+# to results.jsonl. p001 and p002 are q004 and q009 from golden.yaml: the two
+# questions CLAUDE.md documents as failing today because retrieval cannot
+# separate AAPL's near-identical quarterly boilerplate by period. Re-run more
+# than once before trusting a single score (see entity_resolution_cases.yaml
+# for why).
+#
+# p001 is a special case: both the FY2023 10-K (sid 1108) and the FY2024
+# 10-K (sid 1131) contain this exact RSU-exclusion sentence verbatim, since
+# it appears as a prior-year comparative in the following year's 10-K.
+# p001's expected_accessions value follows golden.yaml's q004 sid-anchor
+# (the FY2024 10-K), not because it's the only correct filing -- the FY2023
+# 10-K is an equally valid answer to this specific question. A live-model
+# "miss" on p001 alone is not evidence of a detector defect. Do not chase a
+# better score here by tuning the prompt to prefer comparative filings over
+# primary ones -- that would teach the wrong generalization for every other
+# question, which should resolve to the primary period filing.
+
+- id: p001
+  question: How many RSUs were excluded from Apple's diluted earnings per share
+    computation for fiscal 2023?
+  ticker: AAPL
+  expected_accessions: ["0000320193-24-000123"]
+- id: p002
+  question: What were Apple's total gross margin percentages for Products and
+    Services in the second quarter of fiscal 2024?
+  ticker: AAPL
+  expected_accessions: ["0000320193-24-000069"]
+- id: p003
+  question: What were Apple's total net sales in fiscal 2025?
+  ticker: AAPL
+  expected_accessions: ["0000320193-25-000079"]
+- id: p004
+  question: What is Apple's core business model?
+  ticker: AAPL
+  expected_accessions: []
+- id: p005
+  question: How did Apple's Q2 FY2024 gross margin compare to its Q2 FY2025
+    gross margin?
+  ticker: AAPL
+  expected_accessions: ["0000320193-24-000069", "0000320193-25-000057"]
+- id: p006
+  question: What did Apple report for its fiscal Q3 2026?
+  ticker: AAPL
+  expected_accessions: ["0000320193-26-000020"]

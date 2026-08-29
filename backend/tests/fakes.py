@@ -50,3 +50,16 @@ class StubCompanyDetector:
     def detect(self, question, companies):
         self.calls.append(question)
         return self.answers.get(question, [])
+
+
+class StubPeriodDetector:
+    """Returns a canned accession list per exact question text, for testing
+    consumers of PeriodDetector without hitting the live API."""
+
+    def __init__(self, answers: dict[str, list[str]] | None = None):
+        self.answers = answers or {}
+        self.calls: list[tuple[str, str, list[dict]]] = []
+
+    def detect(self, question, ticker, filings):
+        self.calls.append((question, ticker, filings))
+        return self.answers.get(question, [])
