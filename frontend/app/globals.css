@@ -63,3 +63,16 @@ body {
   box-shadow: 0 0 0 3px #78350f;
   scroll-margin-top: 4rem;
 }
+
+/* A cited table row carries data-sid on the <tr> itself, because a <span>
+   cannot wrap <td> elements. box-shadow bleeds across cell borders on a row,
+   so rows get the background treatment only. */
+tr.cited-sentence {
+  box-shadow: none;
+}
+
+tr.cited-sentence td,
+tr.cited-sentence th {
+  background-color: #78350f;
+  color: #fef3c7;
+}
