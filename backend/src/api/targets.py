@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import queries
+from .detect import MAX_COMPANIES, CompanyDetector, PeriodDetector
 from .retrieval import RetrievedChunk, retrieve
 
 
@@ -46,3 +48,55 @@ def retrieve_for_targets(
             )
         )
     return chunks
+
+
+def resolve_targets(
+    conn,
+    question: str,
+    *,
+    explicit_tickers: list[str] | None,
+    company_detector: CompanyDetector,
+    period_detector: PeriodDetector | None = None,
+) -> list[Target]:
+    """Decide which companies (and, if available, which of their filings) a
+    question means.
+
+    Explicit tickers are normalized (uppercased, deduped, capped) but never
+    dropped for being unknown -- an explicit filter for a ticker that
+    doesn't exist must retrieve nothing, matching the ticker filter's
+    existing behavior, not silently fall back to every company. Only
+    LLM-detected tickers are validated against the known company list
+    (inside parse_detected_companies), since only they carry a real
+    hallucination risk.
+
+    A detector failure (network error, missing key, rate limit) degrades to
+    "no targets" / "no accessions" rather than propagating -- this is the
+    guarantee entity resolution and fiscal period handling both deferred to
+    this function; a broken detector must never turn a working /ask request
+    into a failure.
+    """
+    if explicit_tickers:
+        tickers: list[str] = []
+        for ticker in explicit_tickers:
+            upper = ticker.upper()
+            if upper not in tickers:
+                tickers.append(upper)
+            if len(tickers) == MAX_COMPANIES:
+                break
+    else:
+        try:
+            tickers = company_detector.detect(question, queries.load_companies(conn))
+        except Exception:  # noqa: BLE001 -- detector failure degrades to no targets
+            tickers = []
+
+    targets = []
+    for ticker in tickers:
+        accessions = None
+        if period_detector is not None:
+            try:
+                filings = queries.load_filings_for_ticker(conn, ticker)
+                accessions = period_detector.detect(question, ticker, filings) or None
+            except Exception:  # noqa: BLE001 -- same degrade-safely rationale
+                accessions = None
+        targets.append(Target(ticker=ticker, accessions=accessions))
+    return targets
