@@ -27,6 +27,15 @@ def main(argv: list[str] | None = None) -> None:
         help="rebuild viewer_html from cached raw HTML (no re-embed, no EDGAR traffic)",
     )
     p_recanon.add_argument("--ticker", help="restrict to one curated ticker")
+    p_reprocess = sub.add_parser(
+        "reprocess",
+        help="rebuild sentences, chunks and embeddings from cached raw HTML"
+        " (no EDGAR traffic; invalidates stored sids -- run `evals repin` after)",
+    )
+    p_reprocess.add_argument("--ticker", help="restrict to one curated ticker")
+    p_reprocess.add_argument(
+        "--dry-run", action="store_true", help="report sid movement, write nothing"
+    )
     args = parser.parse_args(argv)
 
     if args.cmd == "migrate":
@@ -53,6 +62,23 @@ def main(argv: list[str] | None = None) -> None:
         print(f"updated {stats.updated} filings, {stats.missing} missing from cache")
         if stats.mismatched:
             print(f"SENTENCE MISMATCH, left untouched: {', '.join(stats.mismatched)}")
+        return
+
+    if args.cmd == "reprocess":
+        from .embed import Embedder
+
+        with db.connect() as conn:
+            stats = ingest.reprocess_filings(
+                conn,
+                Embedder(),
+                cache_dir=Path("data/raw"),
+                ticker=args.ticker,
+                dry_run=args.dry_run,
+            )
+        verb = "would reprocess" if args.dry_run else "reprocessed"
+        print(f"{verb} {stats.reprocessed} filings, {stats.missing} missing from cache")
+        for accession, before, after in stats.moved:
+            print(f"  {accession}: {before} -> {after} sentences")
         return
 
     if not args.all and not args.ticker:

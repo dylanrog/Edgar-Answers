@@ -64,6 +64,26 @@ def store_filing(
     return filing_id
 
 
+def delete_derived(conn: psycopg.Connection, filing_id: int) -> None:
+    """Drop a filing's chunks and sentences, keeping the filings row itself."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
+        cur.execute("DELETE FROM sentences WHERE filing_id = %s", (filing_id,))
+
+
+def replace_sentences(
+    conn: psycopg.Connection, filing_id: int, sentences: list[Sentence]
+) -> None:
+    with conn.cursor() as cur, cur.copy(
+        "COPY sentences (filing_id, sid, section, text, char_start, char_end,"
+        " table_id) FROM STDIN"
+    ) as copy:
+        for s in sentences:
+            copy.write_row(
+                (filing_id, s.sid, s.section, s.text, s.char_start, s.char_end, s.table_id)
+            )
+
+
 def to_pgvector(vector: list[float]) -> str:
     return "[" + ",".join(f"{x:.8f}" for x in vector) + "]"
 
