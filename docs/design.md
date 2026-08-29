@@ -387,7 +387,9 @@ XBRL structured financials (exact-number answers), 8-K support, on-demand ticker
 ingestion (async jobs + progress UI), table linearization, reranker
 (cross-encoder), conversation history, fine-tuned embeddings, agentic
 multi-step retrieval, the `year` filter on `POST /ask` (deferred out of
-Phase 3 — see §6).
+Phase 3 — see §6; accession-pinning in the fiscal-period-handling spec
+supersedes this by sidestepping the `filing_date`-vs-`period_end` ambiguity
+that caused the original deferral).
 
 **Query decomposition** replaces the former "multi-filing comparison
 questions" entry. The rendering half of that item is built (§7: the sources
@@ -400,7 +402,9 @@ Splitting such a question into per-company retrievals is the v2 work.
 Three specs now implement this: `docs/superpowers/specs/2026-08-29-entity-resolution-design.md`
 (detecting which corpus companies a question names — implemented, this
 branch), `docs/superpowers/specs/2026-08-29-fiscal-period-handling-design.md`
-(identifying which filing period a question means — not yet implemented), and
+(identifying which filing period a question means — detector and retrieval
+filter implemented on this branch, not yet wired into `/ask`'s live query
+path), and
 `docs/superpowers/specs/2026-08-29-query-decomposition-design.md` (running
 retrieval per resolved company and merging — not yet implemented, depends on
 entity resolution).
