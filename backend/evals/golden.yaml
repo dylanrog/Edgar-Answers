@@ -10,115 +10,118 @@
 # were confirmed to actually retrieve before being committed here — gold_sids
 # were never adjusted to match what a given question's own retrieval run
 # returned.
+#
+# Every gold_sids value below was re-anchored on 2026-08-28 by
+# `python -m evals repin --apply`, after `python -m pipeline reprocess`
+# rebuilt the corpus so financial tables index one sentence per row instead
+# of one flattened sentence per table (spec 2026-08-12-tables-first-class).
+# A sid that used to point at a whole flattened table now points at every
+# row of that table (q006, q007, q009 carry several sids for this reason).
+# gold_sid_hit_rate from before this re-pin is not comparable to any run
+# after it: the sids it scores against were redefined by this change.
 
 - id: q001
-  question: "How did Apple's net sales in the Americas segment change during fiscal 2024?"
+  question: How did Apple's net sales in the Americas segment change during fiscal
+    2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [649]
-
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [710]
 - id: q002
-  question: "Why did Apple's net sales in Greater China decrease during fiscal 2024?"
+  question: Why did Apple's net sales in Greater China decrease during fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [653]
-
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [714]
 - id: q003
-  question: "How many shares did Apple repurchase during fiscal 2024 and for how much money?"
+  question: How many shares did Apple repurchase during fiscal 2024 and for how much
+    money?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item8"
-  gold_sids: [1026]
-
+  accession: 0000320193-24-000123
+  section: item8
+  gold_sids: [1421]
 - id: q004
-  question: "How many RSUs were excluded from Apple's diluted earnings per share computation for fiscal 2023?"
+  question: How many RSUs were excluded from Apple's diluted earnings per share computation
+    for fiscal 2023?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item8"
-  gold_sids: [888]
-
+  accession: 0000320193-24-000123
+  section: item8
+  gold_sids: [1131]
 - id: q005
-  question: "What statutory federal income tax rate did Apple apply in its effective tax rate reconciliation for fiscal 2024?"
+  question: What statutory federal income tax rate did Apple apply in its effective
+    tax rate reconciliation for fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item8"
-  gold_sids: [968]
-
+  accession: 0000320193-24-000123
+  section: item8
+  gold_sids: [1285]
 - id: q006
-  question: "What was Apple's total gross margin percentage in fiscal 2024?"
+  question: What was Apple's total gross margin percentage in fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [681]
-
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [753, 754, 755, 756]
 - id: q007
-  question: "How much did Apple spend on research and development in fiscal 2024?"
+  question: How much did Apple spend on research and development in fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [691]
-
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [766, 767, 768, 769, 770, 771, 772]
 - id: q008
-  question: "How much was the one-time income tax charge related to the State Aid Decision in fiscal 2024?"
+  question: How much was the one-time income tax charge related to the State Aid Decision
+    in fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [701]
-
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [785]
 - id: q009
-  question: "What were Apple's total gross margin percentages for Products and Services in the second quarter of fiscal 2024?"
+  question: What were Apple's total gross margin percentages for Products and Services
+    in the second quarter of fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000069"
-  section: "part1.item2"
-  gold_sids: [247]
-
+  accession: 0000320193-24-000069
+  section: part1.item2
+  gold_sids: [536, 537, 538, 539]
 - id: q010
-  question: "Why did Apple's net sales in Europe increase during fiscal 2025?"
+  question: Why did Apple's net sales in Europe increase during fiscal 2025?
   ticker: AAPL
-  accession: "0000320193-25-000079"
-  section: "item7"
-  gold_sids: [650]
-
+  accession: 0000320193-25-000079
+  section: item7
+  gold_sids: [712]
 - id: q011
-  question: "What products are included in Apple's Wearables category?"
+  question: What products are included in Apple's Wearables category?
   ticker: AAPL
-  accession: "0000320193-25-000079"
-  section: "item1"
-  gold_sids: [76]
-
+  accession: 0000320193-25-000079
+  section: item1
+  gold_sids: [120]
 - id: q012
-  question: "How did Apple's Americas net sales perform in the second quarter of fiscal 2024?"
+  question: How did Apple's Americas net sales perform in the second quarter of fiscal
+    2024?
   ticker: AAPL
-  accession: "0000320193-24-000069"
-  section: "part1.item2"
-  gold_sids: [209]
-
+  accession: 0000320193-24-000069
+  section: part1.item2
+  gold_sids: [485]
 - id: q013
-  question: "Why did Apple's Greater China net sales decrease in the second quarter of fiscal 2024?"
+  question: Why did Apple's Greater China net sales decrease in the second quarter
+    of fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000069"
-  section: "part1.item2"
-  gold_sids: [217]
-
+  accession: 0000320193-24-000069
+  section: part1.item2
+  gold_sids: [493]
 - id: q014
-  question: "Did Apple's management conclude its disclosure controls and procedures were effective at the end of fiscal 2024?"
+  question: Did Apple's management conclude its disclosure controls and procedures
+    were effective at the end of fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item9a"
-  gold_sids: [1155]
-
+  accession: 0000320193-24-000123
+  section: item9a
+  gold_sids: [1611]
 - id: q015
-  question: "How did Apple's iPhone net sales change during fiscal 2024?"
+  question: How did Apple's iPhone net sales change during fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [667]
-
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [735]
 - id: q016
-  question: "Why did Apple's Mac net sales increase during fiscal 2024?"
+  question: Why did Apple's Mac net sales increase during fiscal 2024?
   ticker: AAPL
-  accession: "0000320193-24-000123"
-  section: "item7"
-  gold_sids: [669]
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [737]
