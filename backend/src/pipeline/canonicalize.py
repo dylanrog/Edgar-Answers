@@ -23,6 +23,9 @@ class Sentence:
     text: str
     char_start: int
     char_end: int
+    # NULL for prose. Last field with a default so existing positional
+    # constructions keep working.
+    table_id: int | None = None
 
 
 @dataclass(frozen=True)

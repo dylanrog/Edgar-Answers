@@ -54,11 +54,13 @@ def store_filing(
         )
         filing_id = cur.fetchone()[0]
         with cur.copy(
-            "COPY sentences (filing_id, sid, section, text, char_start, char_end)"
-            " FROM STDIN"
+            "COPY sentences (filing_id, sid, section, text, char_start, char_end,"
+            " table_id) FROM STDIN"
         ) as copy:
             for s in canonical.sentences:
-                copy.write_row((filing_id, s.sid, s.section, s.text, s.char_start, s.char_end))
+                copy.write_row(
+                    (filing_id, s.sid, s.section, s.text, s.char_start, s.char_end, s.table_id)
+                )
     return filing_id
 
 
@@ -69,7 +71,7 @@ def to_pgvector(vector: list[float]) -> str:
 def load_sentences(conn: psycopg.Connection, filing_id: int) -> list[Sentence]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT sid, section, text, char_start, char_end"
+            "SELECT sid, section, text, char_start, char_end, table_id"
             " FROM sentences WHERE filing_id = %s ORDER BY sid",
             (filing_id,),
         )
