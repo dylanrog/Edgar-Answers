@@ -84,8 +84,9 @@ def resolve_targets(
             if len(tickers) == MAX_COMPANIES:
                 break
     else:
+        companies = queries.load_companies(conn)
         try:
-            tickers = company_detector.detect(question, queries.load_companies(conn))
+            tickers = company_detector.detect(question, companies)
         except Exception:  # noqa: BLE001 -- detector failure degrades to no targets
             tickers = []
 
@@ -93,8 +94,8 @@ def resolve_targets(
     for ticker in tickers:
         accessions = None
         if period_detector is not None:
+            filings = queries.load_filings_for_ticker(conn, ticker)
             try:
-                filings = queries.load_filings_for_ticker(conn, ticker)
                 accessions = period_detector.detect(question, ticker, filings) or None
             except Exception:  # noqa: BLE001 -- same degrade-safely rationale
                 accessions = None
