@@ -23,7 +23,14 @@ export default function AskPage() {
   const groups = useMemo(() => groupSources(answer.citations), [answer.citations]);
   const labels = useMemo(
     () =>
-      Object.fromEntries(groups.map((g) => [g.accession, `${g.ticker} ${g.form_type}`])),
+      // The year disambiguates same-company, same-form-type filings: without
+      // it, three of a company's 10-Ks render three identically-labelled tabs.
+      Object.fromEntries(
+        groups.map((g) => [
+          g.accession,
+          `${g.ticker} ${g.form_type} ${g.filing_date.slice(0, 4)}`,
+        ]),
+      ),
     [groups],
   );
 

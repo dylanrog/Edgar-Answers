@@ -80,11 +80,11 @@ test("an answer spanning two filings opens two tabs that keep their scroll", asy
   await expect(page.locator(`[data-sid="2"]`).first()).toHaveClass(/cited-sentence/);
 
   // exact: true throughout — the close button's aria-label is
-  // "Close MSFT 10-K", and Playwright matches accessible names by substring,
-  // so a loose name here resolves to both buttons in the tab.
+  // "Close MSFT 10-K 2024", and Playwright matches accessible names by
+  // substring, so a loose name here resolves to both buttons in the tab.
   await page.getByRole("button", { name: "[2]" }).click();
-  await expect(page.getByRole("button", { name: "MSFT 10-K", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "AAPL 10-K", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "MSFT 10-K 2024", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "AAPL 10-K 2024", exact: true })).toBeVisible();
 
   // Scroll the Microsoft pane, switch away, switch back: position survives.
   // Addressed by data-accession, not by a class: a ".overflow-y-auto" selector
@@ -95,7 +95,7 @@ test("an answer spanning two filings opens two tabs that keep their scroll", asy
   const scrolled = await msftPane.evaluate((el) => el.scrollTop);
   expect(scrolled).toBeGreaterThan(0);
 
-  await page.getByRole("button", { name: "AAPL 10-K", exact: true }).click();
-  await page.getByRole("button", { name: "MSFT 10-K", exact: true }).click();
+  await page.getByRole("button", { name: "AAPL 10-K 2024", exact: true }).click();
+  await page.getByRole("button", { name: "MSFT 10-K 2024", exact: true }).click();
   await expect.poll(() => msftPane.evaluate((el) => el.scrollTop)).toBe(scrolled);
 });
