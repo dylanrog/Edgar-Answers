@@ -30,6 +30,11 @@ def store_filing(
         )
         if replace:
             cur.execute(
+                "DELETE FROM chunks WHERE filing_id IN"
+                " (SELECT id FROM filings WHERE accession = %s)",
+                (ref.accession,),
+            )
+            cur.execute(
                 "DELETE FROM sentences WHERE filing_id IN"
                 " (SELECT id FROM filings WHERE accession = %s)",
                 (ref.accession,),
