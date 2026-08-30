@@ -1007,16 +1007,37 @@ git commit -m "feat: replace the single ticker filter with a capped multi-select
 **Files:**
 - Modify: `backend/evals/golden.yaml`
 - Modify: `backend/evals/harness.py`
+- Modify: `backend/evals/faithfulness.py`
 - Modify: `backend/tests/test_evals.py`
 - Modify: `backend/evals/__main__.py`
 
 **Interfaces:**
 - Consumes: `api.targets.Target`, `api.targets.resolve_targets`,
-  `api.targets.retrieve_for_targets` (Tasks 1-2).
+  `api.targets.retrieve_for_targets` (Tasks 1-2), `answer_stream`'s new
+  signature (Task 3).
 - Produces: `harness.GoldenQuestion.group: str` (new field, defaults to the
   entry's own `id`), `harness.run_retrieval_eval(..., company_detector=None, period_detector=None)`
   (two new optional keyword parameters; `targeted_*` metrics computed only
-  when `company_detector` is given).
+  when `company_detector` is given), `faithfulness.run_faithfulness_eval(conn, embedder, generator, company_detector, questions)`
+  (gains a new required `company_detector` parameter, inserted before
+  `questions`).
+
+**⚠️ A second, unrelated caller of `answer_stream` also needs fixing here.**
+Task 3 changed `answer_stream`'s signature, but only `app.py` (Task 4) and
+`test_answer.py` (Task 3) were in scope to fix their own call sites.
+`backend/evals/faithfulness.py` calls `answer_stream` too, with the old
+`ticker=` keyword and no `company_detector` — grep the whole `backend/`
+tree for `answer_stream` yourself before starting this task and confirm
+you've found every remaining call site; there should be exactly one
+(`faithfulness.py`) plus one now-misaligned test call
+(`backend/tests/test_evals.py`'s `run_faithfulness_eval(None, None, None, [question])`,
+which will silently bind `[question]` to the new `company_detector`
+parameter instead of `questions` if not updated). This was not caught by
+this plan's own Task 7 verification (which deliberately runs
+`--retrieval-only`, skipping the faithfulness path entirely) — it surfaced
+only because a task reviewer noticed it as an out-of-scope observation
+during Task 4's review. Fix it now, in this task, since this is the first
+task after Task 3 that touches anything in `evals/`.
 
 - [ ] **Step 1: Add the comparison rows to `golden.yaml`**
 
@@ -1357,36 +1378,150 @@ def append_results(path: Path, metrics: dict) -> None:
 Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_evals.py -v`
 Expected: PASS (all tests in the file, old and new)
 
-- [ ] **Step 6: Wire the real detectors into `python -m evals run`**
+- [ ] **Step 6: Fix `faithfulness.py`'s stale `answer_stream` call**
+
+First, write the failing test-call-site fix in `backend/tests/test_evals.py`
+— find the line `metrics = run_faithfulness_eval(None, None, None, [question])`
+and change it to:
+
+```python
+    metrics = run_faithfulness_eval(None, None, None, None, [question])
+```
+
+(The mock at `monkeypatch.setattr("evals.faithfulness.answer_stream", lambda *a, **k: ...)`
+just above it already accepts any arguments, so it needs no change — only
+the call to `run_faithfulness_eval` itself, which is gaining a new
+positional parameter.)
+
+Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_evals.py -k faithfulness -v`
+Expected: FAIL — `run_faithfulness_eval()` doesn't accept 5 positional
+arguments yet.
+
+Now update `backend/evals/faithfulness.py`:
+
+```python
+# backend/evals/faithfulness.py
+from __future__ import annotations
+
+from api.answer import answer_stream
+
+from .harness import GoldenQuestion
+
+# A refusal is a correct answer when the corpus does not cover the question
+# (design §10), so "answered" is measured, never assumed to be the goal.
+_REFUSALS = ("do not contain", "does not contain", "not covered", "cannot answer")
+
+
+def run_faithfulness_eval(
+    conn, embedder, generator, company_detector, questions: list[GoldenQuestion]
+) -> dict:
+    """Full /ask path per golden question: % citations verified, % answered,
+    and whether verified citations actually land on the gold sentences.
+
+    Each question is scoped to its own known ticker explicitly (not run
+    through auto-detection) -- this measures the same thing it always has,
+    just through query decomposition's new explicit-tickers path rather
+    than the old single ticker= keyword.
+    """
+    answered = 0
+    unverified_answers = 0
+    total = 0
+    verified = 0
+    gold_hits = 0
+    for question in questions:
+        text_parts: list[str] = []
+        citations: list[dict] = []
+        for event in answer_stream(
+            conn,
+            embedder,
+            generator,
+            company_detector,
+            question.question,
+            tickers=[question.ticker],
+        ):
+            if event.name == "token":
+                text_parts.append(event.data["text"])
+            elif event.name == "citation":
+                citations.append(event.data)
+            elif event.name == "done":
+                unverified_answers += int(event.data["unverified_answer"])
+            elif event.name == "error":
+                citations = []
+                break
+        answer = "".join(text_parts).lower()
+        if answer and not any(phrase in answer for phrase in _REFUSALS):
+            answered += 1
+        total += len(citations)
+        verified += sum(c["verified"] for c in citations)
+        gold_hits += any(
+            c["verified"]
+            and c["accession"] == question.accession
+            and set(c["sids"]) & set(question.gold_sids)
+            for c in citations
+        )
+    n = len(questions) or 1
+    return {
+        "questions": len(questions),
+        "answered_rate": round(answered / n, 4),
+        "citations_total": total,
+        "verified_rate": round(verified / total, 4) if total else 0.0,
+        "gold_sid_hit_rate": round(gold_hits / n, 4),
+        "unverified_answers": unverified_answers,
+    }
+```
+
+Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_evals.py -k faithfulness -v`
+Expected: PASS
+
+- [ ] **Step 7: Wire the real detectors into `python -m evals run`**
 
 ```python
 # backend/evals/__main__.py
 # In cmd_run, replace:
 #         embedder = Embedder()
 #         metrics = harness.run_retrieval_eval(conn, embedder, questions)
+#         if not args.retrieval_only:
+#             from api.generate import AnthropicGenerator
+#
+#             from . import faithfulness
+#
+#             metrics |= faithfulness.run_faithfulness_eval(
+#                 conn, embedder, AnthropicGenerator(), questions
+#             )
 # with:
         embedder = Embedder()
         from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
 
+        company_detector = AnthropicCompanyDetector()
         metrics = harness.run_retrieval_eval(
             conn,
             embedder,
             questions,
-            company_detector=AnthropicCompanyDetector(),
+            company_detector=company_detector,
             period_detector=AnthropicPeriodDetector(),
         )
+        if not args.retrieval_only:
+            from api.generate import AnthropicGenerator
+
+            from . import faithfulness
+
+            metrics |= faithfulness.run_faithfulness_eval(
+                conn, embedder, AnthropicGenerator(), company_detector, questions
+            )
 ```
 
-Leave the `--debug` branch (the vector/lexical print loop above this) and
-everything below (`if not args.retrieval_only: ...`) untouched.
+`company_detector` is created once and reused for both the retrieval eval's
+targeted arm and the faithfulness eval, rather than constructing two
+identical instances. Leave the `--debug` branch (the vector/lexical print
+loop above this) untouched.
 
-- [ ] **Step 7: Run the full suite and lint, then commit**
+- [ ] **Step 8: Run the full suite and lint, then commit**
 
 ```bash
 cd backend
 .venv/Scripts/python.exe -m pytest -q
-.venv/Scripts/python.exe -m ruff check evals/harness.py evals/__main__.py tests/test_evals.py
-git add evals/golden.yaml evals/harness.py evals/__main__.py tests/test_evals.py
+.venv/Scripts/python.exe -m ruff check evals/harness.py evals/faithfulness.py evals/__main__.py tests/test_evals.py
+git add evals/golden.yaml evals/harness.py evals/faithfulness.py evals/__main__.py tests/test_evals.py
 git commit -m "feat: add comparison rows and the targeted eval arm"
 ```
 
@@ -1511,3 +1646,15 @@ the controller will decide whether that's a fix-now issue or a follow-up.
   principle run in parallel with Task 6, but is sequenced after it here
   since Task 7's manual verification benefits from everything else being
   done first.
+- **Amendment made mid-execution, after Task 4's review (not caught during
+  the original self-review pass):** `backend/evals/faithfulness.py` also
+  calls `answer_stream` directly, with the pre-Task-3 signature. This plan
+  originally scoped only `app.py` and `test_answer.py` as `answer_stream`'s
+  callers needing updates; `faithfulness.py` was missed because Task 7's own
+  verification runs `evals run --retrieval-only`, which never exercises the
+  faithfulness path. A task reviewer flagged it as an out-of-scope
+  observation during Task 4's review; grepping the whole `backend/` tree for
+  `answer_stream` afterward confirmed it was the only remaining stale call
+  site (plus one now-misaligned positional-argument test call in
+  `test_evals.py`). Folded into Task 6 (Step 6) since it's the first task
+  after Task 3 that touches anything under `evals/`.
