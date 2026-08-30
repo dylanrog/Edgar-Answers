@@ -29,9 +29,14 @@ export function AskForm({
       .catch(() => setCompanies([]));
   }, []);
 
-  function handleTickersChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const selected = Array.from(event.target.selectedOptions, (option) => option.value);
-    setTickers(selected.slice(0, MAX_TICKERS));
+  function toggleTicker(ticker: string) {
+    setTickers((current) => {
+      if (current.includes(ticker)) {
+        return current.filter((selected) => selected !== ticker);
+      }
+      if (current.length >= MAX_TICKERS) return current;
+      return [...current, ticker];
+    });
   }
 
   return (
@@ -53,21 +58,41 @@ export function AskForm({
         value={question}
         onChange={(event) => setQuestion(event.target.value)}
       />
-      <div className="flex gap-2">
-        <select
-          aria-label="Companies"
-          multiple
-          size={4}
-          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300"
-          value={tickers}
-          onChange={handleTickersChange}
-        >
-          {companies.map((company) => (
-            <option key={company.cik} value={company.ticker}>
+      <div className="flex flex-wrap items-center gap-1">
+        {companies.map((company) => {
+          const selected = tickers.includes(company.ticker);
+          const atCap = !selected && tickers.length >= MAX_TICKERS;
+          return (
+            <button
+              key={company.cik}
+              type="button"
+              aria-pressed={selected}
+              disabled={atCap}
+              onClick={() => toggleTicker(company.ticker)}
+              className={
+                "rounded border px-2 py-1 font-mono text-xs transition-colors " +
+                (selected
+                  ? "border-blue-600 bg-blue-700 text-white"
+                  : atCap
+                    ? "cursor-not-allowed border-slate-800 bg-slate-900 text-slate-600"
+                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500")
+              }
+            >
               {company.ticker}
-            </option>
-          ))}
-        </select>
+            </button>
+          );
+        })}
+        {tickers.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setTickers([])}
+            className="ml-1 text-xs text-slate-500 underline hover:text-slate-300"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <div className="flex gap-2">
         <select
           aria-label="Form type"
           className="rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300"
