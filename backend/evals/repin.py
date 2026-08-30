@@ -125,7 +125,13 @@ def propose(conn, questions: list[GoldenQuestion], snap: dict) -> list[Proposal]
 
 
 def apply_to_golden(path: Path, proposals: list[Proposal]) -> int:
-    """Rewrite gold_sids for resolved proposals only. Returns how many changed."""
+    """Rewrite gold_sids for resolved proposals only. Returns how many changed.
+
+    Round-trips the whole file through yaml.safe_dump, which preserves every
+    entry's fields (including `group`) but drops all comments -- including
+    any rationale notes written directly into golden.yaml. If this is ever
+    run, re-add any deleted comments by hand afterward.
+    """
     entries = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or []
     by_id = {p.question_id: p for p in proposals if p.resolved}
     changed = 0

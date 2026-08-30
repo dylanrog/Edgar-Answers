@@ -19,6 +19,10 @@
 # row of that table (q006, q007, q009 carry several sids for this reason).
 # gold_sid_hit_rate from before this re-pin is not comparable to any run
 # after it: the sids it scores against were redefined by this change.
+#
+# The set grew from 16 to 20 questions with the addition of the qc001 and
+# qc002 comparison groups (query decomposition), so recall@10 numbers from
+# before this change are not comparable on denominator alone either.
 
 - id: q001
   question: How did Apple's net sales in the Americas segment change during fiscal
