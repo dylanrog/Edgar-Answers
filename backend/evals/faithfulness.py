@@ -10,10 +10,16 @@ _REFUSALS = ("do not contain", "does not contain", "not covered", "cannot answer
 
 
 def run_faithfulness_eval(
-    conn, embedder, generator, questions: list[GoldenQuestion]
+    conn, embedder, generator, company_detector, questions: list[GoldenQuestion]
 ) -> dict:
     """Full /ask path per golden question: % citations verified, % answered,
-    and whether verified citations actually land on the gold sentences."""
+    and whether verified citations actually land on the gold sentences.
+
+    Each question is scoped to its own known ticker explicitly (not run
+    through auto-detection) -- this measures the same thing it always has,
+    just through query decomposition's new explicit-tickers path rather
+    than the old single ticker= keyword.
+    """
     answered = 0
     unverified_answers = 0
     total = 0
@@ -26,8 +32,9 @@ def run_faithfulness_eval(
             conn,
             embedder,
             generator,
+            company_detector,
             question.question,
-            ticker=question.ticker,
+            tickers=[question.ticker],
         ):
             if event.name == "token":
                 text_parts.append(event.data["text"])

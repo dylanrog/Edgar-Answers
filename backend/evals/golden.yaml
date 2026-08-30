@@ -125,3 +125,35 @@
   accession: 0000320193-24-000123
   section: item7
   gold_sids: [737]
+- id: qc001a
+  group: qc001
+  question: Compare Apple's and Microsoft's research and development spending
+    in their most recent fiscal year.
+  ticker: AAPL
+  accession: 0000320193-24-000123
+  section: item7
+  gold_sids: [767]
+- id: qc001b
+  group: qc001
+  question: Compare Apple's and Microsoft's research and development spending
+    in their most recent fiscal year.
+  ticker: MSFT
+  accession: 0001193125-26-323660
+  section: item7
+  gold_sids: [1340]
+- id: qc002a
+  group: qc002
+  question: Compare Microsoft's research and development spending to Amazon's
+    technology and infrastructure spending in their most recent annual reports.
+  ticker: MSFT
+  accession: 0001193125-26-323660
+  section: item7
+  gold_sids: [1340]
+- id: qc002b
+  group: qc002
+  question: Compare Microsoft's research and development spending to Amazon's
+    technology and infrastructure spending in their most recent annual reports.
+  ticker: AMZN
+  accession: 0001018724-26-000004
+  section: other
+  gold_sids: [798]

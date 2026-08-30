@@ -15,6 +15,7 @@ from evals.harness import GoldenQuestion
 from tests.fakes import FakeEmbedder, StubCompanyDetector
 
 from api.retrieval import RetrievedChunk
+from api.targets import Target
 
 
 def chunk(accession, sid_start, sid_end):
@@ -221,7 +222,7 @@ def test_faithfulness_metrics_are_computed_from_the_event_stream(monkeypatch):
         lambda *a, **k: (FakeEvent(n, d) for n, d in events),
     )
 
-    metrics = run_faithfulness_eval(None, None, None, [question])
+    metrics = run_faithfulness_eval(None, None, None, None, [question])
     assert metrics["questions"] == 1
     assert metrics["citations_total"] == 2
     assert metrics["verified_rate"] == 0.5
@@ -273,3 +274,77 @@ def test_run_entity_resolution_eval_ignores_ticker_order():
     detector = StubCompanyDetector({"Compare A and B.": ["AMZN", "AAPL"]})
     metrics = run_entity_resolution_eval(detector, [], cases)
     assert metrics["accuracy"] == 1.0
+
+
+def test_load_golden_defaults_group_to_the_entrys_own_id(tmp_path):
+    path = tmp_path / "golden.yaml"
+    path.write_text(
+        "- id: q001\n"
+        "  question: What were net sales?\n"
+        "  ticker: AAPL\n"
+        '  accession: "0000320193-24-000123"\n'
+        "  section: item7\n"
+        "  gold_sids: [612]\n",
+        encoding="utf-8",
+    )
+    questions = harness.load_golden(path)
+    assert questions[0].group == "q001"
+
+
+def test_load_golden_reads_an_explicit_group(tmp_path):
+    path = tmp_path / "golden.yaml"
+    path.write_text(
+        "- id: qc001a\n"
+        "  group: qc001\n"
+        "  question: Compare X and Y.\n"
+        "  ticker: AAPL\n"
+        '  accession: "ACC-1"\n'
+        "  section: item7\n"
+        "  gold_sids: [1]\n",
+        encoding="utf-8",
+    )
+    questions = harness.load_golden(path)
+    assert questions[0].group == "qc001"
+
+
+def test_targeted_arm_dedupes_by_group_and_scores_each_sibling_row(monkeypatch):
+    from tests.fakes import StubCompanyDetector
+
+    a = harness.GoldenQuestion("qc001a", "Compare X and Y.", "AAPL", "ACC-A", "item7", [1], "qc001")
+    b = harness.GoldenQuestion("qc001b", "Compare X and Y.", "MSFT", "ACC-M", "item7", [2], "qc001")
+
+    resolve_calls = []
+    retrieve_calls = []
+
+    def fake_resolve_targets(
+        conn, question, *, explicit_tickers, company_detector, period_detector=None
+    ):
+        resolve_calls.append(question)
+        return [Target("AAPL", None), Target("MSFT", None)]
+
+    def fake_retrieve_for_targets(conn, embedder, question, targets, *, k_final, form_type=None):
+        retrieve_calls.append(question)
+        return [chunk("ACC-A", 0, 5), chunk("ACC-M", 0, 5)]
+
+    # run_retrieval_eval always computes the scoped + unfiltered arms too, so
+    # the real retrieve() (which would call embedder.embed_query on None)
+    # needs a stand-in even though this test only asserts on targeted_*.
+    monkeypatch.setattr("evals.harness.retrieve", lambda *a, **k: [])
+    monkeypatch.setattr("evals.harness.resolve_targets", fake_resolve_targets)
+    monkeypatch.setattr("evals.harness.retrieve_for_targets", fake_retrieve_for_targets)
+
+    metrics = harness.run_retrieval_eval(
+        None, None, [a, b], company_detector=StubCompanyDetector()
+    )
+    assert resolve_calls == ["Compare X and Y."]  # deduped: one group, one resolve call
+    assert retrieve_calls == ["Compare X and Y."]
+    assert metrics["targeted_recall@10"] == 1.0
+    assert metrics["targeted_misses@10"] == []
+
+
+def test_targeted_arm_is_skipped_when_no_company_detector_is_given(monkeypatch):
+    # Same reason as above: the scoped + unfiltered arms still run even when
+    # company_detector is omitted, so retrieve() needs a stand-in.
+    monkeypatch.setattr("evals.harness.retrieve", lambda *a, **k: [])
+    metrics = harness.run_retrieval_eval(None, None, [GOLDEN])
+    assert "targeted_recall@10" not in metrics

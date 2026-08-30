@@ -24,14 +24,23 @@ def cmd_run(args) -> None:
                 print("  lexical:", [(r[1], r[5], r[6]) for r in lex])
             return
         embedder = Embedder()
-        metrics = harness.run_retrieval_eval(conn, embedder, questions)
+        from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
+
+        company_detector = AnthropicCompanyDetector()
+        metrics = harness.run_retrieval_eval(
+            conn,
+            embedder,
+            questions,
+            company_detector=company_detector,
+            period_detector=AnthropicPeriodDetector(),
+        )
         if not args.retrieval_only:
             from api.generate import AnthropicGenerator
 
             from . import faithfulness
 
             metrics |= faithfulness.run_faithfulness_eval(
-                conn, embedder, AnthropicGenerator(), questions
+                conn, embedder, AnthropicGenerator(), company_detector, questions
             )
     for key, value in metrics.items():
         print(f"{key}: {value}")
