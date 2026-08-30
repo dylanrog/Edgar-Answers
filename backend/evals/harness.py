@@ -85,7 +85,8 @@ def _score(conn, embedder, questions, *, ks, k_each: int, scoped: bool) -> dict:
 
 
 def _score_targeted(
-    conn, embedder, questions, *, ks, k_each: int = 20, company_detector, period_detector=None
+    conn, embedder, questions, *, ks, k_each: int = 20,
+    company_detector, period_detector=None, query_rewriter=None,
 ) -> dict:
     """Recall over the real resolve_targets + retrieve_for_targets pipeline.
 
@@ -105,6 +106,7 @@ def _score_targeted(
                 explicit_tickers=None,
                 company_detector=company_detector,
                 period_detector=period_detector,
+                query_rewriter=query_rewriter,
             )
             chunks_by_group[question.group] = retrieve_for_targets(
                 conn, embedder, question.question, targets, k_final=top_k, k_each=k_each,
@@ -132,6 +134,7 @@ def run_retrieval_eval(
     k_each: int = 20,
     company_detector=None,
     period_detector=None,
+    query_rewriter=None,
 ) -> dict:
     """Score retrieval on up to three arms: scoped, unfiltered, and targeted.
 
@@ -143,7 +146,8 @@ def run_retrieval_eval(
     ten slots. The targeted arm (only computed when `company_detector` is
     given, since it makes a live LLM call) measures the real query-decomposition
     pipeline: does resolve_targets + retrieve_for_targets actually fix what
-    unfiltered gets wrong.
+    unfiltered gets wrong. `query_rewriter` is optional and only changes
+    what happens inside that targeted arm.
     """
     metrics: dict = {"questions": len(questions), "k_each": k_each}
     metrics |= _score(conn, embedder, questions, ks=ks, k_each=k_each, scoped=True)
@@ -158,6 +162,7 @@ def run_retrieval_eval(
             k_each=k_each,
             company_detector=company_detector,
             period_detector=period_detector,
+            query_rewriter=query_rewriter,
         )
     return metrics
 

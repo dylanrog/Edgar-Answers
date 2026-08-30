@@ -25,15 +25,18 @@ def cmd_run(args) -> None:
             return
         embedder = Embedder()
         from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
+        from api.rewrite import AnthropicQueryRewriter
 
         company_detector = AnthropicCompanyDetector()
         period_detector = AnthropicPeriodDetector()
+        query_rewriter = AnthropicQueryRewriter()
         metrics = harness.run_retrieval_eval(
             conn,
             embedder,
             questions,
             company_detector=company_detector,
             period_detector=period_detector,
+            query_rewriter=query_rewriter,
         )
         if not args.retrieval_only:
             from api.generate import AnthropicGenerator
