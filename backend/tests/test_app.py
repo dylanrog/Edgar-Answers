@@ -3,7 +3,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from tests.fakes import FakeEmbedder, StubGenerator
+from tests.fakes import FakeEmbedder, StubCompanyDetector, StubGenerator, StubPeriodDetector
 from tests.test_answer import (  # noqa: F401  (seeded_conn is used as a fixture)
     ACCESSION,
     chunk_id_of,
@@ -30,6 +30,23 @@ def stubbed_client(seeded_conn, monkeypatch):  # noqa: F811
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
     app.dependency_overrides[app_module.get_generator] = lambda: generator
     app.dependency_overrides[app_module.get_embedder] = FakeEmbedder
+    # Overridden with zero-arg lambdas, not the bare classes: FastAPI
+    # re-introspects a dependency override's own signature (it needs to solve
+    # *its* sub-dependencies too), and StubCompanyDetector/StubPeriodDetector
+    # both take an optional `answers` constructor param with no Depends()
+    # marker. FastAPI would treat that as an unembedded body field competing
+    # with AskRequest, and it swallows the whole JSON body to validate against
+    # `dict[str, list[str]]` -- every /ask call 422s with "Input should be a
+    # valid list" on the question/filters fields. Matches why `get_generator`
+    # above is already a lambda rather than passing the class directly.
+    # Suppressing PLW0108 ("unnecessary lambda") below: inlining these to the
+    # bare class is exactly the bug described above, not a style improvement.
+    app.dependency_overrides[app_module.get_company_detector] = (
+        lambda: StubCompanyDetector()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_period_detector] = (
+        lambda: StubPeriodDetector()  # noqa: PLW0108
+    )
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
@@ -87,6 +104,16 @@ def test_ask_passes_filters_through(stubbed_client):
     response = stubbed_client.post(
         "/ask",
         json={"question": "What were net sales?", "filters": {"ticker": "NOPE"}},
+    )
+    done = next(data for name, data in parse_sse(response.text) if name == "done")
+    assert done["chunks_retrieved"] == 0
+
+
+@pytest.mark.db
+def test_ask_passes_the_new_tickers_filter_through(stubbed_client):
+    response = stubbed_client.post(
+        "/ask",
+        json={"question": "What were net sales?", "filters": {"tickers": ["NOPE"]}},
     )
     done = next(data for name, data in parse_sse(response.text) if name == "done")
     assert done["chunks_retrieved"] == 0
