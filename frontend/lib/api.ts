@@ -3,7 +3,7 @@ import type { Company, Filing, SSEEvent } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-export type AskFilters = { ticker?: string; form_type?: string };
+export type AskFilters = { ticker?: string; tickers?: string[]; form_type?: string };
 
 /**
  * Stream POST /ask as decoded SSE events.

@@ -6,6 +6,9 @@ import { fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import type { Company } from "@/lib/types";
 
+// Matches MAX_COMPANIES in backend/src/api/detect.py.
+const MAX_TICKERS = 4;
+
 export function AskForm({
   disabled,
   onSubmit,
@@ -14,7 +17,7 @@ export function AskForm({
   onSubmit: (question: string, filters: AskFilters) => void;
 }) {
   const [question, setQuestion] = useState("");
-  const [ticker, setTicker] = useState("");
+  const [tickers, setTickers] = useState<string[]>([]);
   const [formType, setFormType] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
 
@@ -26,6 +29,11 @@ export function AskForm({
       .catch(() => setCompanies([]));
   }, []);
 
+  function handleTickersChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const selected = Array.from(event.target.selectedOptions, (option) => option.value);
+    setTickers(selected.slice(0, MAX_TICKERS));
+  }
+
   return (
     <form
       className="mb-6 flex flex-col gap-2"
@@ -33,7 +41,7 @@ export function AskForm({
         event.preventDefault();
         if (!question.trim()) return;
         onSubmit(question.trim(), {
-          ticker: ticker || undefined,
+          tickers: tickers.length > 0 ? tickers : undefined,
           form_type: formType || undefined,
         });
       }}
@@ -47,12 +55,13 @@ export function AskForm({
       />
       <div className="flex gap-2">
         <select
-          aria-label="Company"
+          aria-label="Companies"
+          multiple
+          size={4}
           className="rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300"
-          value={ticker}
-          onChange={(event) => setTicker(event.target.value)}
+          value={tickers}
+          onChange={handleTickersChange}
         >
-          <option value="">All companies</option>
           {companies.map((company) => (
             <option key={company.cik} value={company.ticker}>
               {company.ticker}
