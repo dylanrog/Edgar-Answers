@@ -27,12 +27,13 @@ def cmd_run(args) -> None:
         from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
 
         company_detector = AnthropicCompanyDetector()
+        period_detector = AnthropicPeriodDetector()
         metrics = harness.run_retrieval_eval(
             conn,
             embedder,
             questions,
             company_detector=company_detector,
-            period_detector=AnthropicPeriodDetector(),
+            period_detector=period_detector,
         )
         if not args.retrieval_only:
             from api.generate import AnthropicGenerator
@@ -40,7 +41,8 @@ def cmd_run(args) -> None:
             from . import faithfulness
 
             metrics |= faithfulness.run_faithfulness_eval(
-                conn, embedder, AnthropicGenerator(), company_detector, questions
+                conn, embedder, AnthropicGenerator(), company_detector, questions,
+                period_detector=period_detector,
             )
     for key, value in metrics.items():
         print(f"{key}: {value}")
