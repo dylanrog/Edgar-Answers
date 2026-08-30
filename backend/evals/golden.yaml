@@ -125,6 +125,19 @@
   accession: 0000320193-24-000123
   section: item7
   gold_sids: [737]
+# qc001/qc002 (added by the query-decomposition plan): these test whether
+# retrieval surfaces BOTH companies' content for a comparison question, not
+# whether the specific pinned gold_sids are what a comparison-phrased query's
+# retrieval ranks highest within each company's own scope. A "miss" under the
+# targeted_* arm here does not mean company decomposition failed -- a live,
+# fully-cited, fully-verified answer for both qc001 and qc002 is recorded in
+# this branch's history, confirming both companies' real content reaches the
+# model. What's missing is retrieval-ranking precision for comparison-phrased
+# questions, which is design.md §14's already-backlogged section-targeted
+# retrieval / reranker work -- explicitly out of scope for this plan. Do not
+# "fix" a miss here by re-pinning to whatever a single run happens to
+# retrieve, or by tuning ranking to chase a better score.
+
 - id: qc001a
   group: qc001
   question: Compare Apple's and Microsoft's research and development spending
