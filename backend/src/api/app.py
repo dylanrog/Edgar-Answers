@@ -23,6 +23,7 @@ from .detect import (
     PeriodDetector,
 )
 from .generate import AnthropicGenerator, Generator
+from .rewrite import AnthropicQueryRewriter, QueryRewriter
 
 # Before anything reads os.environ below. This module is the process entry
 # point under uvicorn, so loading here is the equivalent of a main().
@@ -85,6 +86,10 @@ def get_period_detector() -> PeriodDetector:
     return AnthropicPeriodDetector()
 
 
+def get_query_rewriter() -> QueryRewriter:
+    return AnthropicQueryRewriter()
+
+
 def sse(event: AnswerEvent) -> str:
     payload = json.dumps(event.data, separators=(",", ":"))
     return f"event: {event.name}\ndata: {payload}\n\n"
@@ -102,6 +107,7 @@ def ask(
     generator: Generator = Depends(get_generator),
     company_detector: CompanyDetector = Depends(get_company_detector),
     period_detector: PeriodDetector = Depends(get_period_detector),
+    query_rewriter: QueryRewriter = Depends(get_query_rewriter),
 ) -> StreamingResponse:
     # The plural filter wins; a lone legacy singular `ticker` is wrapped into
     # a one-element list so existing single-ticker API callers keep working.
@@ -121,6 +127,7 @@ def ask(
                 tickers=tickers,
                 form_type=request.filters.form_type,
                 period_detector=period_detector,
+                query_rewriter=query_rewriter,
             ):
                 yield sse(event)
 
