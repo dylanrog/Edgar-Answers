@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from . import queries
 from .detect import MAX_COMPANIES, CompanyDetector, PeriodDetector
 from .retrieval import RetrievedChunk, retrieve
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,7 @@ def retrieve_for_targets(
     targets: list[Target],
     *,
     k_final: int = 8,
+    k_each: int = 20,
     form_type: str | None = None,
 ) -> list[RetrievedChunk]:
     """One retrieve() call per target, concatenated -- never re-fused.
@@ -33,7 +37,9 @@ def retrieve_for_targets(
     detected.
     """
     if not targets:
-        return retrieve(conn, embedder, question, k_final=k_final, form_type=form_type)
+        return retrieve(
+            conn, embedder, question, k_final=k_final, k_each=k_each, form_type=form_type
+        )
     chunks: list[RetrievedChunk] = []
     for target in targets:
         chunks.extend(
@@ -42,6 +48,7 @@ def retrieve_for_targets(
                 embedder,
                 question,
                 k_final=k_final,
+                k_each=k_each,
                 ticker=target.ticker,
                 accessions=target.accessions,
                 form_type=form_type,
@@ -78,7 +85,9 @@ def resolve_targets(
     if explicit_tickers:
         tickers: list[str] = []
         for ticker in explicit_tickers:
-            upper = ticker.upper()
+            upper = ticker.strip().upper()
+            if not upper:
+                continue
             if upper not in tickers:
                 tickers.append(upper)
             if len(tickers) == MAX_COMPANIES:
@@ -87,17 +96,24 @@ def resolve_targets(
         companies = queries.load_companies(conn)
         try:
             tickers = company_detector.detect(question, companies)
-        except Exception:  # noqa: BLE001 -- detector failure degrades to no targets
+        except Exception as exc:  # noqa: BLE001 -- detector failure degrades to no targets
+            logger.warning("company_detector.detect failed, degrading to no targets: %s", exc)
             tickers = []
+        tickers = tickers[:MAX_COMPANIES]
 
     targets = []
     for ticker in tickers:
         accessions = None
         if period_detector is not None:
             filings = queries.load_filings_for_ticker(conn, ticker)
-            try:
-                accessions = period_detector.detect(question, ticker, filings) or None
-            except Exception:  # noqa: BLE001 -- same degrade-safely rationale
-                accessions = None
+            if filings:
+                try:
+                    accessions = period_detector.detect(question, ticker, filings) or None
+                except Exception as exc:  # noqa: BLE001 -- same degrade-safely rationale
+                    logger.warning(
+                        "period_detector.detect failed for %s, degrading to no accessions: %s",
+                        ticker, exc,
+                    )
+                    accessions = None
         targets.append(Target(ticker=ticker, accessions=accessions))
     return targets

@@ -7,7 +7,8 @@ def fake_retrieve_calls(monkeypatch, chunks_by_ticker):
     calls = []
 
     def fake_retrieve(
-        conn, embedder, question, *, k_final, ticker=None, accessions=None, form_type=None
+        conn, embedder, question, *, k_final, k_each=20, ticker=None, accessions=None,
+        form_type=None,
     ):
         calls.append((ticker, accessions))
         return chunks_by_ticker.get(ticker, [])
@@ -39,6 +40,16 @@ def test_explicit_tickers_are_normalized_but_never_dropped_for_being_unknown():
         company_detector=StubCompanyDetector(),
     )
     assert targets == [Target("MSFT", None), Target("NOPE", None)]
+
+
+def test_blank_explicit_tickers_are_skipped_not_treated_as_unscoped():
+    targets = resolve_targets(
+        None,
+        "irrelevant",
+        explicit_tickers=["", "  ", "MSFT"],
+        company_detector=StubCompanyDetector(),
+    )
+    assert targets == [Target("MSFT", None)]
 
 
 def test_explicit_tickers_are_capped_at_max_companies():
