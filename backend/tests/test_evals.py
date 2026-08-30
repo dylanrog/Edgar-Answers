@@ -307,6 +307,29 @@ def test_load_golden_reads_an_explicit_group(tmp_path):
     assert questions[0].group == "qc001"
 
 
+def test_load_golden_rejects_a_group_with_mismatched_question_text(tmp_path):
+    path = tmp_path / "golden.yaml"
+    path.write_text(
+        "- id: qc1a\n"
+        "  group: qc1\n"
+        "  question: Compare X and Y.\n"
+        "  ticker: AAPL\n"
+        '  accession: "ACC-1"\n'
+        "  section: item7\n"
+        "  gold_sids: [1]\n"
+        "- id: qc1b\n"
+        "  group: qc1\n"
+        "  question: A DIFFERENT question entirely.\n"
+        "  ticker: MSFT\n"
+        '  accession: "ACC-2"\n'
+        "  section: item7\n"
+        "  gold_sids: [2]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="qc1"):
+        harness.load_golden(path)
+
+
 def test_targeted_arm_dedupes_by_group_and_scores_each_sibling_row(monkeypatch):
     from tests.fakes import StubCompanyDetector
 
@@ -322,7 +345,9 @@ def test_targeted_arm_dedupes_by_group_and_scores_each_sibling_row(monkeypatch):
         resolve_calls.append(question)
         return [Target("AAPL", None), Target("MSFT", None)]
 
-    def fake_retrieve_for_targets(conn, embedder, question, targets, *, k_final, form_type=None):
+    def fake_retrieve_for_targets(
+        conn, embedder, question, targets, *, k_final, k_each=20, form_type=None
+    ):
         retrieve_calls.append(question)
         return [chunk("ACC-A", 0, 5), chunk("ACC-M", 0, 5)]
 

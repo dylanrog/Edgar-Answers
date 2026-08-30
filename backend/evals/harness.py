@@ -41,6 +41,13 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
             raise ValueError(f"golden entry {entry_id}: gold_sids must be a list of ints")
         group = entry.get("group", entry["id"])
         questions.append(GoldenQuestion(*(entry[f] for f in _REQUIRED), group))
+    by_group: dict[str, str] = {}
+    for question in questions:
+        prior = by_group.setdefault(question.group, question.question)
+        if prior != question.question:
+            raise ValueError(
+                f"golden entries in group {question.group!r} have mismatched question text"
+            )
     return questions
 
 
@@ -78,7 +85,7 @@ def _score(conn, embedder, questions, *, ks, k_each: int, scoped: bool) -> dict:
 
 
 def _score_targeted(
-    conn, embedder, questions, *, ks, company_detector, period_detector=None
+    conn, embedder, questions, *, ks, k_each: int = 20, company_detector, period_detector=None
 ) -> dict:
     """Recall over the real resolve_targets + retrieve_for_targets pipeline.
 
@@ -100,7 +107,7 @@ def _score_targeted(
                 period_detector=period_detector,
             )
             chunks_by_group[question.group] = retrieve_for_targets(
-                conn, embedder, question.question, targets, k_final=top_k
+                conn, embedder, question.question, targets, k_final=top_k, k_each=k_each,
             )
         chunks = chunks_by_group[question.group]
         for k in ks:
@@ -148,6 +155,7 @@ def run_retrieval_eval(
             embedder,
             questions,
             ks=ks,
+            k_each=k_each,
             company_detector=company_detector,
             period_detector=period_detector,
         )
