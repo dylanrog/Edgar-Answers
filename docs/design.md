@@ -187,12 +187,24 @@ tiny runner script. Alembic is deliberate v2 — learn what migrations *are* fir
 
 ## 6. Query path
 
-`POST /ask` with `{question, filters?: {ticker?, form_type?}}`, responding over SSE.
+`POST /ask` with `{question, filters?: {ticker?, tickers?, form_type?}}`, responding
+over SSE. `ticker` is the original single-company filter; `tickers` (plural) is the
+query-decomposition addition for a comparison question naming several companies —
+when both are given, `tickers` wins. Neither is required: when the request omits
+both, `resolve_targets` runs its own company (and, when confident, period)
+detection instead of trusting a client-supplied filter.
 
 The `year` filter is **deferred to the §14 backlog** — `retrieval.retrieve()` takes
 no year parameter and Phase 3 did not add one. Filtering by fiscal year needs a
 decision about whether "year" means `filing_date` or `period_end`, which differ for
 every 10-K; shipping the ambiguity would be worse than not shipping the filter.
+
+Resolving targets adds latency before retrieval even starts: up to one
+company-detection call, plus one period-detection call per resolved company —
+so a 4-company question can take up to 5 sequential Haiku round-trips before the
+first `retrieve()` call runs. The query-decomposition spec accepted this as a
+cost/latency tradeoff for correctness on multi-company questions; it was not
+previously quantified here.
 
 ### 6.1 Retrieve (hybrid)
 
@@ -393,21 +405,23 @@ that caused the original deferral).
 
 **Query decomposition** replaces the former "multi-filing comparison
 questions" entry. The rendering half of that item is built (§7: the sources
-panel and tabbed viewer show an answer resting on several filings). The
-retrieval half is not: one embedding of "how do Apple and Microsoft describe
-supply chain risk" retrieves whichever filer's boilerplate scores highest
-rather than both, so a comparison question is still answered from one company.
-Splitting such a question into per-company retrievals is the v2 work.
+panel and tabbed viewer show an answer resting on several filings). One
+embedding of "how do Apple and Microsoft describe supply chain risk" used to
+retrieve whichever filer's boilerplate scored highest rather than both, so a
+comparison question was answered from one company only.
 
-Three specs now implement this: `docs/superpowers/specs/2026-08-29-entity-resolution-design.md`
-(detecting which corpus companies a question names — implemented, this
-branch), `docs/superpowers/specs/2026-08-29-fiscal-period-handling-design.md`
-(identifying which filing period a question means — detector and retrieval
-filter implemented on this branch, not yet wired into `/ask`'s live query
-path), and
+As of the query-decomposition branch, all three specs in this series are
+implemented: `docs/superpowers/specs/2026-08-29-entity-resolution-design.md`
+(detecting which corpus companies a question names),
+`docs/superpowers/specs/2026-08-29-fiscal-period-handling-design.md`
+(identifying which filing period a question means), and
 `docs/superpowers/specs/2026-08-29-query-decomposition-design.md` (running
-retrieval per resolved company and merging — not yet implemented, depends on
-entity resolution).
+retrieval per resolved company and merging) are all wired into `/ask`'s live
+query path: `resolve_targets` decides which companies (and, when confident,
+which specific filings) a question means, and `retrieve_for_targets` runs one
+retrieval per target and concatenates results — verified against the original
+motivating question (a Microsoft-vs-Amazon comparison that previously
+retrieved 0 Amazon chunks).
 
 **Stock price chart.** Raised (2026-08-28) as filling the blank space under an
 answer with a customizable price chart, with the cited period highlighted on

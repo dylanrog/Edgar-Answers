@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import psycopg
 
 from . import queries
+from .detect import CompanyDetector, PeriodDetector
 from .generate import (
     SYSTEM_PROMPT,
     AnswerSplitter,
@@ -13,7 +14,7 @@ from .generate import (
     build_user_message,
     parse_citations,
 )
-from .retrieval import retrieve
+from .targets import resolve_targets, retrieve_for_targets
 from .verify import VerifiedCitation, verify_citation
 
 
@@ -27,21 +28,25 @@ def answer_stream(
     conn: psycopg.Connection,
     embedder,
     generator: Generator,
+    company_detector: CompanyDetector,
     question: str,
     *,
-    ticker: str | None = None,
+    tickers: list[str] | None = None,
     form_type: str | None = None,
     k_final: int = 8,
+    period_detector: PeriodDetector | None = None,
 ) -> Iterator[AnswerEvent]:
-    """The query path (design §6): retrieve -> generate -> verify -> stream."""
+    """The query path (design §6): resolve targets -> retrieve -> generate -> verify -> stream."""
     try:
-        chunks = retrieve(
+        targets = resolve_targets(
             conn,
-            embedder,
             question,
-            k_final=k_final,
-            ticker=ticker,
-            form_type=form_type,
+            explicit_tickers=tickers,
+            company_detector=company_detector,
+            period_detector=period_detector,
+        )
+        chunks = retrieve_for_targets(
+            conn, embedder, question, targets, k_final=k_final, form_type=form_type
         )
         user_message = build_user_message(question, chunks)
 

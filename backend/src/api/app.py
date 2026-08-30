@@ -16,6 +16,12 @@ from pipeline.env import load_env
 
 from . import queries
 from .answer import AnswerEvent, answer_stream
+from .detect import (
+    AnthropicCompanyDetector,
+    AnthropicPeriodDetector,
+    CompanyDetector,
+    PeriodDetector,
+)
 from .generate import AnthropicGenerator, Generator
 
 # Before anything reads os.environ below. This module is the process entry
@@ -40,6 +46,7 @@ app.add_middleware(
 
 class Filters(BaseModel):
     ticker: str | None = None
+    tickers: list[str] | None = None
     form_type: str | None = None
 
 
@@ -70,6 +77,14 @@ def get_generator() -> Generator:
     return AnthropicGenerator()
 
 
+def get_company_detector() -> CompanyDetector:
+    return AnthropicCompanyDetector()
+
+
+def get_period_detector() -> PeriodDetector:
+    return AnthropicPeriodDetector()
+
+
 def sse(event: AnswerEvent) -> str:
     payload = json.dumps(event.data, separators=(",", ":"))
     return f"event: {event.name}\ndata: {payload}\n\n"
@@ -85,7 +100,15 @@ def ask(
     request: AskRequest,
     embedder: Embedder = Depends(get_embedder),
     generator: Generator = Depends(get_generator),
+    company_detector: CompanyDetector = Depends(get_company_detector),
+    period_detector: PeriodDetector = Depends(get_period_detector),
 ) -> StreamingResponse:
+    # The plural filter wins; a lone legacy singular `ticker` is wrapped into
+    # a one-element list so existing single-ticker API callers keep working.
+    tickers = request.filters.tickers or (
+        [request.filters.ticker] if request.filters.ticker else None
+    )
+
     def events() -> Iterator[str]:
         # A connection per request; pooling is a Phase 5 concern.
         with db.connect() as conn:
@@ -93,9 +116,11 @@ def ask(
                 conn,
                 embedder,
                 generator,
+                company_detector,
                 request.question,
-                ticker=request.filters.ticker,
+                tickers=tickers,
                 form_type=request.filters.form_type,
+                period_detector=period_detector,
             ):
                 yield sse(event)
 
