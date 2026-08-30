@@ -1,4 +1,9 @@
-from api.rewrite import build_rewrite_prompt, parse_rewritten_query
+from api.generate import MODEL
+from api.rewrite import (
+    AnthropicQueryRewriter,
+    build_rewrite_prompt,
+    parse_rewritten_query,
+)
 
 FALLBACK = "Who achieved more growth, Microsoft or Amazon?"
 
@@ -54,3 +59,13 @@ def test_rewrite_prompt_names_the_company_and_the_question():
     )
     assert "MSFT: Microsoft Corporation" in prompt
     assert "Who achieved more growth, Microsoft or Amazon?" in prompt
+
+
+def test_anthropic_query_rewriter_defaults_to_the_shared_model_constant():
+    # MODEL from api/generate.py is the single source of truth for the model
+    # string, and the rewriter is capped at 256 tokens. Constructing the
+    # rewriter touches neither the network nor ANTHROPIC_API_KEY -- the
+    # anthropic import and client live inside .rewrite().
+    rewriter = AnthropicQueryRewriter()
+    assert rewriter.model == MODEL
+    assert rewriter.max_tokens == 256

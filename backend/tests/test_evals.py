@@ -331,18 +331,27 @@ def test_load_golden_rejects_a_group_with_mismatched_question_text(tmp_path):
 
 
 def test_targeted_arm_dedupes_by_group_and_scores_each_sibling_row(monkeypatch):
-    from tests.fakes import StubCompanyDetector
+    from tests.fakes import StubCompanyDetector, StubQueryRewriter
 
     a = harness.GoldenQuestion("qc001a", "Compare X and Y.", "AAPL", "ACC-A", "item7", [1], "qc001")
     b = harness.GoldenQuestion("qc001b", "Compare X and Y.", "MSFT", "ACC-M", "item7", [2], "qc001")
 
     resolve_calls = []
+    resolve_rewriters = []
     retrieve_calls = []
+    rewriter = StubQueryRewriter()
 
     def fake_resolve_targets(
-        conn, question, *, explicit_tickers, company_detector, period_detector=None
+        conn,
+        question,
+        *,
+        explicit_tickers,
+        company_detector,
+        period_detector=None,
+        query_rewriter=None,
     ):
         resolve_calls.append(question)
+        resolve_rewriters.append(query_rewriter)
         return [Target("AAPL", None), Target("MSFT", None)]
 
     def fake_retrieve_for_targets(
@@ -359,9 +368,14 @@ def test_targeted_arm_dedupes_by_group_and_scores_each_sibling_row(monkeypatch):
     monkeypatch.setattr("evals.harness.retrieve_for_targets", fake_retrieve_for_targets)
 
     metrics = harness.run_retrieval_eval(
-        None, None, [a, b], company_detector=StubCompanyDetector()
+        None,
+        None,
+        [a, b],
+        company_detector=StubCompanyDetector(),
+        query_rewriter=rewriter,
     )
     assert resolve_calls == ["Compare X and Y."]  # deduped: one group, one resolve call
+    assert resolve_rewriters == [rewriter]  # the harness threads it through
     assert retrieve_calls == ["Compare X and Y."]
     assert metrics["targeted_recall@10"] == 1.0
     assert metrics["targeted_misses@10"] == []
