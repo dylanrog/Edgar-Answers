@@ -16,6 +16,7 @@ from pipeline.env import load_env
 
 from . import queries
 from .answer import AnswerEvent, answer_stream
+from .conversation import AnthropicConversationRewriter, ConversationRewriter
 from .detect import (
     AnthropicCompanyDetector,
     AnthropicPeriodDetector,
@@ -54,6 +55,7 @@ class Filters(BaseModel):
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=1000)
     filters: Filters = Field(default_factory=Filters)
+    conversation_id: str | None = Field(default=None, max_length=200)
 
     @field_validator("question")
     @classmethod
@@ -61,6 +63,16 @@ class AskRequest(BaseModel):
         if not value.strip():
             raise ValueError("question must not be blank")
         return value.strip()
+
+    @field_validator("conversation_id")
+    @classmethod
+    def blank_conversation_id_is_none(cls, value: str | None) -> str | None:
+        # A blank/whitespace id would be saved by answer_stream but never
+        # loaded back (its load guard is falsy on ""), leaving orphan rows.
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
 
 @lru_cache(maxsize=1)
@@ -90,6 +102,10 @@ def get_query_rewriter() -> QueryRewriter:
     return AnthropicQueryRewriter()
 
 
+def get_conversation_rewriter() -> ConversationRewriter:
+    return AnthropicConversationRewriter()
+
+
 def sse(event: AnswerEvent) -> str:
     payload = json.dumps(event.data, separators=(",", ":"))
     return f"event: {event.name}\ndata: {payload}\n\n"
@@ -108,6 +124,7 @@ def ask(
     company_detector: CompanyDetector = Depends(get_company_detector),
     period_detector: PeriodDetector = Depends(get_period_detector),
     query_rewriter: QueryRewriter = Depends(get_query_rewriter),
+    conversation_rewriter: ConversationRewriter = Depends(get_conversation_rewriter),
 ) -> StreamingResponse:
     # The plural filter wins; a lone legacy singular `ticker` is wrapped into
     # a one-element list so existing single-ticker API callers keep working.
@@ -128,6 +145,8 @@ def ask(
                 form_type=request.filters.form_type,
                 period_detector=period_detector,
                 query_rewriter=query_rewriter,
+                conversation_id=request.conversation_id,
+                conversation_rewriter=conversation_rewriter,
             ):
                 yield sse(event)
 
