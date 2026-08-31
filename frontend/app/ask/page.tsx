@@ -2,54 +2,78 @@
 
 import { useMemo, useState } from "react";
 
-import { AnswerStream } from "@/components/answer-stream";
 import { AskForm } from "@/components/ask-form";
+import { ConversationTurn } from "@/components/conversation-turn";
 import { FilingTabs } from "@/components/filing-tabs";
 import { FilingViewer } from "@/components/filing-viewer";
-import { SourcesPanel } from "@/components/sources-panel";
 import { initialAnswerState, reduceAnswer } from "@/lib/answer";
 import type { AnswerState } from "@/lib/answer";
 import { askStream } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
-import { groupSources } from "@/lib/sources";
+import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
 import { closeTab, initialTabState, openTab } from "@/lib/tabs";
 import type { Citation } from "@/lib/types";
 
+type TurnView = { question: string; state: AnswerState };
+
 export default function AskPage() {
-  const [answer, setAnswer] = useState<AnswerState>(initialAnswerState);
+  const [turns, setTurns] = useState<TurnView[]>([]);
   const [tabs, setTabs] = useState(initialTabState);
   const [sids, setSids] = useState<Record<string, number[]>>({});
 
-  const groups = useMemo(() => groupSources(answer.citations), [answer.citations]);
-  const labels = useMemo(
-    () =>
-      // The year disambiguates same-company, same-form-type filings: without
-      // it, three of a company's 10-Ks render three identically-labelled tabs.
-      Object.fromEntries(
-        groups.map((g) => [
-          g.accession,
-          `${g.ticker} ${g.form_type} ${g.filing_date.slice(0, 4)}`,
-        ]),
-      ),
-    [groups],
-  );
+  const streaming = turns.at(-1)?.state.status === "streaming";
+
+  // accession -> tab label, across every turn. The year disambiguates
+  // same-company, same-form-type filings that would otherwise render
+  // identically-labelled tabs.
+  const labels = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const turn of turns) {
+      for (const citation of turn.state.citations.values()) {
+        if (citation.accession) {
+          out[citation.accession] =
+            `${citation.ticker} ${citation.form_type} ${citation.filing_date.slice(0, 4)}`;
+        }
+      }
+    }
+    return out;
+  }, [turns]);
+
+  function patchLastTurn(update: (state: AnswerState) => AnswerState) {
+    setTurns((previous) => {
+      if (previous.length === 0) return previous;
+      const next = [...previous];
+      const last = next[next.length - 1];
+      next[next.length - 1] = { ...last, state: update(last.state) };
+      return next;
+    });
+  }
 
   async function ask(question: string, filters: AskFilters) {
-    setAnswer({ ...initialAnswerState, status: "streaming" });
-    setTabs(initialTabState);
-    setSids({});
+    const conversationId = getOrCreateConversationId();
+    setTurns((previous) => [
+      ...previous,
+      { question, state: { ...initialAnswerState, status: "streaming" } },
+    ]);
     try {
-      for await (const event of askStream(question, filters)) {
-        setAnswer((previous) => reduceAnswer(previous, event));
+      for await (const event of askStream(question, filters, conversationId)) {
+        patchLastTurn((state) => reduceAnswer(state, event));
       }
     } catch (error) {
-      setAnswer((previous) => ({
-        ...previous,
+      patchLastTurn((state) => ({
+        ...state,
         status: "error",
         errorMessage:
           error instanceof Error ? error.message : "Could not reach the API.",
       }));
     }
+  }
+
+  function newConversation() {
+    startNewConversation();
+    setTurns([]);
+    setTabs(initialTabState);
+    setSids({});
   }
 
   function select(citation: Citation) {
@@ -63,12 +87,33 @@ export default function AskPage() {
   return (
     <main className="grid h-screen grid-cols-[minmax(0,5fr)_minmax(0,7fr)] bg-slate-950 text-slate-200">
       <section className="overflow-y-auto border-r border-slate-800 p-5">
-        <h1 className="mb-4 font-mono text-sm font-bold tracking-wide text-slate-100">
-          EDGAR ANSWERS
-        </h1>
-        <AskForm disabled={answer.status === "streaming"} onSubmit={ask} />
-        <AnswerStream state={answer} onSelect={select} />
-        <SourcesPanel groups={groups} onSelect={select} />
+        <div className="mb-4 flex items-baseline justify-between">
+          <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">
+            EDGAR ANSWERS
+          </h1>
+          {turns.length > 0 && (
+            <button
+              type="button"
+              onClick={newConversation}
+              className="text-xs text-slate-500 underline hover:text-slate-300"
+            >
+              New conversation
+            </button>
+          )}
+        </div>
+        <AskForm disabled={streaming} onSubmit={ask} />
+        {turns.length === 0 ? (
+          <p className="text-slate-500">Ask a question about a filing.</p>
+        ) : (
+          turns.map((turn, index) => (
+            <ConversationTurn
+              key={index}
+              question={turn.question}
+              state={turn.state}
+              onSelect={select}
+            />
+          ))
+        )}
       </section>
 
       <section className="flex flex-col overflow-hidden">
