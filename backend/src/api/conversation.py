@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
+import re
 from dataclasses import dataclass
+from typing import Protocol
 
 import psycopg
+
+from .generate import MODEL
 
 
 @dataclass(frozen=True)
@@ -63,3 +69,107 @@ def save_turn(
             ),
         )
     conn.commit()
+
+
+_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
+_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
+_ANSWER_PREVIEW_CHARS = 400
+
+
+class ConversationRewriter(Protocol):
+    """The LLM, narrowed to the one thing conversation memory needs."""
+
+    def resolve(self, question: str, history: list[Turn]) -> str:
+        """Return a standalone version of `question`, given the prior turns."""
+        ...
+
+
+def parse_resolved_question(raw: str, fallback: str) -> str:
+    """Defensive parse of a rewriter's raw response into a standalone question.
+
+    Same contract as the rest of the detection layer: malformed JSON, no
+    JSON object, a missing/non-string `question` field, or a blank question
+    all degrade to `fallback` (the follow-up exactly as typed) -- a
+    resolution failure must never make the question less answerable than not
+    resolving it.
+    """
+    text = _FENCE.sub("", raw.strip())
+    match = _OBJECT.search(text)
+    if match is None:
+        return fallback
+    try:
+        payload = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        return fallback
+    question = payload.get("question")
+    if not isinstance(question, str) or not question.strip():
+        return fallback
+    return question.strip()
+
+
+RESOLUTION_SYSTEM_PROMPT = (
+    """You rewrite a follow-up question into a standalone question, using the
+conversation so far.
+
+You will be given the prior turns (each as the user's question and a short
+preview of the answer, sometimes annotated with the companies it discussed)
+and a new follow-up question. If the follow-up depends on the prior turns --
+a pronoun ("it", "they", "that"), an implied company or time period, an
+ellipsis ("and last year?"), or a contrast ("what about Microsoft
+instead") -- rewrite it to be fully self-contained. If the follow-up
+already stands on its own, return it unchanged.
+
+Respond with strict JSON and nothing else:
+
+{"question": "What was Apple's revenue in fiscal 2023?"}
+
+Rules:
+1. Preserve the user's intent exactly. Do not add a fact, number, company,
+   or period that is not already in the conversation or the follow-up.
+2. Only use company names or periods that appear in the prior turns or the
+   follow-up.
+3. If you cannot tell what the follow-up refers to, return it unchanged.
+"""
+)
+
+
+def build_resolution_prompt(question: str, history: list[Turn]) -> str:
+    blocks = []
+    for i, turn in enumerate(history, start=1):
+        answer = turn.answer_text[:_ANSWER_PREVIEW_CHARS]
+        if len(turn.answer_text) > _ANSWER_PREVIEW_CHARS:
+            answer += "…"
+        block = f"Turn {i}:\nQ: {turn.question}\nA: {answer}"
+        if turn.tickers:
+            block += f"\n(companies discussed: {', '.join(turn.tickers)})"
+        blocks.append(block)
+    joined = "\n\n".join(blocks)
+    return f"Conversation so far:\n{joined}\n\nFollow-up: {question}"
+
+
+@dataclass
+class AnthropicConversationRewriter:
+    model: str = MODEL
+    max_tokens: int = 256
+    api_key: str | None = None
+
+    def resolve(self, question: str, history: list[Turn]) -> str:
+        import anthropic
+
+        client = anthropic.Anthropic(
+            api_key=self.api_key or os.environ["ANTHROPIC_API_KEY"]
+        )
+        message = client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            temperature=0,
+            system=RESOLUTION_SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": build_resolution_prompt(question, history),
+                }
+            ],
+        )
+        raw = "".join(block.text for block in message.content if block.type == "text")
+        return parse_resolved_question(raw, question)
