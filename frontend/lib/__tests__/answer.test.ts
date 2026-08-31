@@ -81,3 +81,16 @@ test("reduce does not mutate the state it was given", () => {
   expect(initialAnswerState.prose).toBe("");
   expect(next).not.toBe(initialAnswerState);
 });
+
+test("a resolved event records the standalone question", () => {
+  const state = feed([
+    ["resolved", { standalone_question: "What was Apple revenue in fiscal 2023?" }],
+    ["token", { text: "It was 383 billion." }],
+  ]);
+  expect(state.standaloneQuestion).toBe("What was Apple revenue in fiscal 2023?");
+  expect(state.prose).toBe("It was 383 billion.");
+});
+
+test("standaloneQuestion starts null", () => {
+  expect(initialAnswerState.standaloneQuestion).toBeNull();
+});

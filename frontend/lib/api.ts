@@ -15,12 +15,13 @@ export type AskFilters = { ticker?: string; tickers?: string[]; form_type?: stri
 export async function* askStream(
   question: string,
   filters: AskFilters = {},
+  conversationId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<SSEEvent> {
   const response = await fetch(`${API_URL}/ask`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ question, filters }),
+    body: JSON.stringify({ question, filters, conversation_id: conversationId }),
     signal,
   });
   if (!response.ok || response.body === null) {
