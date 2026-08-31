@@ -3,7 +3,13 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from tests.fakes import FakeEmbedder, StubCompanyDetector, StubGenerator, StubPeriodDetector
+from tests.fakes import (
+    FakeEmbedder,
+    StubCompanyDetector,
+    StubGenerator,
+    StubPeriodDetector,
+    StubQueryRewriter,
+)
 from tests.test_answer import (  # noqa: F401  (seeded_conn is used as a fixture)
     ACCESSION,
     chunk_id_of,
@@ -46,6 +52,9 @@ def stubbed_client(seeded_conn, monkeypatch):  # noqa: F811
     )
     app.dependency_overrides[app_module.get_period_detector] = (
         lambda: StubPeriodDetector()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_query_rewriter] = (
+        lambda: StubQueryRewriter()  # noqa: PLW0108
     )
     with TestClient(app) as client:
         yield client

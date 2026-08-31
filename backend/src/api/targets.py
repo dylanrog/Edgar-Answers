@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from . import queries
 from .detect import MAX_COMPANIES, CompanyDetector, PeriodDetector
 from .retrieval import RetrievedChunk, retrieve
+from .rewrite import QueryRewriter
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 class Target:
     ticker: str
     accessions: list[str] | None  # None if fiscal period handling abstained or isn't wired in
+    search_query: str | None = None  # None => use the original question, unchanged
 
 
 def retrieve_for_targets(
@@ -46,7 +48,7 @@ def retrieve_for_targets(
             retrieve(
                 conn,
                 embedder,
-                question,
+                target.search_query or question,
                 k_final=k_final,
                 k_each=k_each,
                 ticker=target.ticker,
@@ -64,6 +66,7 @@ def resolve_targets(
     explicit_tickers: list[str] | None,
     company_detector: CompanyDetector,
     period_detector: PeriodDetector | None = None,
+    query_rewriter: QueryRewriter | None = None,
 ) -> list[Target]:
     """Decide which companies (and, if available, which of their filings) a
     question means.
@@ -77,10 +80,10 @@ def resolve_targets(
     hallucination risk.
 
     A detector failure (network error, missing key, rate limit) degrades to
-    "no targets" / "no accessions" rather than propagating -- this is the
-    guarantee entity resolution and fiscal period handling both deferred to
-    this function; a broken detector must never turn a working /ask request
-    into a failure.
+    "no targets" / "no accessions" / "no search_query" rather than
+    propagating -- this is the guarantee entity resolution, fiscal period
+    handling, and per-target query rewriting all defer to this function; a
+    broken detector must never turn a working /ask request into a failure.
     """
     if explicit_tickers:
         tickers: list[str] = []
@@ -101,6 +104,13 @@ def resolve_targets(
             tickers = []
         tickers = tickers[:MAX_COMPANIES]
 
+    # A rewritten query only helps a comparison-phrased question -- a single
+    # target has no other company's terms to strip, so this never fires for
+    # the common single-company case.
+    name_by_ticker: dict[str, str] = {}
+    if query_rewriter is not None and len(tickers) > 1:
+        name_by_ticker = {c["ticker"]: c["name"] for c in queries.load_companies(conn)}
+
     targets = []
     for ticker in tickers:
         accessions = None
@@ -115,5 +125,18 @@ def resolve_targets(
                         ticker, exc,
                     )
                     accessions = None
-        targets.append(Target(ticker=ticker, accessions=accessions))
+        search_query = None
+        if query_rewriter is not None and len(tickers) > 1:
+            company_name = name_by_ticker.get(ticker, ticker)
+            try:
+                search_query = query_rewriter.rewrite(question, ticker, company_name)
+            except Exception as exc:  # noqa: BLE001 -- same degrade-safely rationale
+                logger.warning(
+                    "query_rewriter.rewrite failed for %s, using the original question: %s",
+                    ticker, exc,
+                )
+                search_query = None
+        targets.append(
+            Target(ticker=ticker, accessions=accessions, search_query=search_query)
+        )
     return targets

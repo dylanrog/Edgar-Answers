@@ -200,11 +200,17 @@ decision about whether "year" means `filing_date` or `period_end`, which differ 
 every 10-K; shipping the ambiguity would be worse than not shipping the filter.
 
 Resolving targets adds latency before retrieval even starts: up to one
-company-detection call, plus one period-detection call per resolved company —
-so a 4-company question can take up to 5 sequential Haiku round-trips before the
-first `retrieve()` call runs. The query-decomposition spec accepted this as a
-cost/latency tradeoff for correctness on multi-company questions; it was not
-previously quantified here.
+company-detection call, plus — per resolved company — one period-detection
+call, plus one query-rewrite call when more than one company is resolved
+(§14, per-target query rewriting). A 4-company question can take up to ~9
+sequential Haiku round-trips (1 company-detect + 4 period-detect + 4
+query-rewrite) before the first `retrieve()` call runs. The
+query-decomposition and per-target-query-rewriting specs accepted this as a
+cost/latency tradeoff for correctness on multi-company questions. The rewrite
+calls fire only when more than one target is resolved, so a single-company
+question — the common case — is unaffected; note that an explicit two-ticker
+filter also counts as "more than one target" and triggers the rewrite calls
+even when the question names no company.
 
 ### 6.1 Retrieve (hybrid)
 
@@ -422,6 +428,37 @@ which specific filings) a question means, and `retrieve_for_targets` runs one
 retrieval per target and concatenates results — verified against the original
 motivating question (a Microsoft-vs-Amazon comparison that previously
 retrieved 0 Amazon chunks).
+
+**Per-target query rewriting**
+(`docs/superpowers/specs/2026-08-30-per-target-query-rewriting-design.md`) is
+a follow-on, not new scope. Decomposition still passed each per-target
+`retrieve()` call the raw comparison question, so Microsoft's scoped
+retrieval carried the term "Amazon" and vice versa. A third detector,
+`QueryRewriter` (same Protocol + defensive-parse + `Anthropic*` shape as the
+other two, in `backend/src/api/rewrite.py`), now rewrites each target's search
+query to a standalone single-company version before that target's retrieval
+runs — but only when more than one target is resolved, so the common
+single-company question pays nothing.
+
+It did **not** close the `qc001`/`qc002` retrieval-ranking gap it set out to.
+The rewriter engages correctly — both companies are detected and the other
+company's name is cleanly stripped (e.g. "Compare Apple's and Microsoft's R&D
+spending…" becomes "Microsoft research and development spending most recent
+fiscal year") — but the pinned R&D-figure sentences still do not rank into
+either target's top 10, with or without the rewrite, and `targeted_recall@10`
+/ `targeted_misses@10` are unchanged across two before/after eval runs. Two
+causes remain, both already on this list: no reranker (a clean single-company
+query still doesn't float the exact figure sentence up), and weak period
+disambiguation (the period detector abstains on "most recent fiscal year", so
+each target's retrieval spans every one of that filer's filings). Per the
+spec's §5 this is a measured result pointing at reranking, not a reason to
+re-pin the golden set. The rewriter still removes a real source of cross-company
+noise from multi-company retrieval, and the degrade-safe / single-company
+zero-regression paths are covered by tests and the eval; it is retained.
+(`targeted_misses@10` is the metric to watch here — `targeted_recall@10`
+cannot by construction credit the second target in a comparison group, since
+`retrieve_for_targets` concatenates each target's full top-k without
+re-fusing, so the first 10 slots are always the first target's.)
 
 **Stock price chart.** Raised (2026-08-28) as filling the blank space under an
 answer with a customizable price chart, with the cited period highlighted on

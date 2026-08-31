@@ -63,3 +63,16 @@ class StubPeriodDetector:
     def detect(self, question, ticker, filings):
         self.calls.append((question, ticker, filings))
         return self.answers.get(question, [])
+
+
+class StubQueryRewriter:
+    """Returns a canned rewritten query per (question, ticker), for testing
+    consumers of QueryRewriter without hitting the live API."""
+
+    def __init__(self, answers: dict[tuple[str, str], str] | None = None):
+        self.answers = answers or {}
+        self.calls: list[tuple[str, str, str]] = []
+
+    def rewrite(self, question, ticker, company_name):
+        self.calls.append((question, ticker, company_name))
+        return self.answers.get((question, ticker), question)

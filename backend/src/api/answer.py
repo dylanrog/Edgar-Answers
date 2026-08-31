@@ -14,6 +14,7 @@ from .generate import (
     build_user_message,
     parse_citations,
 )
+from .rewrite import QueryRewriter
 from .targets import resolve_targets, retrieve_for_targets
 from .verify import VerifiedCitation, verify_citation
 
@@ -35,6 +36,7 @@ def answer_stream(
     form_type: str | None = None,
     k_final: int = 8,
     period_detector: PeriodDetector | None = None,
+    query_rewriter: QueryRewriter | None = None,
 ) -> Iterator[AnswerEvent]:
     """The query path (design §6): resolve targets -> retrieve -> generate -> verify -> stream."""
     try:
@@ -44,6 +46,7 @@ def answer_stream(
             explicit_tickers=tickers,
             company_detector=company_detector,
             period_detector=period_detector,
+            query_rewriter=query_rewriter,
         )
         chunks = retrieve_for_targets(
             conn, embedder, question, targets, k_final=k_final, form_type=form_type
