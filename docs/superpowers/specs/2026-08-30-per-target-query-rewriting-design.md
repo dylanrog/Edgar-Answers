@@ -162,11 +162,23 @@ already is.
 Run `evals run --retrieval-only` before and after wiring the rewriter into
 the default `/ask` path — the same measure-before-switching discipline the
 query-decomposition spec used for `targeted_*` vs `unfiltered_*`.
-Acceptance: `qc001`/`qc002`'s `targeted_recall@10` improves without
-regressing the 16 pre-existing questions' `targeted_recall@10`. If
-`qc001`/`qc002` still miss after this change, that is real evidence the gap
-needs reranking (§14 backlog) rather than query rewriting — either way this
-becomes a measured question, not a debugging guess.
+Acceptance: `qc001`/`qc002` leave `targeted_misses@10` without regressing the
+16 pre-existing questions' `targeted_recall@10`. (Watch `targeted_misses@10`,
+not `targeted_recall@10`: `retrieve_for_targets` concatenates each target's
+full top-k without re-fusing, so `chunks[:10]` is always the first target's
+chunks only and the second sibling row in a comparison group cannot move
+`targeted_recall@10` no matter how good the rewrite is. `targeted_misses@10`
+checks the unsliced list and is the honest gate.) If `qc001`/`qc002` still
+miss after this change, that is real evidence the gap needs reranking (§14
+backlog) rather than query rewriting — either way this becomes a measured
+question, not a debugging guess.
+
+**Outcome (2026-08-31):** implemented on branch `query-rewriting`;
+`qc001`/`qc002` did not improve and did not regress — `targeted_recall@10`
+held at 0.7 and `targeted_misses@10` was byte-identical across two before and
+two after runs. The rewriter engages correctly (both companies detected, the
+other's name stripped); the pinned sentences simply do not rank top-10 either
+way. Recorded in `design.md` §14 as evidence for the reranker, not re-pinned.
 
 ## 6. Risks
 
