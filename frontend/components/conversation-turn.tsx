@@ -21,12 +21,14 @@ export function ConversationTurn({
 
   return (
     <article className="mb-6 border-b border-slate-800 pb-5 last:border-b-0 last:pb-0">
-      <p className="text-sm font-semibold text-slate-100">{question}</p>
-      {state.standaloneQuestion && (
-        <p className="mt-1 text-xs text-slate-500">
-          Searched for: “{state.standaloneQuestion}”
-        </p>
-      )}
+      <div className="border-l-2 border-blue-500 pl-3">
+        <p className="text-base font-semibold text-white">{question}</p>
+        {state.standaloneQuestion && (
+          <p className="mt-1 text-xs text-slate-500">
+            Searched for: “{state.standaloneQuestion}”
+          </p>
+        )}
+      </div>
       <div className="mt-2">
         <AnswerStream state={state} onSelect={onSelect} />
       </div>

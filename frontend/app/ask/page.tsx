@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AskForm } from "@/components/ask-form";
 import { ConversationTurn } from "@/components/conversation-turn";
@@ -22,6 +22,16 @@ export default function AskPage() {
   const [sids, setSids] = useState<Record<string, number[]>>({});
 
   const streaming = turns.at(-1)?.state.status === "streaming";
+
+  const threadRef = useRef<HTMLDivElement>(null);
+
+  // When a new turn is added, pull its question to the top of the thread so
+  // the answer streams into view below it. Keyed on the turn count, so it
+  // runs once per question rather than on every token.
+  useEffect(() => {
+    const last = threadRef.current?.querySelector("article:last-of-type");
+    last?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [turns.length]);
 
   // accession -> tab label, across every turn. The year disambiguates
   // same-company, same-form-type filings that would otherwise render
@@ -86,8 +96,8 @@ export default function AskPage() {
 
   return (
     <main className="grid h-screen grid-cols-[minmax(0,5fr)_minmax(0,7fr)] bg-slate-950 text-slate-200">
-      <section className="overflow-y-auto border-r border-slate-800 p-5">
-        <div className="mb-4 flex items-baseline justify-between">
+      <section className="flex min-h-0 flex-col border-r border-slate-800">
+        <div className="flex items-baseline justify-between px-5 pb-3 pt-5">
           <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">
             EDGAR ANSWERS
           </h1>
@@ -101,18 +111,26 @@ export default function AskPage() {
             </button>
           )}
         </div>
-        <AskForm disabled={streaming} onSubmit={ask} />
-        {turns.length === 0 ? (
-          <p className="text-slate-500">Ask a question about a filing.</p>
-        ) : (
-          turns.map((turn, index) => (
-            <ConversationTurn
-              key={index}
-              question={turn.question}
-              state={turn.state}
-              onSelect={select}
-            />
-          ))
+
+        {turns.length > 0 && (
+          <div ref={threadRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+            {turns.map((turn, index) => (
+              <ConversationTurn
+                key={index}
+                question={turn.question}
+                state={turn.state}
+                onSelect={select}
+              />
+            ))}
+          </div>
+        )}
+
+        <AskForm disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
+
+        {turns.length === 0 && (
+          <p className="flex-1 px-5 text-slate-500">
+            Ask a question about a filing.
+          </p>
         )}
       </section>
 
