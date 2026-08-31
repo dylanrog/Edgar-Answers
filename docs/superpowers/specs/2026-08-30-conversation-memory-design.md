@@ -1,7 +1,7 @@
 # Conversation Memory — Design
 
 **Date:** 2026-08-30
-**Status:** proposed
+**Status:** accepted — plan docs/superpowers/plans/2026-08-30-conversation-memory.md
 **Part of:** new subsystem. Reverses `design.md` §2's locked v1 scope
 decision "Auth, chat history, threading | Out | Not what this project is
 for" — that row must be updated when this ships. Conversation history is

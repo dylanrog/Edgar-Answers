@@ -30,7 +30,8 @@ This is a learning project
 | XBRL | **Out** | Separate subsystem; will be well-defined in v2 extension |
 | 8-K filings | **Out** | Structurally diverse; multiplies canonicalizer work |
 | On-demand ticker ingestion | **Out** | Requires async job queue + progress UI; v2 |
-| Auth, chat history, threading | **Out** | Not what this project is for |
+| Auth, threading | **Out** | Not what this project is for |
+| Chat history | **In** (2026-08-30) | Anonymous, per-browser conversation continuity — no accounts; see `docs/superpowers/specs/2026-08-30-conversation-memory-design.md` |
 
 ## 3. Architecture
 
@@ -212,6 +213,11 @@ question — the common case — is unaffected; note that an explicit two-ticker
 filter also counts as "more than one target" and triggers the rewrite calls
 even when the question names no company.
 
+A follow-up question in an ongoing conversation adds one more sequential
+Haiku call before target resolution — the standalone-question rewrite. It
+fires only when the conversation already has at least one stored turn, so
+the first question of every conversation is unaffected.
+
 ### 6.1 Retrieve (hybrid)
 
 1. Vector: pgvector cosine top-20 (query embedded with BGE prefix).
@@ -267,6 +273,10 @@ demos — the feature working is *more* convincing when the failure mode is on d
 
 ```
 token:    {"text": "…"}                            -- answer deltas
+resolved: {"standalone_question": "…"}            -- a rewritten follow-up;
+                                                     emitted once before the first
+                                                     token, only when the rewrite
+                                                     changed the question
 citation: {"marker": 1, "verified": true,
            "accession": "0000320193-24-000123",
            "ticker": "AAPL", "form_type": "10-K",
@@ -470,3 +480,18 @@ implementation.
 
 Each of these is a clean extension because of the unit boundaries in §3 — none
 requires reworking the citation machinery.
+
+## Current state (2026-08-30)
+
+- **Conversation memory shipped** (spec
+  `docs/superpowers/specs/2026-08-30-conversation-memory-design.md`, plan
+  `docs/superpowers/plans/2026-08-30-conversation-memory.md`): `/ask`
+  accepts an optional `conversation_id`; a follow-up is rewritten into a
+  standalone question (one Haiku call, last 3 turns) before it enters
+  `resolve_targets` unchanged, and the rewrite is surfaced to the user via
+  a new `resolved` SSE event and a "Searched for:" caption on the turn.
+  New table `conversation_turns` (migration 003). The `/ask` page is now a
+  thread of turns. **No automated eval gate** — the golden set is
+  single-turn, so this is covered by `frontend/e2e/conversation.spec.ts`
+  and manual verification, the same limitation already noted for
+  multi-filing behaviour.
