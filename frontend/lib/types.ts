@@ -1,4 +1,14 @@
-/** One decoded SSE frame from POST /ask. */
+/**
+ * One decoded SSE frame from POST /ask. Event names:
+ * - `token`     {"text": string}                       — answer deltas
+ * - `resolved`  {"standalone_question": string}         — a rewritten follow-up,
+ *                                                         emitted once before the
+ *                                                         first token, only when
+ *                                                         the rewrite changed the text
+ * - `citation`  Citation
+ * - `done`      {chunks_retrieved, citations_total, citations_verified, unverified_answer}
+ * - `error`     {"message": string}
+ */
 export type SSEEvent = { event: string; data: unknown };
 
 /** A citation event, post-verification (design §6.4). */

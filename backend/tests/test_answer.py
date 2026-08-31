@@ -3,9 +3,15 @@ from datetime import date
 
 import psycopg
 import pytest
-from tests.fakes import FakeEmbedder, StubCompanyDetector, StubGenerator
+from tests.fakes import (
+    FakeEmbedder,
+    StubCompanyDetector,
+    StubConversationRewriter,
+    StubGenerator,
+)
 
 from api.answer import answer_stream
+from api.conversation import load_recent_turns, save_turn
 from pipeline import db, store
 from pipeline.canonicalize import CanonicalFiling, Sentence
 from pipeline.chunk import Chunk
@@ -26,6 +32,7 @@ def seeded_conn():
     conn = psycopg.connect(os.environ["TEST_DATABASE_URL"])
     db.migrate(conn)
     with conn.cursor() as cur:
+        cur.execute("DELETE FROM conversation_turns")
         cur.execute("DELETE FROM chunks")
         cur.execute("DELETE FROM sentences")
         cur.execute("DELETE FROM filings")
@@ -85,6 +92,22 @@ def collect(conn, *responses):
             generator,
             StubCompanyDetector(),
             "What were total net sales?",
+        )
+    )
+    return events, generator
+
+
+def collect_conv(conn, *, conversation_id, rewriter, question, response):
+    generator = StubGenerator(response)
+    events = list(
+        answer_stream(
+            conn,
+            FakeEmbedder(),
+            generator,
+            StubCompanyDetector(),
+            question,
+            conversation_id=conversation_id,
+            conversation_rewriter=rewriter,
         )
     )
     return events, generator
@@ -173,3 +196,126 @@ def test_generator_failure_becomes_an_error_event(seeded_conn):
     )
     assert events[-1].name == "error"
     assert "message" in events[-1].data
+
+
+@pytest.mark.db
+def test_without_a_conversation_id_no_resolved_event_and_nothing_saved(seeded_conn):
+    quote = "Total net sales were 391.0 billion dollars"
+    events, _ = collect(seeded_conn, response_with(quote, chunk_id_of(seeded_conn)))
+    assert "resolved" not in [e.name for e in events]
+    with seeded_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM conversation_turns")
+        assert cur.fetchone()[0] == 0
+
+
+@pytest.mark.db
+def test_first_turn_saves_but_emits_no_resolved_event(seeded_conn):
+    quote = "Total net sales were 391.0 billion dollars"
+    events, _ = collect_conv(
+        seeded_conn,
+        conversation_id="conv-1",
+        rewriter=StubConversationRewriter(),
+        question="What were total net sales?",
+        response=response_with(quote, chunk_id_of(seeded_conn)),
+    )
+    assert "resolved" not in [e.name for e in events]
+    turns = load_recent_turns(seeded_conn, "conv-1")
+    assert len(turns) == 1
+    assert turns[0].question == "What were total net sales?"
+    assert turns[0].standalone_question == "What were total net sales?"
+
+
+@pytest.mark.db
+def test_followup_is_rewritten_emitted_and_used_for_retrieval_and_saved(seeded_conn):
+    save_turn(
+        seeded_conn,
+        "conv-2",
+        question="What were fiscal 2024 net sales?",
+        standalone_question="What were fiscal 2024 net sales?",
+        answer_text="They were 391 billion dollars.",
+        tickers=["TSTE"],
+    )
+    rewriter = StubConversationRewriter(
+        {"and services?": "What was Services revenue?"}
+    )
+    quote = "Services revenue reached an all-time record."
+    events, _ = collect_conv(
+        seeded_conn,
+        conversation_id="conv-2",
+        rewriter=rewriter,
+        question="and services?",
+        response=response_with(quote, chunk_id_of(seeded_conn)),
+    )
+    resolved = [e for e in events if e.name == "resolved"]
+    assert resolved and resolved[0].data == {
+        "standalone_question": "What was Services revenue?"
+    }
+    assert rewriter.calls and rewriter.calls[0][0] == "and services?"
+    turns = load_recent_turns(seeded_conn, "conv-2")
+    assert turns[-1].question == "and services?"
+    assert turns[-1].standalone_question == "What was Services revenue?"
+
+
+@pytest.mark.db
+def test_rewriter_returning_the_same_text_emits_no_resolved_event(seeded_conn):
+    save_turn(
+        seeded_conn, "conv-3", question="q0", standalone_question="q0",
+        answer_text="a0", tickers=[],
+    )
+    quote = "Total net sales were 391.0 billion dollars"
+    events, _ = collect_conv(
+        seeded_conn,
+        conversation_id="conv-3",
+        rewriter=StubConversationRewriter(),  # echoes the follow-up unchanged
+        question="What were total net sales?",
+        response=response_with(quote, chunk_id_of(seeded_conn)),
+    )
+    assert "resolved" not in [e.name for e in events]
+
+
+@pytest.mark.db
+def test_rewriter_failure_degrades_to_the_raw_followup(seeded_conn):
+    save_turn(
+        seeded_conn, "conv-4", question="q0", standalone_question="q0",
+        answer_text="a0", tickers=[],
+    )
+
+    class BoomRewriter:
+        def resolve(self, question, history):
+            raise RuntimeError("rate limited")
+
+    quote = "Total net sales were 391.0 billion dollars"
+    events, _ = collect_conv(
+        seeded_conn,
+        conversation_id="conv-4",
+        rewriter=BoomRewriter(),
+        question="What were total net sales?",
+        response=response_with(quote, chunk_id_of(seeded_conn)),
+    )
+    assert "resolved" not in [e.name for e in events]
+    assert [e.name for e in events][-1] == "done"
+    assert load_recent_turns(seeded_conn, "conv-4")[-1].standalone_question == (
+        "What were total net sales?"
+    )
+
+
+@pytest.mark.db
+def test_no_turn_is_saved_when_generation_errors(seeded_conn):
+    class Boom:
+        def stream(self, system, user):
+            raise RuntimeError("upstream is down")
+            yield  # pragma: no cover
+
+    events = list(
+        answer_stream(
+            seeded_conn,
+            FakeEmbedder(),
+            Boom(),
+            StubCompanyDetector(),
+            "What were net sales?",
+            conversation_id="conv-5",
+            conversation_rewriter=StubConversationRewriter(),
+        )
+    )
+    assert events[-1].name == "error"
+    assert load_recent_turns(seeded_conn, "conv-5") == []

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 import psycopg
 
 from . import queries
+from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
 from .generate import (
     SYSTEM_PROMPT,
@@ -17,6 +19,8 @@ from .generate import (
 from .rewrite import QueryRewriter
 from .targets import resolve_targets, retrieve_for_targets
 from .verify import VerifiedCitation, verify_citation
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,21 +41,37 @@ def answer_stream(
     k_final: int = 8,
     period_detector: PeriodDetector | None = None,
     query_rewriter: QueryRewriter | None = None,
+    conversation_id: str | None = None,
+    conversation_rewriter: ConversationRewriter | None = None,
 ) -> Iterator[AnswerEvent]:
-    """The query path (design §6): resolve targets -> retrieve -> generate -> verify -> stream."""
+    """The query path (design §6): [resolve follow-up] -> resolve targets ->
+    retrieve -> generate -> verify -> stream."""
     try:
+        history = load_recent_turns(conn, conversation_id) if conversation_id else []
+        standalone_question = question
+        if history and conversation_rewriter is not None:
+            try:
+                standalone_question = conversation_rewriter.resolve(question, history)
+            except Exception as exc:  # noqa: BLE001 -- degrades to the raw follow-up
+                logger.warning(
+                    "conversation_rewriter.resolve failed, using the raw question: %s",
+                    exc,
+                )
+        if standalone_question != question:
+            yield AnswerEvent("resolved", {"standalone_question": standalone_question})
+
         targets = resolve_targets(
             conn,
-            question,
+            standalone_question,
             explicit_tickers=tickers,
             company_detector=company_detector,
             period_detector=period_detector,
             query_rewriter=query_rewriter,
         )
         chunks = retrieve_for_targets(
-            conn, embedder, question, targets, k_final=k_final, form_type=form_type
+            conn, embedder, standalone_question, targets, k_final=k_final, form_type=form_type
         )
-        user_message = build_user_message(question, chunks)
+        user_message = build_user_message(standalone_question, chunks)
 
         # Design §6.2: one retry if the trailing block does not parse, then
         # render the answer with an "unverified answer" notice rather than
@@ -59,6 +79,7 @@ def answer_stream(
         # first attempt's answer has already streamed to the client, and
         # replacing it mid-stream would be worse than keeping it. We are
         # re-rolling only for the citation block.
+        answer_parts: list[str] = []
         splitter = AnswerSplitter()
         citations = None
         for attempt in range(2):
@@ -66,9 +87,11 @@ def answer_stream(
             for delta in generator.stream(SYSTEM_PROMPT, user_message):
                 text = splitter.feed(delta)
                 if text and attempt == 0:
+                    answer_parts.append(text)
                     yield AnswerEvent("token", {"text": text})
             tail = splitter.finish()
             if tail and attempt == 0:
+                answer_parts.append(tail)
                 yield AnswerEvent("token", {"text": tail})
             citations = parse_citations(splitter.raw)
             if citations is not None:
@@ -110,6 +133,16 @@ def answer_stream(
                     "sids": citation.sids,
                     "quote": citation.quote,
                 },
+            )
+
+        if conversation_id is not None:
+            save_turn(
+                conn,
+                conversation_id,
+                question=question,
+                standalone_question=standalone_question,
+                answer_text="".join(answer_parts),
+                tickers=[target.ticker for target in targets],
             )
 
         yield AnswerEvent(

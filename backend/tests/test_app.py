@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from tests.fakes import (
     FakeEmbedder,
     StubCompanyDetector,
+    StubConversationRewriter,
     StubGenerator,
     StubPeriodDetector,
     StubQueryRewriter,
@@ -55,6 +56,9 @@ def stubbed_client(seeded_conn, monkeypatch):  # noqa: F811
     )
     app.dependency_overrides[app_module.get_query_rewriter] = (
         lambda: StubQueryRewriter()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_conversation_rewriter] = (
+        lambda: StubConversationRewriter()  # noqa: PLW0108
     )
     with TestClient(app) as client:
         yield client
@@ -176,3 +180,42 @@ def test_ask_preflight_allows_the_frontend_origin():
         )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
+
+def test_ask_rejects_an_overlong_conversation_id():
+    with TestClient(app) as client:
+        response = client.post(
+            "/ask", json={"question": "hi", "conversation_id": "x" * 500}
+        )
+    assert response.status_code == 422
+
+
+@pytest.mark.db
+def test_ask_with_a_conversation_id_persists_the_turn(stubbed_client, seeded_conn):  # noqa: F811
+    response = stubbed_client.post(
+        "/ask",
+        json={"question": "What were net sales?", "conversation_id": "c-http"},
+    )
+    assert response.status_code == 200
+    list(parse_sse(response.text))  # drain the stream
+    with seeded_conn.cursor() as cur:
+        cur.execute(
+            "SELECT question FROM conversation_turns WHERE conversation_id = 'c-http'"
+        )
+        assert cur.fetchone()[0] == "What were net sales?"
+
+
+@pytest.mark.db
+def test_ask_blank_conversation_id_persists_nothing(stubbed_client, seeded_conn):  # noqa: F811
+    """A whitespace-only conversation_id coerces to None at the request
+    boundary, so answer_stream never saves an orphan turn under an id it
+    would not load back (Task 3 review carry-forward)."""
+    response = stubbed_client.post(
+        "/ask",
+        json={"question": "What were net sales?", "conversation_id": "   "},
+    )
+    assert response.status_code == 200
+    list(parse_sse(response.text))  # drain the stream
+    with seeded_conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM conversation_turns")
+        assert cur.fetchone()[0] == 0

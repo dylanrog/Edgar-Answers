@@ -76,3 +76,17 @@ class StubQueryRewriter:
     def rewrite(self, question, ticker, company_name):
         self.calls.append((question, ticker, company_name))
         return self.answers.get((question, ticker), question)
+
+
+class StubConversationRewriter:
+    """Returns a canned standalone question per follow-up text, for testing
+    consumers of ConversationRewriter without hitting the live API. Unknown
+    follow-ups echo back unchanged, matching a no-op rewrite."""
+
+    def __init__(self, answers: dict[str, str] | None = None):
+        self.answers = answers or {}
+        self.calls: list[tuple[str, tuple]] = []
+
+    def resolve(self, question, history):
+        self.calls.append((question, tuple(history)))
+        return self.answers.get(question, question)

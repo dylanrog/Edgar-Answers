@@ -1,7 +1,7 @@
 # Conversation Memory — Design
 
 **Date:** 2026-08-30
-**Status:** proposed
+**Status:** accepted — plan docs/superpowers/plans/2026-08-30-conversation-memory.md
 **Part of:** new subsystem. Reverses `design.md` §2's locked v1 scope
 decision "Auth, chat history, threading | Out | Not what this project is
 for" — that row must be updated when this ships. Conversation history is
@@ -33,9 +33,9 @@ unchanged; a threaded chat UI on `/ask`; a "new conversation" action.
 conversation lives in one browser's storage; there is no server-side way
 to look one up without knowing its id); editing or deleting past turns;
 any change to citation verification, highlighting, or the chunk/sentence
-data model — this spec only changes what text reaches `resolve_targets`
-and adds a persistence side effect, nothing downstream of retrieval
-changes.
+data model — beyond the follow-up rewrite, its one `resolved` SSE event
+(§3.5), and a persistence side effect, nothing in the
+retrieve → generate → verify path changes.
 
 ## 3. Design
 
@@ -200,7 +200,15 @@ A rewriter exception, or no `conversation_rewriter` wired, degrades to
 `standalone_question = question` — same "a detector failure never breaks
 the request" contract as every other detector in this codebase.
 
-At the end (same place `done` is currently yielded), accumulate the
+When `standalone_question` differs from `question`, `answer_stream` yields
+one `AnswerEvent("resolved", {"standalone_question": standalone_question})`
+before `resolve_targets` runs (see §3.5) — the single point where the
+rewritten form leaves the backend. An unchanged follow-up (rewriter
+returned the question as-is, degraded, or was never wired) yields no
+event.
+
+At the end (same place `done` is currently yielded, inside the `try` — so
+a turn that errors mid-stream is **not** persisted), accumulate the
 streamed answer text (`answer_parts: list[str]`, appended alongside every
 `token` event already yielded) and, if `conversation_id` was given:
 
@@ -213,15 +221,34 @@ save_turn(
 )
 ```
 
+A turn is persisted whether or not its citation block parsed — an
+unverified answer is still a real turn the next follow-up may refer to.
+Only a hard `error` event (LLM outage, DB failure) skips the save.
+
 ### 3.5 API contract
 
 `AskRequest` gains a top-level `conversation_id: str | None = None` —
 sibling to `filters`, not inside it: this is a session/thread concept, not
 a retrieval filter. `app.py` gains `get_conversation_rewriter()` (same DI
 shape as the existing detector providers) and passes both the id and
-rewriter through to `answer_stream`. No new SSE event type: the client
-already knows the conversation id (it generated it) and does not need it
-echoed back.
+rewriter through to `answer_stream`.
+
+One new SSE event, `resolved`, carries the rewritten question to the
+client so the UI can show what was actually searched (§3.6). It is
+emitted once, before the first `token` event, and **only when
+`standalone_question != question`** — an unchanged follow-up produces no
+event. Shape:
+
+```
+event: resolved
+data: {"standalone_question": "What was Apple's revenue in fiscal 2023?"}
+```
+
+This is the only backend change to the SSE contract; `token`, `citation`,
+`done`, and `error` are untouched. The conversation id is never echoed
+back — the client generated it. `parseSSE` already passes unknown event
+names through, so an older frontend against a newer backend simply
+ignores the event.
 
 ### 3.6 Frontend
 
@@ -232,14 +259,24 @@ it.
 `frontend/lib/api.ts`'s `askStream` gains a `conversationId` parameter,
 sent as `conversation_id` in the POST body.
 
+`frontend/lib/answer.ts` gains a `resolved` case in `reduceAnswer` that
+records `standaloneQuestion: string | null` on `AnswerState` (initial
+`null`); the `default` branch already ignores any event it doesn't know,
+so no other reducer change is needed. `frontend/lib/types.ts` documents
+the event's payload.
+
 The `/ask` page changes from rendering one active answer to rendering a
 list of completed turns (question + streamed answer + citations, using the
 existing components unchanged per-turn) with the live streaming turn
 appended at the bottom, plus a "New conversation" button that calls
-`startNewConversation()` and clears the local turn list. This is the one
-piece of this spec that is a real UI restructure rather than an additive
-change — everything else in the frontend (the filing viewer, citation
-chips, highlight-on-click) is reused exactly as-is per turn.
+`startNewConversation()` and clears the local turn list. Each turn whose
+stream carried a `resolved` event also renders the standalone question as
+a caption under what the user typed (e.g. *Searched for: "What was Apple's
+revenue in fiscal 2023?"*), so a wrong pronoun or period resolution shows
+at a glance rather than only in the stored row. This is the one piece of
+this spec that is a real UI restructure rather than an additive change —
+everything else in the frontend (the filing viewer, citation chips,
+highlight-on-click) is reused exactly as-is per turn.
 
 ## 4. Eval harness
 
@@ -248,7 +285,9 @@ is its own scoping effort (v2 candidate, not folded into this spec).
 **This feature ships without an automated eval gate** — acceptance is a
 Playwright e2e spec covering one concrete multi-turn script (e.g. "What was
 Apple's revenue in fiscal 2024?" then "and in fiscal 2023?") asserting the
-second answer resolves to the right period, plus manual verification. This
+second answer resolves to the right period **and that the second turn
+renders the standalone-question caption** (proof the `resolved` event made
+it end to end), plus manual verification. This
 mirrors the precedent already set for multi-filing rendering: "the golden
 set cannot measure multi-filing behaviour... verified by the e2e spec and
 by hand, not by the evals" (`design.md`'s current-state log) — the same
@@ -270,7 +309,7 @@ nothing to call.
 | --- | --- |
 | one more sequential Haiku call on every turn after the first (compounds with spec 1's per-target rewrite and the existing detectors — design.md §6 already tracks this as "up to ~5 sequential calls," and this pushes the ceiling higher on long conversations) | only fires when `history` is non-empty (never on turn 1); capped history window (3 turns) bounds prompt growth as conversations get long |
 | a conversation growing unbounded in storage with no cleanup | out of scope for v1 given no auth/quota exists to attach a retention policy to; note as a deferred concern rather than solving prematurely |
-| the standalone-question rewrite silently changes what's being asked in a way the user doesn't see (e.g., resolves "it" to the wrong prior subject) | `standalone_question` is stored alongside `question` specifically so a wrong resolution is visible/debuggable after the fact; no attempt at making the UI show the rewritten form to the user in v1 — revisit if this proves confusing in practice |
+| the standalone-question rewrite changes what's being asked in a way that could be wrong (e.g., resolves "it" to the wrong prior subject) | the `/ask` UI shows the rewritten question as a caption on the turn whenever it differs from what the user typed (§3.5, §3.6), so a wrong resolution is visible immediately, not just in stored data; `standalone_question` is also persisted next to `question` for after-the-fact debugging |
 | reversing a locked `design.md` §2 decision | the row exists in §14's own backlog already (`conversation history` is explicitly named); this spec is exercising already-planned scope, not an ad hoc reversal — `design.md` §2's table row must still be edited to reflect it, as part of implementation, not left contradicting the shipped feature |
 
 ## 7. Deferred

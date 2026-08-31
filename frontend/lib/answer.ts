@@ -9,6 +9,9 @@ export type AnswerState = {
   /** Set only when status is "error". */
   errorMessage: string | null;
   chunksRetrieved: number | null;
+  /** The rewritten, self-contained question used for retrieval — set only
+   *  when a follow-up was rewritten (design §6.4 `resolved` event). */
+  standaloneQuestion: string | null;
 };
 
 export const initialAnswerState: AnswerState = {
@@ -18,6 +21,7 @@ export const initialAnswerState: AnswerState = {
   notice: null,
   errorMessage: null,
   chunksRetrieved: null,
+  standaloneQuestion: null,
 };
 
 const UNVERIFIED_NOTICE =
@@ -54,6 +58,10 @@ export function reduceAnswer(state: AnswerState, event: SSEEvent): AnswerState {
       // Deliberately keeps `prose`: a partial answer is more useful than a
       // blank pane, and design §10 says an outage is reported, not hidden.
       return { ...state, status: "error", errorMessage: message };
+    }
+    case "resolved": {
+      const { standalone_question } = event.data as { standalone_question: string };
+      return { ...state, standaloneQuestion: standalone_question };
     }
     default:
       return state;
