@@ -3,38 +3,64 @@
 **A RAG-based Q&A system over SEC filings, with server-verified, click-to-highlight citations.**
 
 > Every answer is grounded in SEC filings, and every citation is verified against the
-> source text before it renders — click any citation to see the exact sentence
+> source text before it renders. Click any citation to see the exact sentence
 > highlighted in the original filing.
 
 Built by Dylan Rogers
 
 ## Status
 
-Phases 0–4 complete: EDGAR ingestion, sentence-aligned canonicalization, hybrid
-retrieval, the `/ask` API with server-side citation verification, and the
-frontend with click-to-highlight.
+The pipeline is end-to-end and running locally against a ten-company corpus. Not
+yet publicly deployed — `docs/deployment.md` is the gap analysis for that, and
+`docs/design.md` §12 has the phase plan.
 
-Phase 5 is in progress. The corpus is built — ten large filers (AAPL, MSFT,
-AMZN, GOOGL, META, NVDA, TSLA, JPM, JNJ, WMT), 120 filings, 13,725 chunks,
-188,074 sentences — and answers draw on several filings at once: citations are
-grouped by filing in a sources panel, and the viewer holds up to three filings
-open as tabs. Growing the golden set from 16 to 40 questions and deploying are
-the remaining Phase 5 work. See `docs/design.md` §12 for the phase plan.
+**Working:**
 
-On the 16-question golden set, citation verification sits at **1.0** (every
-quote the model produced matched its source text) against the design's ≥90%
-bar. Retrieval recall@10 is 1.0 when scoped to a ticker and 0.75 unscoped —
-comparison questions naming two companies still retrieve from one, which is
-tracked in `docs/design.md` §14 as query decomposition.
+- **Ingestion** — EDGAR fetch (rate-limited, disk-cached), a canonicalizer that
+  emits sentence-aligned canonical text and viewer HTML in one pass, financial
+  tables indexed one sentence per row, Postgres + pgvector storage.
+- **Retrieval** — hybrid vector + full-text search fused with Reciprocal Rank
+  Fusion, local `bge-small-en-v1.5` embeddings (no API cost).
+- **Answering** — `POST /ask` over SSE: an answer streams token-by-token, each
+  factual claim carries a marker, and every cited quote is verified server-side
+  by deterministic substring match against the cited chunk before its citation
+  event is emitted. A failed match renders a visible "unverified" badge rather
+  than being dropped.
+- **Query decomposition** — a question naming two companies is split, retrieved
+  per company, and merged, so a comparison answer draws on both filers (design
+  `docs/design.md` §14). Entity and fiscal-period detection resolve which
+  filings a question means when no filter is set.
+- **Conversation memory** — anonymous, per-browser follow-ups: a follow-up
+  question is rewritten to a standalone question before retrieval, and the
+  rewrite is shown to the user.
+- **Frontend** — a `/ask` split pane: streamed answer and a sources panel
+  (citations grouped by filing) on the left, a tabbed filing viewer on the
+  right. Clicking a citation opens its filing and scrolls to the exact
+  highlighted sentence.
+
+**Corpus:** ten large filers (AAPL, MSFT, AMZN, GOOGL, META, NVDA, TSLA, JPM,
+JNJ, WMT), 10-K and 10-Q over roughly three fiscal years — 120 filings, 15,432
+chunks, 296,316 sentences.
+
+**Remaining Phase 5 work:** growing the 20-question golden set, and deploying a
+public demo.
 
 ## Demo
 
-_link goes here once demoable_
+![EDGAR Answers: a question is answered with a streamed, citation-marked response; clicking a citation highlights the exact sentence in the filing; a follow-up then opens a second filing](docs/demo.gif)
+
+A run through the flow: ask an analyst-style question, watch the answer stream
+in with inline citation markers, see the sources panel resolve each citation to
+a verified quote, then click a citation to open the filing and land on the exact
+highlighted sentence. The follow-up ("Did net sales grow in fiscal 2025?") is
+rewritten to a standalone question and draws on a second filing.
 
 ## Why this project
 
-Looking to gain experience with RAG. Highlighting the source seemed interesting since AI 
-hallucinations are annoying to deal with.
+I wanted hands-on experience with RAG. I chose going after citation trust, 
+hallucinations are extremely frustrating, so this system verifies every quote 
+against the source filing before showing it, and lets you jump straight to the 
+sentence it came from. 
 
 ## Architecture
 
@@ -47,6 +73,12 @@ EDGAR (submissions, 10-K/10-Q HTML) ─▶ Python ingestion pipeline ─▶ Post
                                       click-to-highlight citations)
 ```
 
+Three units with hard boundaries (`docs/design.md` §3): the **pipeline** writes
+Postgres and is never called by the API; the **API** reads Postgres and calls
+the LLM and owns verification; the **frontend** talks only to the API. The
+pipeline↔API contract is the database schema; the API↔frontend contract is the
+HTTP/SSE interface.
+
 The load-bearing idea is that the canonicalizer emits two **aligned** outputs in
 a single DOM traversal: canonical text split into sentences with stable integer
 ids, and sanitized viewer HTML where each sentence is wrapped in a span carrying
@@ -56,6 +88,23 @@ resolves to is the id the frontend scrolls to. A citation that fails
 verification renders a visible "unverified" badge; it is never silently
 dropped.
 
+**The query path**, on `POST /ask`:
+
+1. **Resolve targets** — if the request carries no company filter, detect which
+   corpus companies (and, when confident, which specific filings) the question
+   names. A comparison question naming two companies produces two targets.
+2. **Retrieve** — per target, run vector search (pgvector cosine) and full-text
+   search (Postgres FTS) and fuse them with Reciprocal Rank Fusion; take the top
+   chunks into context. Hybrid is deliberate: financial text is dense with exact
+   terms ("ASC 842", "RSUs", "Item 1A") where lexical search beats semantic.
+3. **Generate** — one Claude Haiku call. The answer streams to the client;
+   the trailing JSON block of `{marker, chunk_id, quote}` citations is buffered
+   and parsed when generation finishes.
+4. **Verify** — for each citation, normalize the quote and the cited chunk's
+   text (Unicode NFKC, quotes, dashes, whitespace, case), require the quote to
+   be a substring of the chunk, then map the match back to sentence ids. Emit
+   `verified: true` with those ids, or `verified: false` with none.
+
 XBRL is deliberately out of scope for v1, along with 8-Ks and on-demand ticker
 ingestion — see `docs/design.md` §2 and the §14 backlog.
 
@@ -64,7 +113,7 @@ ingestion — see `docs/design.md` §2 and the §14 backlog.
 ```
 backend/        Python ingestion pipeline + FastAPI service
   src/pipeline/   EDGAR fetch → canonicalize → chunk → embed
-  src/api/        FastAPI app: query routing, retrieval, generation, verification
+  src/api/        FastAPI app: target resolution, retrieval, generation, verification
   migrations/     Numbered plain-SQL migrations, applied in filename order
   tests/          Unit tests + canonicalizer fixtures (real messy filing HTML samples)
   evals/          Golden question set + retrieval/faithfulness eval harness
@@ -74,6 +123,7 @@ frontend/       Next.js app: answer UI + filing viewer with citation highlightin
   e2e/            Playwright specs, including click-to-highlight and multi-source
 docs/
   design.md            Full technical design document — the authoritative spec
+  deployment.md        Pre-deploy gap analysis and hosting options
   superpowers/specs/   Design specs written before a phase starts
   superpowers/plans/   Per-phase implementation plans
 ```
@@ -167,31 +217,62 @@ isn't up, not a bad test.
 
 ## Evals
 
+The eval harness (`backend/evals/`) is the tuning instrument for every change to
+chunking, retrieval, or the prompt — it was built in Phase 2, not bolted on at
+the end. The golden set (`golden.yaml`) is 20 hand-authored questions, each
+pinned to the filing and the sentence ids where its answer lives: 16
+single-company questions on Apple 10-Ks and 10-Qs from fiscal 2024 and 2025,
+plus 4 rows forming 2 cross-company comparison groups.
+
 ```bash
 python -m evals run              # retrieval + faithfulness, appends to evals/results.jsonl
 python -m evals run --retrieval-only   # skips the model, costs nothing
 python -m evals verify           # checks every golden entry still resolves in the DB
 ```
 
-Run these before and after any change to chunking, retrieval, or the prompt.
-Each row records the git sha it ran at and whether the tree was dirty, so run
-them on a clean tree or the row can't be replayed. Note that `gold_sid_hit_rate`
-and `citations_total` vary between runs on identical code — don't read a single
-run's movement as a regression.
+Each run records the git sha it ran at and whether the tree was dirty, so a row
+can be replayed. Run the evals on a clean tree.
+
+**Latest run** (`git sha 958f1ea`, 2026-09-07, full ten-company corpus, 20 questions):
+
+| metric | value | meaning |
+| --- | --- | --- |
+| `recall@10` (ticker-scoped) | **0.65** | top-10 fused chunks contain a gold sentence for 13 of 20 questions |
+| `unfiltered_recall@10` | 0.60 | same, with no company filter — other filers' boilerplate competes for the top slots |
+| `targeted_recall@10` | 0.70 | same, through the real target-resolution + per-company retrieval path |
+| `verified_rate` | 0.93 | share of emitted citations whose quote matched source text (27 of 29) |
+| `answered_rate` | 0.75 | share of questions answered rather than refused |
+
+**How to read this.** The retrieval numbers reproduce exactly across every logged
+run at this corpus size (0.65 / 0.60 / 0.70, three different shas). They dropped
+from an earlier `recall@10 = 1.0` for a concrete reason: that figure was on 16
+Apple-only questions, and the set has since grown to include cross-company
+comparison questions (`qc001`, `qc002`) that a single query embedding does not
+retrieve both sides of — this is exactly the section-targeted retrieval /
+reranker work in `docs/design.md` §14, and it is left visible in the numbers
+rather than papered over. Among the single-company questions, the remaining
+misses are period-disambiguation cases: Apple files near-identical tables every
+quarter with only the numbers changing, so lexical and vector similarity cannot
+separate "Q2 FY2024" from "Q2 FY2025". The faithfulness metrics (`verified_rate`,
+`citations_total`, `gold_sid_hit_rate`) drift between runs on identical code and
+corpus even at temperature 0 — earlier runs recorded `verified_rate` up to 1.0 —
+so a single run's movement is not read as a regression.
 
 ## Maintenance commands
 
 ```bash
 python -m pipeline recanonicalize            # rebuild viewer_html from cached HTML
 python -m pipeline recanonicalize --ticker AAPL
+python -m pipeline reprocess                  # rebuild sentences, chunks, embeddings (invalidates pinned sids)
 ```
 
-Re-runs the canonicalizer over already-cached raw HTML and updates the stored
-viewer HTML only — no re-chunk, no re-embed, no EDGAR traffic. Use it after a
-canonicalizer change that affects rendering but not sentence splitting. It
-verifies per filing that the recomputed sentences still match the stored rows
-and skips any filing that disagrees, because silently rewriting one would
-invalidate every citation already anchored to it.
+`recanonicalize` re-runs the canonicalizer over already-cached raw HTML and
+updates the stored viewer HTML only — no re-chunk, no re-embed, no EDGAR
+traffic. It verifies per filing that the recomputed sentences still match the
+stored rows and skips any filing that disagrees, because silently rewriting one
+would invalidate every citation already anchored to it. `reprocess` is the
+heavier operation that does rebuild sentence ids, so it is paired with
+`python -m evals repin` to re-anchor the golden set.
 
 ## License
 
