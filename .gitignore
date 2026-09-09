@@ -25,6 +25,12 @@ backend/data/raw/
 backend/data/canonical/
 *.db
 
+# --- evals: local scratch state ---
+# repin writes this before `pipeline reprocess` and reads it back after, to
+# re-anchor the golden set. It reflects one machine's pre-reprocess DB, not a
+# checked-in baseline.
+backend/evals/repin_snapshot.json
+
 # --- local-only working notes ---
 docs/learning/
 CLAUDE.md
