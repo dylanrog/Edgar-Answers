@@ -35,6 +35,8 @@ backend/evals/repin_snapshot.json
 docs/learning/
 CLAUDE.md
 .superpowers/
+interview_prep/
+*.log
 
 # --- OS / editor ---
 .DS_Store
