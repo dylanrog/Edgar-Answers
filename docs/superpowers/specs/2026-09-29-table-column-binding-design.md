@@ -109,6 +109,8 @@ one header cell; there is a percentage column.
   `context` string that is embedded, lexically indexed and shown to the model
   but never used for verification.
 - A per-table cap on retrieval slots.
+- Cited-figure highlighting: when a citation's quote covers figures in a
+  table row, those cells stand out inside the highlighted row (§5.7).
 - Evals first: new golden questions and a `value_accuracy` metric, with a
   baseline recorded before any implementation lands.
 - A corpus coverage report for column binding.
@@ -155,6 +157,9 @@ CREATE TABLE table_cells (
     filing_id     bigint  NOT NULL,
     sid           integer NOT NULL,  -- the row's sentence
     col           integer NOT NULL,  -- grid column where the cell starts
+    cell_index    integer NOT NULL,  -- position among the <tr>'s td/th (DOM tr.cells[i])
+    char_start    integer,           -- cell's span in the row sentence's text,
+    char_end      integer,           --   half-open; NULL if alignment fails (§5.7)
     table_id      integer NOT NULL,
     raw           text    NOT NULL,  -- as printed, e.g. '( 23,114 )'
     value         numeric,           -- signed, as printed, NOT scaled; NULL for nil
@@ -310,8 +315,10 @@ Table context (for reading columns; not quotable): Table: … | Scale: in millio
 Data Center $ 115,186 $ 47,525 $ 15,005 …
 ```
 
-`SYSTEM_PROMPT` gains one rule: quotes come only from excerpt text, never from
-a table-context line. A model that quotes context anyway fails verification
+`SYSTEM_PROMPT` gains two rules: quotes come only from excerpt text, never from
+a table-context line; and when quoting a table row, quote from the row label
+through the figure being used and stop there (so the cited-figure highlight of
+§5.7 lands on that figure rather than the whole row). A model that quotes context anyway fails verification
 and shows the unverified badge — the honest failure, visible as a drop in
 `verified_rate`. Rule placement is load-bearing (CLAUDE.md), so it is part of
 the evaluated change, not a cosmetic edit.
@@ -335,6 +342,45 @@ freed slots.
   alone and would score all sibling pieces highly. The intended future order
   is hybrid → RRF → rerank → cap → top 8, so the cap is a separate function
   applied after scoring.
+
+### 5.7 Cited-figure highlighting
+
+Today a table citation highlights its whole row. With cells known, the figures
+the quote actually covers can stand out within that row.
+
+**Cell spans.** A row sentence's text is its cells' texts joined by single
+spaces (`" ".join(tr.get_text(" ", strip=True).split())`). While parsing, each
+stored cell records `char_start`/`char_end` — its span within that row text —
+by walking the row's `td`/`th` in order and accumulating the same join. The
+parser asserts the accumulated string equals the row sentence; on mismatch the
+row's cells get NULL spans and the citation falls back to row highlighting
+(NULL over guess, again). `cell_index` is the cell's position among the row's
+`td`/`th`, which is exactly the browser's `tr.cells[i]` in the stored viewer
+HTML, so **viewer HTML is not modified** and §4.1 holds.
+
+**Resolution.** `verify.py` already maps a matched quote to chunk-text offsets
+and to sids. For each resolved sid that is a table row, it intersects the
+match with the row's span, converts to row-relative offsets, and selects the
+stored numeric cells whose `[char_start, char_end)` overlaps. Nil cells are
+included; `$`/`%` filler cells are not stored, so they are never emphasized.
+
+**Interface.** The `citation` SSE event gains an additive field:
+
+```
+"cells": [{"sid": 2768, "cell": 4}]   -- empty for prose or unresolvable rows
+```
+
+`lib/highlight.ts` `applyHighlight` takes the cells alongside the sids, adds a
+second class (`cited-figure`) to `tr[data-sid=sid].cells[cell]`, and scrolls to
+the first cited figure when there is one. The row keeps its existing
+`cited-sentence` background; `cited-figure` is a stronger treatment (bold,
+outlined cell) defined in `app/globals.css` for both themes.
+
+**Limit.** Quotes must be contiguous, so a quote ending at a second-column
+figure also covers the first column's figure, and both are emphasized. That
+is an honest picture of what was quoted, never less informative than today's
+whole-row highlight. Spec 2's declared operands name the exact cell and will
+tighten this.
 
 ## 6. Coverage report
 
@@ -419,6 +465,15 @@ header band (→ not splittable, labels NULL).
   false).
 - With five pieces of one table ranked top, `retrieve()` returns at most two
   of them and back-fills from the next candidates.
+- Cell spans: for every fixture row, slicing the row sentence at each cell's
+  `[char_start, char_end)` returns that cell's text.
+- `verify_citation` returns `cells` for a quote ending at a table figure, none
+  for a prose quote, and none (with the row still resolved) when spans are
+  NULL.
+- Frontend: a vitest spec for `applyHighlight` with cells (the figure gets
+  `cited-figure`, the row keeps `cited-sentence`, the reducer passes `cells`
+  through), and the existing `e2e/highlight.spec.ts` gains an assertion that
+  a cited figure is emphasized.
 - The FTS expression in `retrieval._TSVECTOR` matches the migration's index
   expression (string equality test, since a mismatch silently degrades to a
   sequential scan).
@@ -440,7 +495,9 @@ commit those rows to `results.jsonl`: this is the baseline. Merge.
    `recanonicalize`: per filing, re-parse the cached raw HTML, **assert
    sentences are unchanged**, write `filing_tables` and `table_cells` in one
    transaction. No retrieval change, so no eval run; run `table-report` and
-   record its numbers in the PR description.
+   record its numbers in the PR description. Cited-figure highlighting
+   (§5.7: cell resolution in `verify.py`, the `cells` SSE field, frontend)
+   ships in this step, since it needs only cells.
 2. **Chunks.** The chunker, context, prompt rule, cap and FTS index change,
    plus a `rechunk` command: per filing, in one transaction, delete chunks,
    re-chunk from stored sentences + cells, re-embed. (The existing `embed`
@@ -448,7 +505,7 @@ commit those rows to `results.jsonl`: this is the baseline. Merge.
    rebuild.) Then run the eval at least three times and compare with PR A's
    rows. No `evals repin`: sentences did not change, and the golden set pins
    sids, not chunk ids.
-3. **Docs.** `docs/design.md` §4.2–4.3, §5, §6.1–6.2; CLAUDE.md.
+3. **Docs.** `docs/design.md` §4.2–4.3, §5, §6.1–6.4, §7; CLAUDE.md.
 
 **What to compare:** `table_tail_recall@10` (expected to rise), `value_accuracy`
 (expected to rise), `recall@10` scoped and unfiltered, `verified_rate` (watch
@@ -466,6 +523,7 @@ is read only across the repeated runs, never from one.
 | split pieces crowd retrieval | per-table cap of 2 (§5.6), enforced by construction |
 | more chunks slow ingest | local embedding; one-off `rechunk`; estimated a few thousand extra chunks |
 | lexical index mismatch falls back to seq scan | string-equality test between `_TSVECTOR` and the migration |
+| model quotes a whole row, so every figure is emphasized | prompt rule (§5.5); worst case equals today's whole-row highlight |
 | new golden entries are wrong | hand-checked by Dylan in the viewer; `evals verify` on every pin |
 
 ## 11. Deferred
