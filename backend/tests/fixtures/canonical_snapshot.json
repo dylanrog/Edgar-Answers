@@ -4,6 +4,11 @@
     "sentences": "bc0c00912093ff929f344b02608376c6a8f91212af01b67bd451daff230af8da",
     "viewer_html": "473a1b48001453cd2e16e6397e5f3ae6af125037946b2f46325dd6bb71c81e68"
   },
+  "edgar_jpm_highlights.html": {
+    "canonical_text": "e2af67c330ca1e0d5dcf1c31d67419e9333de194b084e95b368f8d11632b6fd0",
+    "sentences": "34295ce1add80a6b7a8eaa964edf78e04821c4de5af2bd5684cd3cf8c87ee728",
+    "viewer_html": "2952d1c6968f119d4f610a1ca3e5fe1c45b15b6dca14349b107f271e0c2ca593"
+  },
   "edgar_msft_segments.html": {
     "canonical_text": "2bfbc902a91778108c8ca67ffe17cc353d405e34028b28033dc38c5dd06b31d9",
     "sentences": "50f8fb32294ac303c25b39937846a2aef2ba0c9b3b510c2b7f9f2216203769a2",

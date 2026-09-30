@@ -255,3 +255,112 @@ def test_a_title_row_above_the_header_band_is_not_a_row_label_prefix():
     )
     _, cells = parse_table(1, rows, None)
     assert [(c.row_label, c.column_label) for c in cells] == [("A", "Q1"), ("A", "Q2")]
+
+
+# --- rowspan: a spanning cell pushes the cells of the rows below it right -----
+
+
+def test_jpm_quarter_header_below_a_rowspan_cell_binds_to_the_right_columns():
+    rows = fixture_rows("edgar_jpm_highlights.html")
+    _, cells = parse_table(1, rows, None)
+    revenue = [c for c in cells if c.row_label.endswith("Total net revenue")]
+    assert [(c.raw, c.column_label) for c in revenue] == [
+        ("49,836", "1Q26"),
+        ("45,798", "4Q25"),
+        ("46,427", "3Q25"),
+        ("44,912", "2Q25"),
+        ("45,310", "1Q25"),
+    ]
+    # The spanning cell's text stays in its own row: it never labels the rows below.
+    assert all("As of or for" not in (c.row_label or "") for c in cells)
+
+
+def test_a_rowspan_reaches_the_header_row_across_a_spacer_row():
+    # The spacer row produces no sentence, so parse_table is never handed it;
+    # the rowspan must still count it or the header row is shifted.
+    table = (
+        '<table><tr><td rowspan="3">Item</td><td colspan="2">Period</td></tr>'
+        "<tr><td></td><td></td></tr>"
+        "<tr><td>Q1</td><td>Q2</td></tr>"
+        "<tr><td>Revenue</td><td>1</td><td>2</td></tr></table>"
+    )
+    rows = rows_of(table)
+    assert len(rows) == 3  # the spacer row is not among them
+    _, cells = parse_table(1, rows, None)
+    assert [(c.raw, c.column_label) for c in cells] == [
+        ("1", "Period › Q1"),
+        ("2", "Period › Q2"),
+    ]
+
+
+def test_a_rowspan_only_shifts_the_row_below_it_by_the_columns_it_occupies():
+    rows = rows_of(
+        '<table><tr><td></td><td rowspan="2">Total</td><td>Q1</td></tr>'
+        "<tr><td></td><td>Q2</td></tr>"
+        "<tr><td>A</td><td>1</td><td>2</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    # Q2 sits at grid column 2 (column 1 is taken by 'Total'), under Q1.
+    assert [c.column_label for c in cells] == ["Total", "Q1 › Q2"]
+
+
+def test_bogus_rowspans_are_ignored():
+    rows = rows_of(
+        '<table><tr><td rowspan="x">A</td><td rowspan="0">Q1</td><td rowspan="-2">Q2</td></tr>'
+        "<tr><td>Sales</td><td>1</td><td>2</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    assert [c.column_label for c in cells] == ["Q1", "Q2"]
+
+
+# --- a label that cannot tell two figures apart binds neither -------------------
+
+
+def test_two_figures_resolving_to_the_same_column_label_are_both_unlabelled():
+    rows = rows_of(
+        '<table><tr><td></td><td colspan="2">Total</td><td>Other</td></tr>'
+        "<tr><td>Sales</td><td>1</td><td>2</td><td>3</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    assert [(c.raw, c.column_label) for c in cells] == [("1", None), ("2", None), ("3", "Other")]
+
+
+# --- a year in the label column is a label ------------------------------------
+
+
+def test_a_year_in_the_label_column_is_the_row_label_not_a_figure():
+    rows = rows_of(
+        "<table><tr><td>Fiscal year</td><td></td><td>Amount</td></tr>"
+        "<tr><td>2028</td><td>$</td><td>754</td></tr>"
+        "<tr><td>2029</td><td>$</td><td>612</td></tr>"
+        "<tr><td>Total</td><td>$</td><td>1,366</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    assert [(c.raw, c.row_label) for c in cells] == [
+        ("754", "2028"),
+        ("612", "2029"),
+        ("1,366", "Total"),
+    ]
+
+
+def test_a_year_in_a_value_column_is_still_a_figure():
+    rows = rows_of(
+        "<table><tr><td></td><td>Count</td><td>Year</td></tr>"
+        "<tr><td>Vesting</td><td>5</td><td>2027</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    assert [(c.raw, c.column_label) for c in cells] == [("5", "Count"), ("2027", "Year")]
+
+
+# --- a scale phrase is not a group --------------------------------------------
+
+
+def test_a_scale_phrase_row_is_not_a_group_and_does_not_prefix_row_labels():
+    rows = rows_of(
+        "<table><tr><td></td><td>Q1</td></tr>"
+        "<tr><td>(In millions, except per share data)</td></tr>"
+        "<tr><td>Revenue</td><td>1,000</td></tr></table>"
+    )
+    info, cells = parse_table(1, rows, None)
+    assert info.scale == Decimal("1000000")
+    assert (cells[0].row_label, cells[0].scale_applies) == ("Revenue", True)

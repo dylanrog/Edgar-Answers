@@ -10,6 +10,7 @@ verified.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
 from itertools import pairwise
@@ -87,6 +88,40 @@ def _colspan(td) -> int:
         return 1
 
 
+def _rowspan(td) -> int:
+    try:
+        return max(1, int(td.get("rowspan", 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _row_starts(table) -> dict[int, list[int]]:
+    """id(tr) -> the grid column each of the row's td/th starts at.
+
+    A cell with rowspan=n keeps its columns occupied in the next n-1 rows, so
+    the cells of those rows start after them (standard HTML table layout).
+    Walks every <tr> of this table, spacer rows included: they never reach
+    parse_table but their occupancy still counts. Rows of a nested table
+    belong to that table, not this one."""
+    trs = [tr for tr in table.find_all("tr") if tr.find_parent("table") is table]
+    occupied: dict[int, set[int]] = {}
+    out: dict[int, list[int]] = {}
+    for r, tr in enumerate(trs):
+        taken = occupied.get(r, set())
+        cursor = 0
+        starts: list[int] = []
+        for td in tr.find_all(["td", "th"], recursive=False):
+            while cursor in taken:
+                cursor += 1
+            span = _colspan(td)
+            starts.append(cursor)
+            for below in range(r + 1, min(r + _rowspan(td), len(trs))):
+                occupied.setdefault(below, set()).update(range(cursor, cursor + span))
+            cursor += span
+        out[id(tr)] = starts
+    return out
+
+
 def _classify(text: str) -> tuple[str, Decimal | None, bool]:
     """(kind, value, is_bare_year) for one cell's text."""
     squeezed = "".join(text.split()).replace("$", "").replace(",", "")
@@ -105,11 +140,15 @@ def _classify(text: str) -> tuple[str, Decimal | None, bool]:
     return kind, (-value if negative else value), year
 
 
-def _grid_row(sid: int, sentence_text: str, tr) -> _Row:
+def _grid_row(sid: int, sentence_text: str, tr, starts: list[int] | None = None) -> _Row:
+    """`starts` is the row's grid start per td/th (rowspan-aware); without it
+    the row is laid out as if no earlier row spanned into it."""
     cells: list[_GridCell] = []
     cursor = 0
     for index, td in enumerate(tr.find_all(["td", "th"], recursive=False)):
         span = _colspan(td)
+        if starts is not None and index < len(starts):
+            cursor = starts[index]
         text = cell_text(td)
         kind, value, year = _classify(text)
         cells.append(_GridCell(index, cursor, cursor + span, text, kind, value, year))
@@ -153,17 +192,28 @@ def parse_table(
 ) -> tuple[TableInfo, list[Cell]]:
     """Parse one table. `rows` is (sid, sentence text, <tr>) for every row that
     produced a sentence, in document order (spacer rows never do)."""
-    grid = [_grid_row(sid, text, tr) for sid, text, tr in rows]
+    starts_by_table: dict[int, dict[int, list[int]]] = {}
+    grid = []
+    for sid, text, tr in rows:
+        table = tr.find_parent("table")
+        if table is None:
+            grid.append(_grid_row(sid, text, tr))
+            continue
+        if id(table) not in starts_by_table:
+            starts_by_table[id(table)] = _row_starts(table)
+        grid.append(_grid_row(sid, text, tr, starts_by_table[id(table)].get(id(tr))))
     year_rows = {id(r) for r in grid if _is_year_row(r)}
 
     # Rule 3: label columns end where the first value starts. Year-only
-    # header rows are ignored here, or '2025' would claim to be data.
+    # header rows are ignored here, or '2025' would claim to be data, and so
+    # is a bare year in any row: '2028 | 754' in a maturity schedule is a
+    # label and a figure, not two figures.
     starts = [
         c.start
         for r in grid
         if id(r) not in year_rows
         for c in r.cells
-        if c.kind in ("number", "percent", "nil")
+        if c.kind in ("number", "percent", "nil") and not c.year
     ]
     if not starts:
         return TableInfo(table_id, caption, _scale(grid, caption)[0], False), []
@@ -181,8 +231,13 @@ def parse_table(
             c for c in row.cells
             if c.start >= label_end and c.kind in ("number", "percent", "nil")
         ]
+        is_year_row = id(row) in year_rows
         label = " ".join(
-            c.text for c in row.cells if c.start < label_end and c.kind == "text" and c.text
+            c.text
+            for c in row.cells
+            if c.start < label_end
+            and c.text
+            and (c.kind == "text" or (c.year and not is_year_row))
         ) or None
         # A header row has real text starting in the value columns; lone '$'/'%'
         # filler and full-width section rows ('Products:') do not qualify.
@@ -196,7 +251,12 @@ def parse_table(
                 splittable = False
             row_label = LABEL_JOIN.join(p for p in (group, label) if p) or None
             spans = _char_spans(row)
-            for c in values:
+            labels = [_column_label(band, c) for c in values]
+            # A label two figures share tells them apart from neither; it also
+            # catches whatever misalignment the rules above did not.
+            counts = Counter(labels)
+            labels = [None if counts[lb] > 1 else lb for lb in labels]
+            for c, column_label in zip(values, labels, strict=True):
                 span = spans.get(c.index) if spans is not None else None
                 per_share = bool(row_label) and "per share" in row_label.lower()
                 out.append(
@@ -211,7 +271,7 @@ def parse_table(
                         value=c.value,
                         kind=c.kind,
                         row_label=row_label,
-                        column_label=_column_label(band, c),
+                        column_label=column_label,
                         scale_applies=c.kind == "number" and not (exempt_per_share and per_share),
                     )
                 )
@@ -223,7 +283,9 @@ def parse_table(
                 band, data_since_band = [], False
             group = None
             band.append(row)
-        elif label:
+        elif label and _SCALE_PHRASE.sub(" ", label).strip(" ,;:.()"):
+            # A bare scale phrase ("(In millions, ...)") feeds _scale but is
+            # not a section heading.
             group = label
 
     return TableInfo(table_id, caption, scale, splittable), out
