@@ -9,6 +9,11 @@ from pipeline.store import to_pgvector
 
 RRF_K = 60
 
+# Spec 2026-09-29 §5.6: a split table may take at most this many of the final
+# slots. Two, not one, so a year-over-year question can receive both the
+# current and prior-period band of one table.
+MAX_CHUNKS_PER_TABLE = 2
+
 # The lexical arm ORs the question's terms instead of ANDing them. Postgres'
 # tsquery builders AND every stemmed term, so a natural question ("What were
 # Apple's total net sales in fiscal 2024?" -- 6+ significant terms) matches a
@@ -40,7 +45,7 @@ _TSVECTOR = "to_tsvector('english', ch.context || ' ' || ch.text)"
 
 _BASE = (
     "SELECT ch.id, f.accession, f.form_type, f.filing_date, c.ticker, ch.section,"
-    " ch.sid_start, ch.sid_end, ch.text, ch.filing_id"
+    " ch.sid_start, ch.sid_end, ch.text, ch.filing_id, ch.context, ch.table_id"
     " FROM chunks ch"
     " JOIN filings f ON f.id = ch.filing_id"
     " JOIN companies c ON c.cik = f.cik"
@@ -60,6 +65,10 @@ class RetrievedChunk:
     text: str
     filing_id: int
     score: float
+    # Spec 2026-09-29 §5: shown to the model, never verified against.
+    context: str = ""
+    # Set only on pieces of a split table; the per-table cap keys on it.
+    table_id: int | None = None
 
 
 def _filters(
@@ -121,6 +130,34 @@ def lexical_search(
         return cur.fetchall()
 
 
+def cap_per_table(
+    ranked: list[tuple[int, float]],
+    table_of: dict[int, tuple[int, int] | None],
+    k_final: int,
+    *,
+    cap: int = MAX_CHUNKS_PER_TABLE,
+) -> list[tuple[int, float]]:
+    """Walk the fused ranking best-first, skipping a chunk once its table
+    (keyed by filing and table id) already holds `cap` slots.
+
+    A separate step after scoring on purpose: a pointwise reranker would score
+    every sibling piece of a relevant table highly, so the cap is what keeps
+    one table from filling the slots. A reranker slots in before this call.
+    """
+    kept: list[tuple[int, float]] = []
+    used: dict[tuple[int, int], int] = {}
+    for chunk_id, score in ranked:
+        key = table_of.get(chunk_id)
+        if key is not None:
+            if used.get(key, 0) >= cap:
+                continue
+            used[key] = used.get(key, 0) + 1
+        kept.append((chunk_id, score))
+        if len(kept) == k_final:
+            break
+    return kept
+
+
 def retrieve(
     conn: psycopg.Connection,
     embedder,
@@ -151,5 +188,13 @@ def retrieve(
             rows_by_id[chunk_id] = row
             scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (RRF_K + rank + 1)
 
-    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:k_final]
-    return [RetrievedChunk(*rows_by_id[chunk_id], score) for chunk_id, score in ranked]
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    table_of = {
+        chunk_id: (row[9], row[11]) if row[11] is not None else None
+        for chunk_id, row in rows_by_id.items()
+    }
+    kept = cap_per_table(ranked, table_of, k_final)
+    return [
+        RetrievedChunk(*rows_by_id[chunk_id][:10], score, *rows_by_id[chunk_id][10:])
+        for chunk_id, score in kept
+    ]
