@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 from datetime import date
@@ -444,9 +445,13 @@ def test_table_tail_recall_scores_only_table_tail_entries(monkeypatch):
         id="t001", question="Tail?", ticker="AAPL", accession="ACC-1",
         section="item8", gold_sids=[5], category="table_tail",
     )
+    # The non-tail entry's gold sid lies outside the fake chunk's 0-10 range,
+    # so it misses; an implementation ignoring `category` would score 0.5.
+    non_tail = dataclasses.replace(GOLDEN, gold_sids=[50])
     calls = []
     monkeypatch.setattr("evals.harness.retrieve", _two_arm_retrieve(calls))
-    metrics = harness.run_retrieval_eval(None, None, [GOLDEN, tail])
+    metrics = harness.run_retrieval_eval(None, None, [non_tail, tail])
+    assert metrics["recall@10"] == 0.5
     assert metrics["table_tail_recall@10"] == 1.0
     assert metrics["table_tail_misses@10"] == []
 
