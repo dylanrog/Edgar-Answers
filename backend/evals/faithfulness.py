@@ -1,12 +1,32 @@
 from __future__ import annotations
 
+import re
+
 from api.answer import answer_stream
+from api.normalize import normalize
 
 from .harness import GoldenQuestion
 
 # A refusal is a correct answer when the corpus does not cover the question
 # (design §10), so "answered" is measured, never assumed to be the goal.
 _REFUSALS = ("do not contain", "does not contain", "not covered", "cannot answer")
+
+
+def _whole_figure(needle: str, haystack: str) -> bool:
+    """needle occurs in haystack without being glued to more of a number."""
+    return bool(re.search(rf"(?<![\d.,]){re.escape(needle)}(?![\d]|[.,]\d)", haystack))
+
+
+def values_present(answer: str, expected: tuple[tuple[str, ...], ...]) -> bool:
+    """Spec §7.2: every required figure appears, as a whole figure (not inside
+    a longer number), in at least one accepted spelling. Deterministic -- the
+    same normalization citations use, so "$ 115,186" and "$115,186" count
+    alike and no LLM judges anything."""
+    haystack, _ = normalize(answer)
+    return all(
+        any(_whole_figure(normalize(spelling)[0].strip(), haystack) for spelling in spellings)
+        for spellings in expected
+    )
 
 
 def run_faithfulness_eval(
@@ -28,6 +48,9 @@ def run_faithfulness_eval(
     total = 0
     verified = 0
     gold_hits = 0
+    value_questions = 0
+    value_hits = 0
+    value_misses: list[str] = []
     for question in questions:
         text_parts: list[str] = []
         citations: list[dict] = []
@@ -49,7 +72,14 @@ def run_faithfulness_eval(
             elif event.name == "error":
                 citations = []
                 break
-        answer = "".join(text_parts).lower()
+        raw_answer = "".join(text_parts)
+        answer = raw_answer.lower()
+        if question.expected_values:
+            value_questions += 1
+            if values_present(raw_answer, question.expected_values):
+                value_hits += 1
+            else:
+                value_misses.append(question.id)
         if answer and not any(phrase in answer for phrase in _REFUSALS):
             answered += 1
         total += len(citations)
@@ -61,7 +91,7 @@ def run_faithfulness_eval(
             for c in citations
         )
     n = len(questions) or 1
-    return {
+    metrics = {
         "questions": len(questions),
         "answered_rate": round(answered / n, 4),
         "citations_total": total,
@@ -69,3 +99,8 @@ def run_faithfulness_eval(
         "gold_sid_hit_rate": round(gold_hits / n, 4),
         "unverified_answers": unverified_answers,
     }
+    if value_questions:
+        metrics["value_questions"] = value_questions
+        metrics["value_accuracy"] = round(value_hits / value_questions, 4)
+        metrics["value_misses"] = value_misses
+    return metrics

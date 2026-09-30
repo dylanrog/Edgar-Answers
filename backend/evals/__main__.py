@@ -159,6 +159,16 @@ def cmd_periods(args) -> None:
     )
 
 
+def cmd_tail_candidates(args) -> None:
+    from . import candidates
+
+    with db.connect() as conn:
+        rows = candidates.tail_candidates(conn, ticker=args.ticker, limit=args.limit)
+    for row in rows:
+        print(" | ".join(str(value) for value in row))
+    print(f"\n{len(rows)} candidate rows")
+
+
 def main(argv: list[str] | None = None) -> None:
     load_env()
     parser = argparse.ArgumentParser(prog="evals")
@@ -183,6 +193,12 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "periods", help="score fiscal-period-resolution detection against hand-labeled cases"
     )
+    p_tail = sub.add_parser(
+        "tail-candidates",
+        help="list table rows past the vector arm's token limit (golden-set authoring aid)",
+    )
+    p_tail.add_argument("--ticker", required=True)
+    p_tail.add_argument("--limit", type=int, default=40)
     args = parser.parse_args(argv)
     if args.cmd == "run":
         cmd_run(args)
@@ -192,6 +208,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_entities(args)
     elif args.cmd == "periods":
         cmd_periods(args)
+    elif args.cmd == "tail-candidates":
+        cmd_tail_candidates(args)
     else:
         cmd_verify(args)
 
