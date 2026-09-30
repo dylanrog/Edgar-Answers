@@ -16,6 +16,9 @@ RESULTS_PATH = Path(__file__).parent / "results.jsonl"
 _REQUIRED = ("id", "question", "ticker", "accession", "section", "gold_sids")
 
 
+_CATEGORIES = ("table_tail", "column")
+
+
 @dataclass(frozen=True)
 class GoldenQuestion:
     id: str
@@ -25,6 +28,10 @@ class GoldenQuestion:
     section: str
     gold_sids: list[int]
     group: str = ""  # set by load_golden to entry.get("group", entry["id"])
+    # Spec 2026-09-29 §7: which gap an entry measures ("" for the original set).
+    category: str = ""
+    # One inner tuple per required figure, holding its accepted spellings.
+    expected_values: tuple[tuple[str, ...], ...] = ()
 
 
 def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
@@ -40,7 +47,30 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
         ):
             raise ValueError(f"golden entry {entry_id}: gold_sids must be a list of ints")
         group = entry.get("group", entry["id"])
-        questions.append(GoldenQuestion(*(entry[f] for f in _REQUIRED), group))
+        category = entry.get("category", "")
+        if category and category not in _CATEGORIES:
+            raise ValueError(f"golden entry {entry_id}: unknown category {category!r}")
+        expected = entry.get("expected_values", [])
+        # Quoted strings only: an unquoted 115,186 inside a YAML flow list
+        # parses as two integers, which is exactly the mistake to catch here.
+        if not isinstance(expected, list) or not all(
+            isinstance(spellings, list)
+            and spellings
+            and all(isinstance(s, str) and s for s in spellings)
+            for spellings in expected
+        ):
+            raise ValueError(
+                f"golden entry {entry_id}: expected_values must be a list of"
+                " non-empty lists of quoted strings"
+            )
+        questions.append(
+            GoldenQuestion(
+                *(entry[f] for f in _REQUIRED),
+                group,
+                category,
+                tuple(tuple(spellings) for spellings in expected),
+            )
+        )
     by_group: dict[str, str] = {}
     for question in questions:
         prior = by_group.setdefault(question.group, question.question)
@@ -151,6 +181,12 @@ def run_retrieval_eval(
     """
     metrics: dict = {"questions": len(questions), "k_each": k_each}
     metrics |= _score(conn, embedder, questions, ks=ks, k_each=k_each, scoped=True)
+    # Spec §7.2: rows past the vector arm's reach today. Scoped, like recall@k.
+    tail = [q for q in questions if q.category == "table_tail"]
+    if tail:
+        tail_scores = _score(conn, embedder, tail, ks=(10,), k_each=k_each, scoped=True)
+        metrics["table_tail_recall@10"] = tail_scores["recall@10"]
+        metrics["table_tail_misses@10"] = tail_scores["misses@10"]
     unfiltered = _score(conn, embedder, questions, ks=ks, k_each=k_each, scoped=False)
     metrics |= {f"unfiltered_{key}": value for key, value in unfiltered.items()}
     if company_detector is not None:

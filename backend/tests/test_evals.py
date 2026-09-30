@@ -387,3 +387,116 @@ def test_targeted_arm_is_skipped_when_no_company_detector_is_given(monkeypatch):
     monkeypatch.setattr("evals.harness.retrieve", lambda *a, **k: [])
     metrics = harness.run_retrieval_eval(None, None, [GOLDEN])
     assert "targeted_recall@10" not in metrics
+
+
+def test_load_golden_reads_category_and_expected_values(tmp_path):
+    path = tmp_path / "golden.yaml"
+    path.write_text(
+        "- id: t001\n"
+        "  question: What was NVIDIA's Data Center revenue in fiscal 2025?\n"
+        "  ticker: NVDA\n"
+        '  accession: "0001045810-25-000023"\n'
+        "  section: item7\n"
+        "  gold_sids: [2768]\n"
+        "  category: column\n"
+        '  expected_values: [["115,186", "115.2 billion"]]\n',
+        encoding="utf-8",
+    )
+    question = harness.load_golden(path)[0]
+    assert question.category == "column"
+    assert question.expected_values == (("115,186", "115.2 billion"),)
+
+
+def test_load_golden_defaults_category_and_expected_values(tmp_path):
+    path = tmp_path / "golden.yaml"
+    path.write_text(
+        "- id: q001\n  question: Q?\n  ticker: AAPL\n"
+        '  accession: "A-1"\n  section: item7\n  gold_sids: [1]\n',
+        encoding="utf-8",
+    )
+    question = harness.load_golden(path)[0]
+    assert question.category == ""
+    assert question.expected_values == ()
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        ("  category: tables\n", "category"),
+        ("  expected_values: [[115186]]\n", "expected_values"),
+        ("  expected_values: [[]]\n", "expected_values"),
+        ('  expected_values: ["115,186"]\n', "expected_values"),
+    ],
+)
+def test_load_golden_rejects_malformed_new_keys(tmp_path, extra, message):
+    path = tmp_path / "golden.yaml"
+    path.write_text(
+        "- id: q009\n  question: Q?\n  ticker: AAPL\n"
+        '  accession: "A-1"\n  section: item7\n  gold_sids: [1]\n' + extra,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=message):
+        harness.load_golden(path)
+
+
+def test_table_tail_recall_scores_only_table_tail_entries(monkeypatch):
+    tail = GoldenQuestion(
+        id="t001", question="Tail?", ticker="AAPL", accession="ACC-1",
+        section="item8", gold_sids=[5], category="table_tail",
+    )
+    calls = []
+    monkeypatch.setattr("evals.harness.retrieve", _two_arm_retrieve(calls))
+    metrics = harness.run_retrieval_eval(None, None, [GOLDEN, tail])
+    assert metrics["table_tail_recall@10"] == 1.0
+    assert metrics["table_tail_misses@10"] == []
+
+
+def test_table_tail_keys_are_absent_without_table_tail_entries(monkeypatch):
+    monkeypatch.setattr("evals.harness.retrieve", _two_arm_retrieve([]))
+    metrics = harness.run_retrieval_eval(None, None, [GOLDEN])
+    assert "table_tail_recall@10" not in metrics
+
+
+def test_values_present_normalizes_spacing_and_needs_every_figure():
+    from evals.faithfulness import values_present
+
+    answer = "Data Center revenue was $115,186 million, up from $ 47,525 million."
+    assert values_present(answer, (("$ 115,186", "115.2 billion"),))
+    assert values_present(answer, (("115,186",), ("47,525",)))
+    assert not values_present(answer, (("115,186",), ("15,005",)))
+    assert values_present("It was $115.2 Billion.", (("115,186", "115.2 billion"),))
+
+
+def test_faithfulness_reports_value_accuracy_over_entries_with_expected_values(monkeypatch):
+    scored = GoldenQuestion(
+        id="c001", question="Data Center revenue?", ticker="NVDA",
+        accession="A-1", section="item7", gold_sids=[1],
+        category="column", expected_values=(("115,186",),),
+    )
+    unscored = GoldenQuestion(
+        id="q001", question="Why?", ticker="NVDA",
+        accession="A-1", section="item7", gold_sids=[1],
+    )
+    missed = GoldenQuestion(
+        id="c002", question="Gaming revenue?", ticker="NVDA",
+        accession="A-1", section="item7", gold_sids=[1],
+        category="column", expected_values=(("11,350",),),
+    )
+
+    class FakeEvent:
+        def __init__(self, name, data):
+            self.name, self.data = name, data
+
+    def fake_stream(*args, **kwargs):
+        yield FakeEvent("token", {"text": "Revenue was $115,186 million [1]."})
+        yield FakeEvent(
+            "done",
+            {"chunks_retrieved": 8, "citations_total": 0,
+             "citations_verified": 0, "unverified_answer": False},
+        )
+
+    monkeypatch.setattr("evals.faithfulness.answer_stream", fake_stream)
+    metrics = run_faithfulness_eval(None, None, None, None, [scored, unscored, missed])
+    assert metrics["value_questions"] == 2
+    assert metrics["value_accuracy"] == 0.5
+    assert metrics["value_misses"] == ["c002"]
