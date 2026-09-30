@@ -143,7 +143,77 @@ def test_real_nvidia_table_splits_with_its_header_in_the_first_piece():
         canonical.sentences, max_tokens=70, tables=tables, cells=canonical.cells
     )
     pieces = [c for c in chunks if c.table_id is not None]
-    assert pieces[0].text.startswith("Year Ended Jan 26, 2025")
+    assert pieces[0].text.startswith(
+        "The following table summarizes revenue by specialized markets: Year Ended Jan 26, 2025"
+    )
+    assert "Table:" not in pieces[0].context
+    assert all(
+        p.context.startswith("Table: The following table summarizes") for p in pieces[1:]
+    )
     assert "Data Center $ 115,186" in pieces[0].text
     assert all("Columns: Year Ended › [Jan 26, 2025" in p.context for p in pieces)
     assert MAX_TOKENS == 450
+
+
+CAPTION = "The following table summarizes segment results:"
+
+
+def lead_in_case(max_tokens=None, lead_text=CAPTION):
+    """prose, prose, lead-in, then a small table that cannot join the prose."""
+    rows, cells = table(rows_per_band=2, bands=1, start=3)
+    sentences = [prose(0), prose(1), prose(2, lead_text), *rows]
+    tables = {1: TableInfo(1, CAPTION, None, True)}
+    if max_tokens is None:
+        unit = sum(count_tokens(s.text) for s in [sentences[2], *rows])
+        # room for the lead-in + table + context, but not for the prose before it
+        max_tokens = unit + count_tokens("Columns: Three Months Ended period 0") + 5
+    return sentences, cells, tables, max_tokens
+
+
+def test_a_tables_lead_in_sentence_moves_into_the_tables_chunk():
+    sentences, cells, tables, budget = lead_in_case()
+    chunks = chunk_sentences(sentences, max_tokens=budget, tables=tables, cells=cells)
+    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 1), (2, 5)]
+    assert chunks[1].text.startswith(CAPTION)
+    assert covered(chunks) == [s.sid for s in sentences]
+
+
+def test_context_drops_the_caption_when_the_lead_in_is_in_the_chunk():
+    sentences, cells, tables, budget = lead_in_case()
+    chunks = chunk_sentences(sentences, max_tokens=budget, tables=tables, cells=cells)
+    assert chunks[1].context == "Columns: Three Months Ended period 0"
+
+
+def test_a_sentence_that_is_not_the_caption_is_not_moved():
+    sentences, cells, tables, budget = lead_in_case(lead_text="Something else entirely.")
+    # the table keeps its full `Table:` context, so give it exactly that much room
+    full = f"Table: {CAPTION} | Columns: Three Months Ended period 0"
+    table_cost = sum(count_tokens(s.text) for s in sentences[3:]) + count_tokens(full)
+    chunks = chunk_sentences(sentences, max_tokens=table_cost, tables=tables, cells=cells)
+    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 2), (3, 5)]
+    assert chunks[1].context.startswith("Table: The following table summarizes")
+
+
+def test_prose_after_a_table_starts_a_new_chunk():
+    rows, cells = table(rows_per_band=2, bands=1, start=1)
+    sentences = [prose(0), *rows, prose(4), prose(5)]
+    tables = {1: TableInfo(1, "T", None, True)}
+    chunks = chunk_sentences(sentences, tables=tables, cells=cells)
+    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 3), (4, 5)]
+    assert chunks[1].context == ""
+
+
+def test_a_split_table_keeps_its_lead_in_in_the_first_piece():
+    rows, cells = table(rows_per_band=8, bands=2, start=1)
+    sentences = [prose(0, CAPTION), *rows]
+    tables = {1: TableInfo(1, CAPTION, None, True)}
+    chunks = chunk_sentences(sentences, max_tokens=150, tables=tables, cells=cells)
+    data_sids = {c.sid for c in cells}
+    assert len(chunks) >= 2
+    assert chunks[0].sid_start == 0
+    assert chunks[0].text.startswith(CAPTION)
+    assert all(c.table_id == 1 for c in chunks)
+    assert "Table:" not in chunks[0].context
+    assert all(c.context.startswith(f"Table: {CAPTION}") for c in chunks[1:])
+    assert all(c.sid_end in data_sids for c in chunks)
+    assert covered(chunks) == [s.sid for s in sentences]
