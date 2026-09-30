@@ -224,14 +224,13 @@
   category: table_tail
   expected_values: [["383,242", "383.2 billion"]]
 - id: t006
-  question: How much cash, including restricted cash, did Meta hold at June 30, 2026
-    according to its cash flow statement?
+  question: What were Meta's total liabilities as of December 31, 2025?
   ticker: META
-  accession: "0001628280-26-050705"
-  section: part1.item1
-  gold_sids: [302]
+  accession: "0001628280-26-003942"
+  section: item8
+  gold_sids: [2237]
   category: table_tail
-  expected_values: [["29,271", "29.3 billion"]]
+  expected_values: [["148,778", "148.8 billion"]]
 - id: t007
   question: What were Alphabet's total costs and expenses for the Google Cloud segment
     in the three months ended June 30, 2026?
@@ -240,15 +239,15 @@
   section: part1.item1
   gold_sids: [1377]
   category: table_tail
-  expected_values: [["15,954", "16.0 billion"]]
+  expected_values: [["15,954", "16.0 billion", "16 billion"]]
 - id: t008
-  question: How much did Walmart spend repurchasing its own shares in fiscal 2026?
+  question: What were Walmart's total long-lived assets at the end of fiscal 2026?
   ticker: WMT
   accession: "0000104169-26-000055"
   section: other
-  gold_sids: [1337]
+  gold_sids: [2547]
   category: table_tail
-  expected_values: [["8,088", "8.1 billion"]]
+  expected_values: [["156,956", "157.0 billion", "157 billion"]]
 - id: c001
   question: In Microsoft's fiscal 2026 annual report, what was Intelligent Cloud
     revenue for fiscal year 2025?
@@ -282,7 +281,7 @@
   ticker: META
   accession: "0001628280-26-003942"
   section: item7
-  gold_sids: [1878, 2678]
+  gold_sids: [1623, 1878, 2678, 3462]
   category: column
   expected_values: [["162,355", "162.4 billion"]]
 - id: c005
@@ -291,7 +290,7 @@
   ticker: AMZN
   accession: "0001018724-26-000026"
   section: other
-  gold_sids: [757, 928]
+  gold_sids: [735, 757, 928]
   category: column
   expected_values: [["60,140", "60.1 billion"]]
 - id: c006
