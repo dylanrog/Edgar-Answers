@@ -39,7 +39,7 @@ def seeded():
     )
     conn.commit()
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM chunks WHERE filing_id = %s", (filing_id,))
+        cur.execute("SELECT id FROM chunks WHERE filing_id = %s ORDER BY sid_start", (filing_id,))
         chunk_id = cur.fetchone()[0]
     data_center = next(s.sid for s in canonical.sentences if s.text.startswith("Data Center"))
     yield conn, chunk_id, data_center
