@@ -64,8 +64,11 @@ def rechunk_filings(conn, embedder, *, ticker: str | None = None) -> tuple[int, 
 
     The explicit rebuild for a chunking change (spec 2026-09-29 §9): embed
     only touches filings with no chunks. Sentences are read, never written, so
-    sids and the golden set's pins are untouched. Embedding happens before the
-    per-filing transaction so a slow model never holds a lock.
+    sids and the golden set's pins are untouched. Embedding happens before each
+    filing's write, but the connection is not autocommit: the caller owns the
+    transaction, `conn.transaction()` here is only a savepoint, and the CLI
+    commits once at the end. Locks taken by earlier filings are therefore held
+    until then. An interrupted run rolls back and is safe to re-run.
     """
     filings_done = 0
     chunks_stored = 0
@@ -145,6 +148,10 @@ def retable_filings(
     verified per filing rather than assumed: a filing whose freshly computed
     sentences differ from the stored rows is left untouched and reported,
     because cells keyed to moved sids would point at the wrong rows.
+
+    Transaction: the caller owns it (the connection is not autocommit;
+    `conn.transaction()` per filing is a savepoint) and the CLI commits once at
+    the end. An interrupted run rolls back and is safe to re-run.
     """
     stats = RetableStats()
     for filing_id, cik, accession, form_type in store.filings_to_recanonicalize(
