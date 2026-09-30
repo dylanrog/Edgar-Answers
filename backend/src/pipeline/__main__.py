@@ -27,6 +27,11 @@ def main(argv: list[str] | None = None) -> None:
         help="rebuild viewer_html from cached raw HTML (no re-embed, no EDGAR traffic)",
     )
     p_recanon.add_argument("--ticker", help="restrict to one curated ticker")
+    p_retable = sub.add_parser(
+        "retable",
+        help="write table cells from cached raw HTML (no re-embed; refuses if sentences moved)",
+    )
+    p_retable.add_argument("--ticker", help="restrict to one curated ticker")
     p_reprocess = sub.add_parser(
         "reprocess",
         help="rebuild sentences, chunks and embeddings from cached raw HTML"
@@ -59,6 +64,14 @@ def main(argv: list[str] | None = None) -> None:
             stats = ingest.recanonicalize_filings(
                 conn, cache_dir=Path("data/raw"), ticker=args.ticker
             )
+        print(f"updated {stats.updated} filings, {stats.missing} missing from cache")
+        if stats.mismatched:
+            print(f"SENTENCE MISMATCH, left untouched: {', '.join(stats.mismatched)}")
+        return
+
+    if args.cmd == "retable":
+        with db.connect() as conn:
+            stats = ingest.retable_filings(conn, cache_dir=Path("data/raw"), ticker=args.ticker)
         print(f"updated {stats.updated} filings, {stats.missing} missing from cache")
         if stats.mismatched:
             print(f"SENTENCE MISMATCH, left untouched: {', '.join(stats.mismatched)}")

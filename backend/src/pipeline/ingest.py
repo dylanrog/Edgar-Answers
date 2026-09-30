@@ -96,6 +96,45 @@ def recanonicalize_filings(
 
 
 @dataclass
+class RetableStats:
+    updated: int = 0
+    missing: int = 0
+    mismatched: list[str] = field(default_factory=list)
+
+
+def retable_filings(
+    conn,
+    *,
+    cache_dir: Path,
+    ticker: str | None = None,
+) -> RetableStats:
+    """Write filing_tables and table_cells from cached raw HTML. Writes nothing else.
+
+    Column binding reads tables without touching the DOM, so sentences are
+    invariant across it (spec 2026-09-29 §4.1). As with recanonicalize, that is
+    verified per filing rather than assumed: a filing whose freshly computed
+    sentences differ from the stored rows is left untouched and reported,
+    because cells keyed to moved sids would point at the wrong rows.
+    """
+    stats = RetableStats()
+    for filing_id, cik, accession, form_type in store.filings_to_recanonicalize(
+        conn, ticker=ticker
+    ):
+        path = Path(cache_dir) / str(cik) / f"{accession}.html"
+        if not path.exists():
+            stats.missing += 1
+            continue
+        canonical = canonicalize(path.read_text(encoding="utf-8"), form_type)
+        if canonical.sentences != store.load_sentences(conn, filing_id):
+            stats.mismatched.append(accession)
+            continue
+        with conn.transaction():
+            store.replace_tables(conn, filing_id, canonical.tables, canonical.cells)
+        stats.updated += 1
+    return stats
+
+
+@dataclass
 class ReprocessStats:
     reprocessed: int = 0
     missing: int = 0
