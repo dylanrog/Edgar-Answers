@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from api.answer import answer_stream
 from api.normalize import normalize
 
@@ -10,13 +12,19 @@ from .harness import GoldenQuestion
 _REFUSALS = ("do not contain", "does not contain", "not covered", "cannot answer")
 
 
+def _whole_figure(needle: str, haystack: str) -> bool:
+    """needle occurs in haystack without being glued to more of a number."""
+    return bool(re.search(rf"(?<![\d.,]){re.escape(needle)}(?![\d]|[.,]\d)", haystack))
+
+
 def values_present(answer: str, expected: tuple[tuple[str, ...], ...]) -> bool:
-    """Spec §7.2: every required figure appears in at least one accepted
-    spelling. Deterministic -- the same normalization citations use, so
-    "$ 115,186" and "$115,186" count alike and no LLM judges anything."""
+    """Spec §7.2: every required figure appears, as a whole figure (not inside
+    a longer number), in at least one accepted spelling. Deterministic -- the
+    same normalization citations use, so "$ 115,186" and "$115,186" count
+    alike and no LLM judges anything."""
     haystack, _ = normalize(answer)
     return all(
-        any(normalize(spelling)[0].strip() in haystack for spelling in spellings)
+        any(_whole_figure(normalize(spelling)[0].strip(), haystack) for spelling in spellings)
         for spellings in expected
     )
 

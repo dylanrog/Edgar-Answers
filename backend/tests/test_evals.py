@@ -467,6 +467,16 @@ def test_values_present_normalizes_spacing_and_needs_every_figure():
     assert values_present("It was $115.2 Billion.", (("115,186", "115.2 billion"),))
 
 
+def test_values_present_matches_whole_figures_not_substrings():
+    from evals.faithfulness import values_present
+
+    assert not values_present("Google Cloud earned $18.8 billion.", (("8,814", "8.8 billion"),))
+    assert not values_present("Revenue was $147,525 million.", (("47,525",),))
+    assert not values_present("It was 115,1860.", (("115,186",),))
+    assert values_present("Operating income was $8.8 billion.", (("8,814", "8.8 billion"),))
+    assert values_present("Net sales were 40,315.", (("40,315",),))
+
+
 def test_faithfulness_reports_value_accuracy_over_entries_with_expected_values(monkeypatch):
     scored = GoldenQuestion(
         id="c001", question="Data Center revenue?", ticker="NVDA",
