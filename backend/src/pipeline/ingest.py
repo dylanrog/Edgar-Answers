@@ -141,6 +141,7 @@ def reprocess_filings(
         with conn.transaction():
             store.delete_derived(conn, filing_id)
             store.replace_sentences(conn, filing_id, canonical.sentences)
+            store.replace_tables(conn, filing_id, canonical.tables, canonical.cells)
             store.update_viewer_html(conn, filing_id, canonical.viewer_html)
             chunks = chunk_sentences(canonical.sentences)
             vectors = embedder.embed_texts([c.text for c in chunks])
