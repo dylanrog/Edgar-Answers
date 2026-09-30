@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import count
 
 import pysbd
 from bs4 import BeautifulSoup
 
 from .sections import SectionTracker
+from .tables import Cell, TableInfo, parse_table
 
 _STRIP_TAGS = ["script", "style", "iframe", "object", "embed", "ix:header", "ix:hidden"]
 _BLOCK_TAGS = ["p", "li", "div"]
@@ -34,6 +35,10 @@ class CanonicalFiling:
     canonical_text: str
     sentences: list[Sentence]
     viewer_html: str
+    # Column binding (spec 2026-09-29 §4). Defaulted so the three-argument
+    # constructions used across the tests keep working.
+    tables: list[TableInfo] = field(default_factory=list)
+    cells: list[Cell] = field(default_factory=list)
 
 
 def strip_color_declarations(style: str) -> str:
@@ -79,9 +84,37 @@ def canonicalize(raw_html: str, form_type: str) -> CanonicalFiling:
     sentences: list[Sentence] = []
     cursor = 0
 
+    tables: list[TableInfo] = []
+    cells: list[Cell] = []
+    # Rows of the table being collected. A table is parsed once all its rows
+    # are known, because a header band can only be read top to bottom.
+    pending_rows: list[tuple[int, str, object]] = []
+    pending_table: int | None = None
+    pending_caption: str | None = None
+    last_prose: Sentence | None = None
+
+    def flush_table() -> None:
+        nonlocal pending_rows, pending_table
+        if pending_table is not None and pending_rows:
+            info, table_cells = parse_table(pending_table, pending_rows, pending_caption)
+            tables.append(info)
+            cells.extend(table_cells)
+        pending_rows, pending_table = [], None
+
     body = soup.body if soup.body is not None else soup
     for kind, payload, table_id in list(_iter_units(body, count(1))):
         if kind == "row":
+            if table_id != pending_table:
+                flush_table()
+                pending_table = table_id
+                # Spec §4.3 rule 8: the nearest preceding prose sentence in the
+                # same section, with no other table in between -- hence the reset.
+                pending_caption = (
+                    last_prose.text
+                    if last_prose is not None and last_prose.section == tracker.current
+                    else None
+                )
+                last_prose = None
             text = " ".join(payload.get_text(" ", strip=True).split())
             if not text:
                 continue  # spacer row: EDGAR uses these purely for layout
@@ -94,8 +127,10 @@ def canonicalize(raw_html: str, form_type: str) -> CanonicalFiling:
             )
             cursor += len(text) + 1
             payload["data-sid"] = str(sid)
+            pending_rows.append((sid, text, payload))
             continue
 
+        flush_table()
         nodes = [payload] if kind == "block" else payload
         text = _unit_text(nodes)
         if not text:
@@ -117,10 +152,12 @@ def canonicalize(raw_html: str, form_type: str) -> CanonicalFiling:
             else:
                 _rewrite_run(soup, payload, block_sentences)
             sentences.extend(block_sentences)
+            last_prose = block_sentences[-1]
 
+    flush_table()
     canonical_text = "\n".join(s.text for s in sentences)
     viewer_html = "".join(str(child) for child in body.children)
-    return CanonicalFiling(canonical_text, sentences, viewer_html)
+    return CanonicalFiling(canonical_text, sentences, viewer_html, tables, cells)
 
 
 def _is_leaf(el) -> bool:
