@@ -255,6 +255,21 @@ def test_boundaries_match_the_legacy_chunker_when_no_table_is_split(name):
     ]
 
 
+def test_prose_after_a_split_table_chunks_like_legacy_when_the_lead_in_was_alone():
+    rows, cells = table(rows_per_band=8, bands=2, start=1)
+    tail = " ".join(["Net sales grew on higher demand this year."] * 8)
+    last = rows[-1].sid
+    sentences = [prose(0, CAPTION), *rows, prose(last + 1, tail), prose(last + 2, tail)]
+    tables = {1: TableInfo(1, CAPTION, None, True)}
+    chunks = chunk_sentences(sentences, max_tokens=150, tables=tables, cells=cells)
+    trailing = [s for s in sentences if s.table_id is None and s.sid > 0]
+    legacy = chunk_sentences(trailing, max_tokens=150)
+    assert [(c.sid_start, c.sid_end) for c in chunks if c.table_id is None] == [
+        (c.sid_start, c.sid_end) for c in legacy
+    ]
+    assert len(legacy) == 1
+
+
 def test_a_split_table_keeps_its_lead_in_in_the_first_piece():
     rows, cells = table(rows_per_band=8, bands=2, start=1)
     sentences = [prose(0, CAPTION), *rows]

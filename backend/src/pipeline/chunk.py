@@ -187,8 +187,11 @@ def chunk_sentences(
                     and current[-1].section == sentence.section
                     and current[-1].text == info.caption
                 ):
-                    unit = [current.pop(), *unit]
+                    lead = current.pop()
+                    current_tokens -= count_tokens(lead.text)
+                    unit = [lead, *unit]
                 flush()
+                current, current_tokens = [], 0
                 chunks.extend(_split_table(unit, tid, ctx, max_tokens))
                 i = j
                 continue
