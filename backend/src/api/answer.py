@@ -118,7 +118,10 @@ def answer_stream(
             sentences = queries.load_chunk_sentences(
                 conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
             )
-            verified.append(verify_citation(citation, chunk, sentences))
+            cells = queries.load_chunk_cells(
+                conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
+            )
+            verified.append(verify_citation(citation, chunk, sentences, cells))
 
         for citation in verified:
             yield AnswerEvent(
@@ -132,6 +135,7 @@ def answer_stream(
                     "filing_date": citation.filing_date,
                     "sids": citation.sids,
                     "quote": citation.quote,
+                    "cells": [{"sid": sid, "cell": cell} for sid, cell in citation.cells],
                 },
             )
 

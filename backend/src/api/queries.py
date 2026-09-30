@@ -3,6 +3,15 @@ from __future__ import annotations
 import psycopg
 
 from pipeline.canonicalize import Sentence
+from pipeline.store import load_cells
+from pipeline.tables import Cell
+
+
+def load_chunk_cells(
+    conn: psycopg.Connection, filing_id: int, sid_start: int, sid_end: int
+) -> list[Cell]:
+    """The table cells a chunk's rows hold, in (sid, col) order."""
+    return load_cells(conn, filing_id, sid_start, sid_end)
 
 
 def load_chunk_sentences(
