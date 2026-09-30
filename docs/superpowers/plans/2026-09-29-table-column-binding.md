@@ -564,6 +564,8 @@ git -C C:/Users/dylan/Projects/SEC-RAG-table-column-binding branch --unset-upstr
 cp C:/Users/dylan/Projects/SEC-RAG/backend/.env C:/Users/dylan/Projects/SEC-RAG-table-column-binding/backend/.env
 ```
 
+The backend package is installed editable from the primary checkout (`C:\Users\dylan\Projects\SEC-RAG\backend`), so from a sibling worktree `import api` / `import pipeline` resolve to the *primary* checkout's `src/`, not this worktree's. Run pytest, `python -m pipeline` and `python -m evals` from this worktree's `backend/` with `PYTHONPATH=src` (verify with `python -c "import api; print(api.__file__)"`), or every test and eval will exercise `main`'s code while recording this branch's `git_sha`.
+
 ### Task 5: The table parser (`pipeline/tables.py`)
 
 **Files:**
