@@ -85,3 +85,51 @@ test("an unverified citation is badged and not clickable", async ({ page }) => {
   await expect(page.getByText("[1] unverified")).toBeVisible();
   await expect(page.getByRole("button", { name: "[1]" })).toHaveCount(0);
 });
+
+test("a cited table figure stands out inside its row", async ({ page }) => {
+  const tableHtml = `
+    <table><tbody>
+      <tr data-sid="30"><td>Year Ended</td></tr>
+      <tr data-sid="31"><td>Data Center</td><td>$</td><td>115,186</td><td>$</td><td>47,525</td></tr>
+    </tbody></table>`;
+  await page.route(`${API}/companies`, (route) =>
+    route.fulfill({ contentType: "application/json", body: "[]" }),
+  );
+  await page.route(`${API}/ask`, (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        'event: token\ndata: {"text":"Data Center revenue was $115,186 million [1]."}\n\n' +
+        `event: citation\ndata: {"marker":1,"verified":true,"accession":"${ACCESSION}",` +
+        '"ticker":"NVDA","form_type":"10-K","filing_date":"2025-02-26",' +
+        '"sids":[31],"quote":"Data Center $ 115,186","cells":[{"sid":31,"cell":2}]}\n\n' +
+        'event: done\ndata: {"chunks_retrieved":8,"citations_total":1,' +
+        '"citations_verified":1,"unverified_answer":false}\n\n',
+    }),
+  );
+  await page.route(`${API}/filings/${ACCESSION}`, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        accession: ACCESSION,
+        viewer_html: tableHtml,
+        ticker: "NVDA",
+        form_type: "10-K",
+        filing_date: "2025-02-26",
+        period_end: "2025-01-26",
+      }),
+    }),
+  );
+
+  await page.goto("/ask");
+  await page.getByLabel("Question").fill("What was Data Center revenue?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const chip = page.getByRole("button", { name: "[1]" });
+  await expect(chip).toBeVisible();
+  await chip.click();
+
+  const cells = page.locator('tr[data-sid="31"] td');
+  await expect(page.locator('tr[data-sid="31"]')).toHaveClass(/cited-sentence/);
+  await expect(cells.nth(2)).toHaveClass(/cited-figure/);
+  await expect(cells.nth(4)).not.toHaveClass(/cited-figure/);
+});

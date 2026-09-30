@@ -35,7 +35,10 @@ export function reduceAnswer(state: AnswerState, event: SSEEvent): AnswerState {
       return { ...state, prose: state.prose + text, status: "streaming" };
     }
     case "citation": {
-      const citation = event.data as Citation;
+      const raw = event.data as Citation;
+        // Older servers and hand-written fixtures omit cells; normalize once here
+        // so every consumer can rely on an array.
+        const citation: Citation = { ...raw, cells: raw.cells ?? [] };
       // A fresh Map, because React compares by reference to decide re-renders.
       const citations = new Map(state.citations);
       citations.set(citation.marker, citation);

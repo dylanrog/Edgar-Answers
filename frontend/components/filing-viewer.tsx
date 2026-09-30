@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { fetchFiling } from "@/lib/api";
-import { applyHighlight } from "@/lib/highlight";
+import { NO_HIGHLIGHT, applyHighlight } from "@/lib/highlight";
+import type { Highlight } from "@/lib/highlight";
 import type { TabState } from "@/lib/tabs";
 import type { Filing } from "@/lib/types";
 
@@ -15,11 +16,11 @@ import type { Filing } from "@/lib/types";
  */
 function FilingPane({
   accession,
-  sids,
+  highlight,
   active,
 }: {
   accession: string;
-  sids: number[];
+  highlight: Highlight;
   active: boolean;
 }) {
   const [filing, setFiling] = useState<Filing | null>(null);
@@ -45,9 +46,9 @@ function FilingPane({
   // scrollIntoView would do nothing.
   useEffect(() => {
     if (active && filing !== null && containerRef.current !== null) {
-      applyHighlight(containerRef.current, sids);
+      applyHighlight(containerRef.current, highlight.sids, highlight.cells);
     }
-  }, [active, filing, sids]);
+  }, [active, filing, highlight]);
 
   return (
     // data-accession gives each pane a stable handle regardless of which is
@@ -76,10 +77,10 @@ function FilingPane({
 
 export function FilingViewer({
   tabs,
-  sids,
+  highlights,
 }: {
   tabs: TabState;
-  sids: Record<string, number[]>;
+  highlights: Record<string, Highlight>;
 }) {
   if (tabs.open.length === 0) {
     return (
@@ -93,7 +94,7 @@ export function FilingViewer({
         <FilingPane
           key={accession}
           accession={accession}
-          sids={sids[accession] ?? []}
+          highlight={highlights[accession] ?? NO_HIGHLIGHT}
           active={accession === tabs.active}
         />
       ))}

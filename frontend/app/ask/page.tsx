@@ -12,6 +12,7 @@ import { askStream } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
 import { closeTab, initialTabState, openTab } from "@/lib/tabs";
+import type { Highlight } from "@/lib/highlight";
 import type { Citation } from "@/lib/types";
 
 type TurnView = { question: string; state: AnswerState };
@@ -19,7 +20,7 @@ type TurnView = { question: string; state: AnswerState };
 export default function AskPage() {
   const [turns, setTurns] = useState<TurnView[]>([]);
   const [tabs, setTabs] = useState(initialTabState);
-  const [sids, setSids] = useState<Record<string, number[]>>({});
+  const [highlights, setHighlights] = useState<Record<string, Highlight>>({});
 
   const streaming = turns.at(-1)?.state.status === "streaming";
 
@@ -83,7 +84,7 @@ export default function AskPage() {
     startNewConversation();
     setTurns([]);
     setTabs(initialTabState);
-    setSids({});
+    setHighlights({});
   }
 
   function select(citation: Citation) {
@@ -91,7 +92,10 @@ export default function AskPage() {
     // there is nothing trustworthy to scroll to.
     if (!citation.verified || citation.accession === "") return;
     setTabs((previous) => openTab(previous, citation.accession));
-    setSids((previous) => ({ ...previous, [citation.accession]: citation.sids }));
+    setHighlights((previous) => ({
+      ...previous,
+      [citation.accession]: { sids: citation.sids, cells: citation.cells },
+    }));
   }
 
   return (
@@ -142,7 +146,7 @@ export default function AskPage() {
           onClose={(accession) => setTabs((previous) => closeTab(previous, accession))}
         />
         <div className="min-h-0 flex-1 bg-slate-950">
-          <FilingViewer tabs={tabs} sids={sids} />
+          <FilingViewer tabs={tabs} highlights={highlights} />
         </div>
       </section>
     </main>
