@@ -34,6 +34,11 @@ def main(argv: list[str] | None = None) -> None:
     p_retable.add_argument("--ticker", help="restrict to one curated ticker")
     p_report = sub.add_parser("table-report", help="column-binding coverage over stored tables")
     p_report.add_argument("--ticker", help="restrict to one curated ticker")
+    p_rechunk = sub.add_parser(
+        "rechunk",
+        help="rebuild chunks and embeddings from stored sentences and cells (keeps sids)",
+    )
+    p_rechunk.add_argument("--ticker", help="restrict to one curated ticker")
     p_reprocess = sub.add_parser(
         "reprocess",
         help="rebuild sentences, chunks and embeddings from cached raw HTML"
@@ -90,6 +95,16 @@ def main(argv: list[str] | None = None) -> None:
         print("lowest-labelled filings:")
         for row_ticker, accession, n, share in result["worst"]:
             print(f"  {row_ticker} {accession}: {share:.1%} of {n} cells")
+        return
+
+    if args.cmd == "rechunk":
+        from .embed import Embedder
+
+        with db.connect() as conn:
+            filings_done, chunks_stored = ingest.rechunk_filings(
+                conn, Embedder(), ticker=args.ticker
+            )
+        print(f"rechunked {filings_done} filings into {chunks_stored} chunks")
         return
 
     if args.cmd == "reprocess":

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from . import store
 from .canonicalize import canonicalize
-from .chunk import chunk_sentences
+from .chunk import chunk_sentences, embed_input
 from .companies import Company
 
 
@@ -48,9 +48,39 @@ def embed_filings(
     chunks_stored = 0
     for filing_id in store.filing_ids_without_chunks(conn, ticker=ticker):
         sentences = store.load_sentences(conn, filing_id)
-        chunks = chunk_sentences(sentences)
-        vectors = embedder.embed_texts([c.text for c in chunks])
+        chunks = chunk_sentences(
+            sentences,
+            tables=store.load_tables(conn, filing_id),
+            cells=store.load_cells(conn, filing_id),
+        )
+        vectors = embedder.embed_texts([embed_input(c) for c in chunks])
         chunks_stored += store.store_chunks(conn, filing_id, chunks, vectors)
+        filings_done += 1
+    return filings_done, chunks_stored
+
+
+def rechunk_filings(conn, embedder, *, ticker: str | None = None) -> tuple[int, int]:
+    """Rebuild every filing's chunks from stored sentences and cells, re-embedding.
+
+    The explicit rebuild for a chunking change (spec 2026-09-29 §9): embed
+    only touches filings with no chunks. Sentences are read, never written, so
+    sids and the golden set's pins are untouched. Embedding happens before the
+    per-filing transaction so a slow model never holds a lock.
+    """
+    filings_done = 0
+    chunks_stored = 0
+    for filing_id, _cik, _accession, _form in store.filings_to_recanonicalize(
+        conn, ticker=ticker
+    ):
+        chunks = chunk_sentences(
+            store.load_sentences(conn, filing_id),
+            tables=store.load_tables(conn, filing_id),
+            cells=store.load_cells(conn, filing_id),
+        )
+        vectors = embedder.embed_texts([embed_input(c) for c in chunks])
+        with conn.transaction():
+            store.delete_chunks(conn, filing_id)
+            chunks_stored += store.store_chunks(conn, filing_id, chunks, vectors)
         filings_done += 1
     return filings_done, chunks_stored
 
@@ -182,8 +212,12 @@ def reprocess_filings(
             store.replace_sentences(conn, filing_id, canonical.sentences)
             store.replace_tables(conn, filing_id, canonical.tables, canonical.cells)
             store.update_viewer_html(conn, filing_id, canonical.viewer_html)
-            chunks = chunk_sentences(canonical.sentences)
-            vectors = embedder.embed_texts([c.text for c in chunks])
+            chunks = chunk_sentences(
+                canonical.sentences,
+                tables={t.table_id: t for t in canonical.tables},
+                cells=canonical.cells,
+            )
+            vectors = embedder.embed_texts([embed_input(c) for c in chunks])
             store.store_chunks(conn, filing_id, chunks, vectors)
         stats.reprocessed += 1
     return stats

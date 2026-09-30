@@ -213,7 +213,8 @@ def store_chunks(
     with conn.transaction(), conn.cursor() as cur:
         cur.executemany(
             "INSERT INTO chunks (filing_id, section, sid_start, sid_end, text,"
-            " token_count, embedding) VALUES (%s, %s, %s, %s, %s, %s, %s::vector)",
+            " token_count, embedding, context, table_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s)",
             [
                 (
                     filing_id,
@@ -223,6 +224,8 @@ def store_chunks(
                     chunk.text,
                     chunk.token_count,
                     to_pgvector(vector),
+                    chunk.context,
+                    chunk.table_id,
                 )
                 # Backstops the length check above: without strict, a future
                 # refactor that drops that guard would silently truncate.
@@ -230,3 +233,8 @@ def store_chunks(
             ],
         )
     return len(chunks)
+
+
+def delete_chunks(conn: psycopg.Connection, filing_id: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
