@@ -1,6 +1,8 @@
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from pipeline.canonicalize import Sentence, canonicalize
 from pipeline.chunk import MAX_TOKENS, chunk_sentences, count_tokens, embed_input
 from pipeline.tables import Cell, TableInfo
@@ -170,37 +172,87 @@ def lead_in_case(max_tokens=None, lead_text=CAPTION):
     return sentences, cells, tables, max_tokens
 
 
-def test_a_tables_lead_in_sentence_moves_into_the_tables_chunk():
-    sentences, cells, tables, budget = lead_in_case()
-    chunks = chunk_sentences(sentences, max_tokens=budget, tables=tables, cells=cells)
-    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 1), (2, 5)]
+def split_lead_in_case(lead_text=CAPTION):
+    """prose, lead-in, then an over-budget splittable table."""
+    rows, cells = table(rows_per_band=8, bands=2, start=2)
+    sentences = [prose(0), prose(1, lead_text), *rows]
+    tables = {1: TableInfo(1, CAPTION, None, True)}
+    return sentences, cells, tables
+
+
+def test_a_split_tables_lead_in_sentence_moves_into_its_first_piece():
+    sentences, cells, tables = split_lead_in_case()
+    chunks = chunk_sentences(sentences, max_tokens=150, tables=tables, cells=cells)
+    assert (chunks[0].sid_start, chunks[0].sid_end, chunks[0].table_id) == (0, 0, None)
+    assert chunks[1].sid_start == 1
     assert chunks[1].text.startswith(CAPTION)
+    assert all(c.table_id == 1 for c in chunks[1:])
     assert covered(chunks) == [s.sid for s in sentences]
 
 
 def test_context_drops_the_caption_when_the_lead_in_is_in_the_chunk():
-    sentences, cells, tables, budget = lead_in_case()
-    chunks = chunk_sentences(sentences, max_tokens=budget, tables=tables, cells=cells)
-    assert chunks[1].context == "Columns: Three Months Ended period 0"
+    rows, cells = table(rows_per_band=2, bands=1, start=1)
+    sentences = [prose(0, CAPTION), *rows]
+    tables = {1: TableInfo(1, CAPTION, None, True)}
+    chunks = chunk_sentences(sentences, tables=tables, cells=cells)
+    assert len(chunks) == 1
+    assert chunks[0].context == "Columns: Three Months Ended period 0"
 
 
 def test_a_sentence_that_is_not_the_caption_is_not_moved():
-    sentences, cells, tables, budget = lead_in_case(lead_text="Something else entirely.")
-    # the table keeps its full `Table:` context, so give it exactly that much room
-    full = f"Table: {CAPTION} | Columns: Three Months Ended period 0"
-    table_cost = sum(count_tokens(s.text) for s in sentences[3:]) + count_tokens(full)
-    chunks = chunk_sentences(sentences, max_tokens=table_cost, tables=tables, cells=cells)
-    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 2), (3, 5)]
+    sentences, cells, tables = split_lead_in_case(lead_text="Something else entirely.")
+    chunks = chunk_sentences(sentences, max_tokens=150, tables=tables, cells=cells)
+    assert (chunks[0].sid_start, chunks[0].sid_end, chunks[0].table_id) == (0, 1, None)
+    assert chunks[1].sid_start == 2
     assert chunks[1].context.startswith("Table: The following table summarizes")
 
 
-def test_prose_after_a_table_starts_a_new_chunk():
+def test_a_fitting_table_continues_the_current_chunk_like_before():
+    rows, cells = table(rows_per_band=3, bands=1, start=2)
+    filler = "Net sales grew on higher demand across every region and product line this year."
+    sentences = [prose(0, filler), prose(1, filler), *rows]
+    tables = {1: TableInfo(1, "Small", None, True)}
+    context = "Table: Small | Columns: Three Months Ended period 0"
+    lead = sum(count_tokens(s.text) for s in sentences[:2])
+    whole = sum(count_tokens(s.text) for s in rows)
+    budget = whole + count_tokens(context) + 2  # the table fits the budget on its own
+    assert lead + count_tokens(rows[0].text) + count_tokens(rows[1].text) <= budget
+    assert lead + whole > budget  # ...but prose plus the whole table does not
+    chunks = chunk_sentences(sentences, max_tokens=budget, tables=tables, cells=cells)
+    legacy = chunk_sentences(sentences, max_tokens=budget)
+    assert [(c.sid_start, c.sid_end) for c in chunks] == [(c.sid_start, c.sid_end) for c in legacy]
+    assert chunks[0].sid_end == rows[-1].sid  # the table runs on past the budget
+    assert chunks[0].context == context
+
+
+def test_prose_after_a_table_joins_the_same_chunk_when_it_fits():
     rows, cells = table(rows_per_band=2, bands=1, start=1)
     sentences = [prose(0), *rows, prose(4), prose(5)]
     tables = {1: TableInfo(1, "T", None, True)}
     chunks = chunk_sentences(sentences, tables=tables, cells=cells)
-    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 3), (4, 5)]
-    assert chunks[1].context == ""
+    assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 5)]
+
+
+FIXTURE_NAMES = [
+    "edgar_nvda_revenue.html",
+    "edgar_aapl_segments.html",
+    "edgar_msft_segments.html",
+    "edgar_jpm_highlights.html",
+    "mini_10k.html",
+    "table_shapes.html",
+]
+
+
+@pytest.mark.parametrize("name", FIXTURE_NAMES)
+def test_boundaries_match_the_legacy_chunker_when_no_table_is_split(name):
+    raw = (FIXTURES / name).read_text(encoding="utf-8")
+    canonical = canonicalize(raw, "10-K")
+    tables = {t.table_id: t for t in canonical.tables}
+    with_tables = chunk_sentences(canonical.sentences, tables=tables, cells=canonical.cells)
+    legacy = chunk_sentences(canonical.sentences)
+    assert [(c.sid_start, c.sid_end) for c in with_tables] == [
+        (c.sid_start, c.sid_end) for c in legacy
+    ]
 
 
 def test_a_split_table_keeps_its_lead_in_in_the_first_piece():

@@ -67,21 +67,19 @@ def test_rechunk_rebuilds_chunks_with_context_and_embeds_it(conn):
     filings, chunks = ingest.rechunk_filings(conn, embedder, ticker="TSTV")
     conn.commit()
 
-    # the table (with its lead-in) ends its chunk; the closing sentence is its own
-    assert (filings, chunks) == (1, 2)
+    assert (filings, chunks) == (1, 1)
     with conn.cursor() as cur:
         cur.execute(
             "SELECT context, text, table_id FROM chunks WHERE filing_id = %s ORDER BY sid_start",
             (filing_id,),
         )
         rows = cur.fetchall()
-    assert len(rows) == 2
+    assert len(rows) == 1
     context, text, table_id = rows[0]
     assert context.startswith("Scale: in millions")
     assert "Columns: Year Ended › [Jan 26, 2025" in context
     assert table_id is None  # the fixture table fits, so it is not split
-    assert rows[1][0] == ""
-    assert embedder.inputs == [f"{context}\n{text}", rows[1][1]]
+    assert embedder.inputs == [f"{context}\n{text}"]
 
 
 @pytest.mark.db
@@ -99,7 +97,7 @@ def test_embed_filings_uses_stored_cells_for_context(conn):
             "SELECT context FROM chunks WHERE filing_id = %s ORDER BY sid_start", (filing_id,)
         )
         rows = cur.fetchall()
-    assert len(rows) == 2  # the table's chunk, then the closing sentence
+    assert len(rows) == 1
     context = rows[0][0]
     assert "Scale: in millions" in context
     assert embedder.inputs[0].startswith(context)

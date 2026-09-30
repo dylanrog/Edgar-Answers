@@ -147,12 +147,13 @@ def chunk_sentences(
 ) -> list[Chunk]:
     """Greedy grouping of consecutive sentences within a section (design §4.3).
 
-    Chunks are contiguous, disjoint sid ranges. A table is costed as a whole,
-    context included: one that fits joins the greedy run like any sentence;
-    an over-budget one stays atomic unless its header was parsed
-    (splittable), in which case it is isolated and split by _split_table.
-    Without `tables`/`cells` every table is unsplittable and context-free,
-    which is exactly the pre-2026-09-29 behaviour."""
+    Chunks are contiguous, disjoint sid ranges. This is the pre-table-binding
+    greedy packer, unchanged: the budget counts text tokens only, and the rows
+    of a table already in progress never trigger a flush, so a header travels
+    with its data. The one exception is an over-budget *splittable* table
+    (context included): it is isolated and split by _split_table. Chunk
+    granularity is load-bearing for retrieval, so nothing else changes.
+    Without `tables`/`cells` this is exactly the pre-2026-09-29 behaviour."""
     tables = tables or {}
     ctx = _contexts(tables, cells or [])
     chunks: list[Chunk] = []
@@ -167,43 +168,38 @@ def chunk_sentences(
 
     i = 0
     while i < len(sentences):
-        first = sentences[i]
-        j = i + 1
-        if first.table_id is not None:
-            while j < len(sentences) and sentences[j].table_id == first.table_id:
+        sentence = sentences[i]
+        tid = sentence.table_id
+        starts_table = tid is not None and (not current or tid != current[-1].table_id)
+        info = tables.get(tid) if starts_table else None
+        if info is not None and info.splittable:
+            j = i
+            while j < len(sentences) and sentences[j].table_id == tid:
                 j += 1
-        unit = sentences[i:j]
-        info = tables.get(first.table_id) if first.table_id is not None else None
-        # A table's lead-in (its caption sentence) travels with it.
-        if (
-            info is not None
-            and info.caption is not None
-            and current
-            and current[-1].table_id is None
-            and current[-1].section == first.section
-            and current[-1].text == info.caption
-        ):
-            lead_in = current.pop()
-            current_tokens -= count_tokens(lead_in.text)
-            unit = [lead_in, *unit]
-        # A table ends its chunk: prose after it starts a fresh one.
-        if first.table_id is None and current and current[-1].table_id is not None:
-            flush()
-        cost = sum(count_tokens(s.text) for s in unit)
-        unit_ctx = _context(unit, ctx)
-        if unit_ctx:
-            cost += count_tokens(unit_ctx)
-        if info is not None and info.splittable and cost > max_tokens:
-            flush()
-            chunks.extend(_split_table(unit, first.table_id, ctx, max_tokens))
-            i = j
-            continue
-        new_section = current and first.section != current[0].section
-        over_budget = current and current_tokens + cost > max_tokens
+            unit = sentences[i:j]
+            cost = sum(count_tokens(s.text) for s in unit) + count_tokens(_context(unit, ctx))
+            if cost > max_tokens:
+                # A table's lead-in (its caption sentence) travels with it.
+                if (
+                    info.caption is not None
+                    and current
+                    and current[-1].table_id is None
+                    and current[-1].section == sentence.section
+                    and current[-1].text == info.caption
+                ):
+                    unit = [current.pop(), *unit]
+                flush()
+                chunks.extend(_split_table(unit, tid, ctx, max_tokens))
+                i = j
+                continue
+        n = count_tokens(sentence.text)
+        continues_table = bool(current) and tid is not None and tid == current[-1].table_id
+        new_section = current and sentence.section != current[0].section
+        over_budget = current and current_tokens + n > max_tokens and not continues_table
         if new_section or over_budget:
             flush()
-        current.extend(unit)
-        current_tokens += cost
-        i = j
+        current.append(sentence)
+        current_tokens += n
+        i += 1
     flush()
     return chunks
