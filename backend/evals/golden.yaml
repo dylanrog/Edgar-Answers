@@ -179,9 +179,14 @@
 # in the pre-change corpus; column entries pin a single cell whose column is
 # not the table's first. expected_values holds each required figure's
 # accepted spellings, always quoted.
+# Questions are phrased the way a user asks (company, line item, a plain
+# period like "fiscal 2025" or "Q2 2026") -- never a filing name or a printed
+# period-end date. So a column entry may also be answerable from an earlier
+# filing where the same cell is the first column; value_accuracy scores the
+# figure either way, and the pinned sids are the harder, non-first-column copy.
 
 - id: t001
-  question: What were NVIDIA's total liabilities as of October 26, 2025?
+  question: What were NVIDIA's total liabilities at the end of Q3 fiscal 2026?
   ticker: NVDA
   accession: "0001045810-25-000230"
   section: part1.item1
@@ -189,8 +194,8 @@
   category: table_tail
   expected_values: [["42,251", "42.3 billion"]]
 - id: t002
-  question: How much cash did NVIDIA pay for income taxes, net, in the nine months
-    ended October 26, 2025?
+  question: How much did NVIDIA pay in income taxes in the first nine months of fiscal
+    2026?
   ticker: NVDA
   accession: "0001045810-25-000230"
   section: part1.item1
@@ -198,7 +203,7 @@
   category: table_tail
   expected_values: [["13,309", "13.3 billion"]]
 - id: t003
-  question: What was Microsoft's total debt as of June 30, 2026?
+  question: What was Microsoft's total debt at the end of fiscal 2026?
   ticker: MSFT
   accession: "0001193125-26-323660"
   section: item8
@@ -206,8 +211,7 @@
   category: table_tail
   expected_values: [["40,294", "40.3 billion"]]
 - id: t004
-  question: What was the total face value of Amazon's long-term debt as of June 30,
-    2026?
+  question: What was the face value of Amazon's long-term debt at the end of Q2 2026?
   ticker: AMZN
   accession: "0001018724-26-000026"
   section: other
@@ -215,8 +219,8 @@
   category: table_tail
   expected_values: [["132,995", "133.0 billion", "133 billion"]]
 - id: t005
-  question: What were total Banking & Payments loans in JPMorgan Chase's Commercial &
-    Investment Bank at March 31, 2026?
+  question: How much in Banking & Payments loans did JPMorgan's Commercial &
+    Investment Bank have at the end of Q1 2026?
   ticker: JPM
   accession: "0001628280-26-029344"
   section: other
@@ -224,7 +228,7 @@
   category: table_tail
   expected_values: [["383,242", "383.2 billion"]]
 - id: t006
-  question: What were Meta's total liabilities as of December 31, 2025?
+  question: What were Meta's total liabilities at the end of 2025?
   ticker: META
   accession: "0001628280-26-003942"
   section: item8
@@ -232,8 +236,7 @@
   category: table_tail
   expected_values: [["148,778", "148.8 billion"]]
 - id: t007
-  question: What were Alphabet's total costs and expenses for the Google Cloud segment
-    in the three months ended June 30, 2026?
+  question: What were Google Cloud's total costs and expenses in Q2 2026?
   ticker: GOOGL
   accession: "0001652044-26-000071"
   section: part1.item1
@@ -249,8 +252,7 @@
   category: table_tail
   expected_values: [["156,956", "157.0 billion", "157 billion"]]
 - id: c001
-  question: In Microsoft's fiscal 2026 annual report, what was Intelligent Cloud
-    revenue for fiscal year 2025?
+  question: What was Microsoft's Intelligent Cloud revenue in fiscal 2025?
   ticker: MSFT
   accession: "0001193125-26-323660"
   section: item7
@@ -258,8 +260,7 @@
   category: column
   expected_values: [["106,265", "106.3 billion"]]
 - id: c002
-  question: In NVIDIA's fiscal 2026 annual report, what was Data Center revenue for
-    the fiscal year ended January 26, 2025?
+  question: What was NVIDIA's Data Center revenue in fiscal 2025?
   ticker: NVDA
   accession: "0001045810-26-000021"
   section: item15
@@ -267,8 +268,7 @@
   category: column
   expected_values: [["115,186", "115.2 billion"]]
 - id: c003
-  question: In Apple's 10-Q for the quarter ended March 28, 2026, what were Americas
-    net sales for the three months ended March 29, 2025?
+  question: What were Apple's Americas net sales in Q2 of fiscal 2025?
   ticker: AAPL
   accession: "0000320193-26-000013"
   section: part1.item1
@@ -276,8 +276,7 @@
   category: column
   expected_values: [["40,315", "40.3 billion"]]
 - id: c004
-  question: In Meta's annual report for 2025, what was Family of Apps revenue for
-    2024?
+  question: What was Meta's Family of Apps revenue in 2024?
   ticker: META
   accession: "0001628280-26-003942"
   section: item7
@@ -285,8 +284,7 @@
   category: column
   expected_values: [["162,355", "162.4 billion"]]
 - id: c005
-  question: In Amazon's 10-Q for the quarter ended June 30, 2026, what were AWS net
-    sales for the six months ended June 30, 2025?
+  question: What were AWS net sales in the first half of 2025?
   ticker: AMZN
   accession: "0001018724-26-000026"
   section: other
@@ -294,8 +292,7 @@
   category: column
   expected_values: [["60,140", "60.1 billion"]]
 - id: c006
-  question: What was Google Cloud's operating income for the three months ended June
-    30, 2026?
+  question: What was Google Cloud's operating income in Q2 2026?
   ticker: GOOGL
   accession: "0001652044-26-000071"
   section: part1.item1
