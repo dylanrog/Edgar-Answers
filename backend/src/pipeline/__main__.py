@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import companies, db, ingest
+from . import companies, db, ingest, report
 from .edgar import EdgarClient
 from .env import load_env
 
@@ -32,6 +32,8 @@ def main(argv: list[str] | None = None) -> None:
         help="write table cells from cached raw HTML (no re-embed; refuses if sentences moved)",
     )
     p_retable.add_argument("--ticker", help="restrict to one curated ticker")
+    p_report = sub.add_parser("table-report", help="column-binding coverage over stored tables")
+    p_report.add_argument("--ticker", help="restrict to one curated ticker")
     p_reprocess = sub.add_parser(
         "reprocess",
         help="rebuild sentences, chunks and embeddings from cached raw HTML"
@@ -75,6 +77,19 @@ def main(argv: list[str] | None = None) -> None:
         print(f"updated {stats.updated} filings, {stats.missing} missing from cache")
         if stats.mismatched:
             print(f"SENTENCE MISMATCH, left untouched: {', '.join(stats.mismatched)}")
+        return
+
+    if args.cmd == "table-report":
+        with db.connect() as conn:
+            result = report.table_report(conn, ticker=args.ticker)
+        print(f"numeric cells:     {result['cells']}")
+        print(f"  with a column:   {result['labelled_share']:.1%}")
+        print(f"tables:            {result['tables']}")
+        print(f"  with a scale:    {result['scaled_share']:.1%}")
+        print(f"  splittable:      {result['splittable_share']:.1%}")
+        print("lowest-labelled filings:")
+        for row_ticker, accession, n, share in result["worst"]:
+            print(f"  {row_ticker} {accession}: {share:.1%} of {n} cells")
         return
 
     if args.cmd == "reprocess":
