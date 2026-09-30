@@ -145,7 +145,7 @@ Migration `004_table_cells.sql`:
 
 ```sql
 CREATE TABLE filing_tables (
-    filing_id  bigint  NOT NULL REFERENCES filings(id),
+    filing_id  bigint  NOT NULL REFERENCES filings(id) ON DELETE CASCADE,
     table_id   integer NOT NULL,
     caption    text,              -- nearest preceding prose sentence, or NULL
     scale      numeric,           -- 1e3 | 1e6 | 1e9, or NULL when unknown
@@ -168,7 +168,8 @@ CREATE TABLE table_cells (
     column_label  text,              -- e.g. 'Year Ended › Jan 26, 2025', or NULL
     scale_applies boolean NOT NULL,  -- false for percent cells, per-share rows
     PRIMARY KEY (filing_id, sid, col),
-    FOREIGN KEY (filing_id, table_id) REFERENCES filing_tables (filing_id, table_id)
+    FOREIGN KEY (filing_id, table_id)
+      REFERENCES filing_tables (filing_id, table_id) ON DELETE CASCADE
 );
 
 ALTER TABLE chunks ADD COLUMN context  text NOT NULL DEFAULT '';
@@ -256,8 +257,10 @@ both documented invariants hold.
 
 Let `budget(table) = MAX_TOKENS − tokens(context for that table)`.
 
-- **A table whose rows fit its budget** chunks exactly as today (greedy with
-  surrounding prose, never split).
+- **A table whose rows fit its budget** is never split and joins the greedy
+  run with surrounding prose, as today — except that it is costed as a whole
+  (all rows plus its context), so a table that would not fit after the
+  preceding prose starts a new chunk rather than overflowing it.
 - **A table that is over budget and not splittable** stays atomic, as today.
   Nothing gets worse than now.
 - **A table that is over budget and splittable** is isolated: its first piece
@@ -266,8 +269,11 @@ Let `budget(table) = MAX_TOKENS − tokens(context for that table)`.
   against `budget(table)`, rows are never split, and a single row over budget
   becomes its own chunk (the existing escape hatch). **Band boundaries are
   preferred:** when a new band's header rows begin and the whole band would
-  not fit in the current piece's remaining budget, the piece ends there.
-  Every piece gets `chunks.table_id`.
+  not fit in the current piece's remaining budget, the piece ends there. (A
+  group row after data counts as a block start too; it is an equally natural
+  break.) A piece never ends on header rows: if the budget runs out right
+  after them, they move to the next piece with the data they label. Every
+  piece gets `chunks.table_id`.
 
 `MAX_TOKENS` stays 450 and now counts context tokens for table chunks,
 because the embedder sees both.
@@ -275,19 +281,22 @@ because the embedder sees both.
 ### 5.3 The context string
 
 Built deterministically from `filing_tables` and `table_cells`, so the `embed` path
-can rebuild it from the database without re-reading HTML. One block per table
-the chunk contains a data row of, from the **first data row of that table in
-the chunk**:
+can rebuild it from the database without re-reading HTML. One line per table
+the chunk contains a data row of, built from the **first data row of that
+table in the chunk**, with its parts joined by ` | `:
 
 ```
-Table: The following table summarizes revenue by specialized markets | Scale: in millions
-Columns: Year Ended › Jan 26, 2025; Year Ended › Jan 28, 2024; Year Ended › Jan 29, 2023
-Group: Intelligent Cloud
+Table: The following table summarizes revenue by specialized markets: | Scale: in millions | Columns: Year Ended › [Jan 26, 2025; Jan 28, 2024; Jan 29, 2023]
+Table: SEGMENT RESULTS OF OPERATIONS | Scale: in millions | Columns: 2026; 2025; Percentage Change | Group: Intelligent Cloud
 ```
 
 - `Table:` — the caption truncated to 200 characters; omitted when NULL.
 - `Scale:` — omitted when NULL.
 - `Columns:` — distinct non-NULL `column_label`s of that row, in grid order.
+  A label prefix shared by every column is written once
+  (`Year Ended › [Jan 26, 2025; …]`): Apple's segment tables repeat a
+  38-character period on all seven columns, and factoring it cut that
+  context from 141 to 78 tokens.
 - `Group:` — only when the row's label has a group prefix.
 
 Every table chunk carries context, not only continuation pieces. Prose-only
@@ -374,7 +383,7 @@ included; `$`/`%` filler cells are not stored, so they are never emphasized.
 second class (`cited-figure`) to `tr[data-sid=sid].cells[cell]`, and scrolls to
 the first cited figure when there is one. The row keeps its existing
 `cited-sentence` background; `cited-figure` is a stronger treatment (bold,
-outlined cell) defined in `app/globals.css` for both themes.
+outlined cell) defined in `app/globals.css` for the viewer's dark theme.
 
 **Limit.** Quotes must be contiguous, so a quote ending at a second-column
 figure also covers the first column's figure, and both are emphasized. That
