@@ -257,3 +257,56 @@ def _scale(grid: list[_Row], caption: str | None) -> tuple[Decimal | None, bool]
         if match:
             return _SCALES[match.group(1).lower()], bool(_EXCEPT.search(text))
     return None, False
+
+
+# Spec §5.3: the caption is truncated so a long lead-in paragraph cannot eat
+# the chunk's token budget.
+CAPTION_CHARS = 200
+
+
+def render_context(info: TableInfo, row: list[Cell]) -> str:
+    """The context line for a chunk whose first data row (of this table) is
+    `row` (spec §5.3). One line, ' | '-separated, parts omitted when unknown."""
+    parts: list[str] = []
+    if info.caption:
+        parts.append(f"Table: {info.caption[:CAPTION_CHARS]}")
+    if info.scale is not None:
+        parts.append(f"Scale: in {SCALE_NAMES[info.scale]}")
+    labels = list(
+        dict.fromkeys(c.column_label for c in sorted(row, key=lambda c: c.col) if c.column_label)
+    )
+    if labels:
+        parts.append("Columns: " + _factor(labels))
+    row_label = row[0].row_label
+    if row_label and LABEL_JOIN in row_label:
+        parts.append("Group: " + row_label.rsplit(LABEL_JOIN, 1)[0])
+    return " | ".join(parts)
+
+
+def row_contexts(tables: dict[int, TableInfo], cells: list[Cell]) -> dict[int, str]:
+    """sid -> context line, for every data row (a row with at least one cell)."""
+    by_sid: dict[int, list[Cell]] = {}
+    for cell in cells:
+        by_sid.setdefault(cell.sid, []).append(cell)
+    return {
+        sid: render_context(tables[row[0].table_id], row)
+        for sid, row in by_sid.items()
+        if row[0].table_id in tables
+    }
+
+
+def _factor(labels: list[str]) -> str:
+    """'A › x; A › y' -> 'A › [x; y]'. Apple's segment tables repeat a
+    38-character period on all seven columns; factoring it out cut that
+    context from 141 to 78 tokens of a 450-token budget."""
+    split = [label.split(LABEL_JOIN) for label in labels]
+    shared = 0
+    while all(len(parts) > shared + 1 for parts in split) and len(
+        {tuple(parts[: shared + 1]) for parts in split}
+    ) == 1:
+        shared += 1
+    if shared == 0 or len(labels) == 1:
+        return "; ".join(labels)
+    prefix = LABEL_JOIN.join(split[0][:shared])
+    rest = "; ".join(LABEL_JOIN.join(parts[shared:]) for parts in split)
+    return f"{prefix}{LABEL_JOIN}[{rest}]"
