@@ -100,3 +100,36 @@ def test_multi_filing_rule_precedes_the_output_format_example():
     from api.generate import FENCE, SYSTEM_PROMPT
 
     assert SYSTEM_PROMPT.index("more than one filing") < SYSTEM_PROMPT.index(FENCE)
+
+
+def test_a_table_chunk_shows_each_context_line_labelled_above_its_text():
+    from dataclasses import replace
+
+    from api.generate import CONTEXT_LABEL
+
+    table = replace(
+        chunk(7, "Data Center $ 115,186 $ 47,525"),
+        context="Table: First | Columns: 2025; 2024\nTable: Second | Columns: 2025",
+    )
+    message = build_user_message("Data Center revenue?", [table])
+    lines = message.splitlines()
+    header = next(i for i, line in enumerate(lines) if "chunk_id=7" in line)
+    assert lines[header + 1] == f"{CONTEXT_LABEL} Table: First | Columns: 2025; 2024"
+    assert lines[header + 2] == f"{CONTEXT_LABEL} Table: Second | Columns: 2025"
+    assert lines[header + 3] == "Data Center $ 115,186 $ 47,525"
+
+
+def test_a_prose_chunk_has_no_context_line():
+    from api.generate import CONTEXT_LABEL
+
+    message = build_user_message("Why?", [chunk(8, "Net sales rose.")])
+    assert CONTEXT_LABEL not in message
+
+
+def test_system_prompt_forbids_quoting_context_before_the_output_example():
+    from api.generate import FENCE, SYSTEM_PROMPT
+
+    assert "never quote them" in SYSTEM_PROMPT
+    assert "through that figure" in SYSTEM_PROMPT
+    assert SYSTEM_PROMPT.index("never quote them") < SYSTEM_PROMPT.index(FENCE)
+    assert SYSTEM_PROMPT.index("through that figure") < SYSTEM_PROMPT.index(FENCE)
