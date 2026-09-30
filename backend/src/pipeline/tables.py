@@ -182,9 +182,13 @@ def parse_table(
             if c.start >= label_end and c.kind in ("number", "percent", "nil")
         ]
         label = " ".join(
-            c.text for c in row.cells if c.end <= label_end and c.kind == "text" and c.text
+            c.text for c in row.cells if c.start < label_end and c.kind == "text" and c.text
         ) or None
-        in_value_columns = any(c.text for c in row.cells if c.end > label_end)
+        # A header row has real text starting in the value columns; lone '$'/'%'
+        # filler and full-width section rows ('Products:') do not qualify.
+        in_value_columns = any(
+            c.text and c.kind != "filler" and c.start >= label_end for c in row.cells
+        )
 
         if values and id(row) not in year_rows:
             data_since_band = True
@@ -213,9 +217,11 @@ def parse_table(
                 )
         elif in_value_columns:
             # Rule 5: a header row after data starts a new band (Apple's
-            # mid-table period change) and clears the group.
+            # mid-table period change) and clears the group, so a title row
+            # above the first band cannot prefix row labels.
             if data_since_band:
-                band, data_since_band, group = [], False, None
+                band, data_since_band = [], False
+            group = None
             band.append(row)
         elif label:
             group = label

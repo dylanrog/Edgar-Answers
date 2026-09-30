@@ -217,3 +217,41 @@ def test_char_spans_are_null_when_the_row_text_does_not_reproduce():
     _, cells = parse_table(1, [header, (sid, "not the row text", tr)], None)
     assert (cells[0].char_start, cells[0].char_end) == (None, None)
     assert cells[0].value == Decimal("1234")
+
+
+# --- Section rows and filler rows are not header bands -------------------------
+
+
+def test_a_spanning_section_row_is_a_group_not_a_header_band():
+    rows = rows_of(
+        "<table><tr><td></td><td>Q1</td><td>Q2</td></tr>"
+        "<tr><td>A</td><td>1</td><td>2</td></tr>"
+        '<tr><td colspan="3">Products:</td></tr>'
+        "<tr><td>B</td><td>3</td><td>4</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    b = [c for c in cells if c.raw in ("3", "4")]
+    assert [(c.column_label, c.row_label) for c in b] == [
+        ("Q1", "Products: › B"),
+        ("Q2", "Products: › B"),
+    ]
+
+
+def test_a_filler_only_row_does_not_replace_the_band():
+    rows = rows_of(
+        "<table><tr><td></td><td>Q1</td><td>Q2</td></tr>"
+        "<tr><td></td><td>$</td><td>$</td></tr>"
+        "<tr><td>A</td><td>1</td><td>2</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    assert [c.column_label for c in cells] == ["Q1", "Q2"]
+
+
+def test_a_title_row_above_the_header_band_is_not_a_row_label_prefix():
+    rows = rows_of(
+        '<table><tr><td colspan="3">Segment information</td></tr>'
+        "<tr><td></td><td>Q1</td><td>Q2</td></tr>"
+        "<tr><td>A</td><td>1</td><td>2</td></tr></table>"
+    )
+    _, cells = parse_table(1, rows, None)
+    assert [(c.row_label, c.column_label) for c in cells] == [("A", "Q1"), ("A", "Q2")]
