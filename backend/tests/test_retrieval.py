@@ -145,29 +145,43 @@ def test_accessions_filter_narrows_to_one_filing_within_a_ticker(seeded_conn):
 
 
 @pytest.mark.db
-def test_context_is_returned_and_lexically_searchable(seeded_conn):
-    text = "Pieces of a table with no distinctive words."
-    sentence = Sentence(0, "item7", text, 0, len(text))
-    canonical = CanonicalFiling(text, [sentence], f'<p><span data-sid="0">{text}</span></p>')
-    ref = FilingRef(
-        cik=ALPHA.cik, accession="TESTC-24-000003", form_type="10-K",
-        filing_date=date(2024, 11, 1), period_end=None, primary_document="t.htm",
-    )
-    filing_id = store.store_filing(seeded_conn, ALPHA, ref, canonical)
-    chunk = Chunk("item7", 0, 0, text, 10, context="Table: okapi appendix", table_id=4)
-    store.store_chunks(seeded_conn, filing_id, [chunk], FakeEmbedder().embed_texts([text]))
+def test_context_is_returned_but_not_lexically_indexed(seeded_conn):
+    ctx_text = "Pieces of a table with no distinctive words."
+    txt_text = "The okapi appendix lists every enclosure."
+    ctx_acc, txt_acc = "TESTC-24-000003", "TESTC-24-000004"
+    filing_ids = []
+    for acc, text, context, table_id in (
+        (ctx_acc, ctx_text, "Table: okapi appendix", 4),
+        (txt_acc, txt_text, "", None),
+    ):
+        sentence = Sentence(0, "item7", text, 0, len(text))
+        canonical = CanonicalFiling(text, [sentence], f'<p><span data-sid="0">{text}</span></p>')
+        ref = FilingRef(
+            cik=ALPHA.cik, accession=acc, form_type="10-K",
+            filing_date=date(2024, 11, 1), period_end=None, primary_document="t.htm",
+        )
+        filing_id = store.store_filing(seeded_conn, ALPHA, ref, canonical)
+        filing_ids.append(filing_id)
+        chunk = Chunk("item7", 0, 0, text, 10, context=context, table_id=table_id)
+        store.store_chunks(seeded_conn, filing_id, [chunk], FakeEmbedder().embed_texts([text]))
     seeded_conn.commit()
     try:
+        lexical = {r[1] for r in lexical_search(seeded_conn, "okapi appendix", ticker=ALPHA.ticker)}
+        assert txt_acc in lexical
+        assert ctx_acc not in lexical
+        # Context is still embedded/returned: the vector arm can surface the chunk
+        # and the RetrievedChunk carries its context and table_id.
         results = retrieve(
             seeded_conn, FakeEmbedder(), "okapi appendix", k_final=8, ticker=ALPHA.ticker
         )
-        hit = next(r for r in results if r.accession == "TESTC-24-000003")
+        hit = next(r for r in results if r.accession == ctx_acc)
         assert hit.context == "Table: okapi appendix"
         assert hit.table_id == 4
-        assert hit.text == text
+        assert hit.text == ctx_text
     finally:
         with seeded_conn.cursor() as cur:
-            cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
-            cur.execute("DELETE FROM sentences WHERE filing_id = %s", (filing_id,))
-            cur.execute("DELETE FROM filings WHERE id = %s", (filing_id,))
+            for filing_id in filing_ids:
+                cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
+                cur.execute("DELETE FROM sentences WHERE filing_id = %s", (filing_id,))
+                cur.execute("DELETE FROM filings WHERE id = %s", (filing_id,))
         seeded_conn.commit()

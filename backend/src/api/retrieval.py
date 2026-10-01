@@ -40,8 +40,8 @@ _OR_TSQUERY = (
 )
 
 # Must stay spelled exactly like the chunks_text_fts expression index
-# (migration 004) or the lexical arm falls back to a sequential scan.
-_TSVECTOR = "to_tsvector('english', ch.context || ' ' || ch.text)"
+# (migration 005) or the lexical arm falls back to a sequential scan.
+_TSVECTOR = "to_tsvector('english', ch.text)"
 
 _BASE = (
     "SELECT ch.id, f.accession, f.form_type, f.filing_date, c.ticker, ch.section,"
