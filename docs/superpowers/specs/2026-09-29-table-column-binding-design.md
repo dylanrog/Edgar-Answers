@@ -569,6 +569,9 @@ Measured on the full corpus during PR B; the plan's code was changed to match.
   (column-heading years match almost every question); migration 005 restores
   `to_tsvector('english', text)`. Context stays in the embedding — ablation: removing it
   dropped table-tail recall from 0.375 to 0.125 — and in the prompt.
+- **§5.7 — the cited figure replaces the row highlight.** When a table citation's
+  figure resolves, only that cell is marked (`cited-figure`); the row is not
+  highlighted. A row with no resolvable figure keeps the whole-row highlight.
 - **§5.6 — the cap stays** (neutral on the current golden set; it guards a future
   reranker from filling slots with sibling pieces).
 

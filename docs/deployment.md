@@ -194,8 +194,14 @@ Two paths:
 2. **Re-ingest against prod.** Point `DATABASE_URL` at the prod DB and run
    `python -m pipeline ingest --all && python -m pipeline embed` from your
    machine. Slower (re-fetches filing lists from EDGAR live, re-embeds all
-   15k chunks locally), but it exercises the real path and proves the prod
+   ~19k chunks locally), but it exercises the real path and proves the prod
    DB and schema work. Raw HTML is disk-cached so a second run is fast.
+
+Either way the corpus must be at the current schema and chunking: migrations
+through `005_text_only_fts.sql`, table cells present (`python -m pipeline
+table-report` shows ~280k cells), chunks built by the current chunker. A dump of
+a local DB that predates table column binding needs `migrate`, `retable` and
+`rechunk` run locally first; a fresh `ingest` + `embed` produces all of it.
 
 Ongoing ingestion stays manual from your machine against prod `DATABASE_URL`
 — there is no ingestion service to deploy (`design.md` §11).
