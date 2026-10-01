@@ -169,8 +169,8 @@ def test_context_is_returned_but_not_lexically_indexed(seeded_conn):
         lexical = {r[1] for r in lexical_search(seeded_conn, "okapi appendix", ticker=ALPHA.ticker)}
         assert txt_acc in lexical
         assert ctx_acc not in lexical
-        # Context is still embedded/returned: the vector arm can surface the chunk
-        # and the RetrievedChunk carries its context and table_id.
+        # Context is returned with the chunk (and table_id), but it is not
+        # lexically indexed: the match above came from the text alone.
         results = retrieve(
             seeded_conn, FakeEmbedder(), "okapi appendix", k_final=8, ticker=ALPHA.ticker
         )

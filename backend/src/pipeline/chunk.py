@@ -10,7 +10,8 @@ from .tables import Cell, TableInfo, row_contexts
 
 # bge-small-en-v1.5 truncates input at 512 of its own tokens; 450 tiktoken
 # tokens keeps chunks safely under that limit (amends design §4.3's ~600).
-# For table chunks the budget covers context + text, since both are embedded.
+# Context (embedded, not part of text) counts against the budget only when
+# deciding whether a table must split and when sizing its split pieces.
 MAX_TOKENS = 450
 
 
@@ -21,8 +22,8 @@ class Chunk:
     sid_end: int
     text: str
     token_count: int
-    # Spec 2026-09-29 §5: embedded, lexically indexed and shown to the model,
-    # but never part of `text`, so verification offsets are untouched.
+    # Spec 2026-09-29 §5: embedded and shown to the model, but not lexically
+    # indexed and never part of `text`, so verification offsets are untouched.
     context: str = ""
     # Set only on the pieces of a split table; drives the retrieval cap.
     table_id: int | None = None
@@ -148,12 +149,16 @@ def chunk_sentences(
     """Greedy grouping of consecutive sentences within a section (design §4.3).
 
     Chunks are contiguous, disjoint sid ranges. This is the pre-table-binding
-    greedy packer, unchanged: the budget counts text tokens only, and the rows
-    of a table already in progress never trigger a flush, so a header travels
-    with its data. The one exception is an over-budget *splittable* table
-    (context included): it is isolated and split by _split_table. Chunk
-    granularity is load-bearing for retrieval, so nothing else changes.
-    Without `tables`/`cells` this is exactly the pre-2026-09-29 behaviour."""
+    greedy packer: the budget counts text tokens only, and the rows of a table
+    already in progress never trigger a flush, so a header travels with its
+    data. The exception is an over-budget *splittable* table, where "over
+    budget" counts its context line too. Such a table is isolated and split by
+    _split_table, even if its text alone would fit. That moves boundaries
+    relative to the legacy chunker: the chunk before it ends early, and the
+    prose after it starts a fresh chunk and re-packs until the greedy walk
+    realigns (about 0.8% of legacy chunks on the corpus). Every other chunk is
+    identical to legacy. Without `tables`/`cells` the output is exactly the
+    pre-2026-09-29 behaviour."""
     tables = tables or {}
     ctx = _contexts(tables, cells or [])
     chunks: list[Chunk] = []

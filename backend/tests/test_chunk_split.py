@@ -160,18 +160,6 @@ def test_real_nvidia_table_splits_with_its_header_in_the_first_piece():
 CAPTION = "The following table summarizes segment results:"
 
 
-def lead_in_case(max_tokens=None, lead_text=CAPTION):
-    """prose, prose, lead-in, then a small table that cannot join the prose."""
-    rows, cells = table(rows_per_band=2, bands=1, start=3)
-    sentences = [prose(0), prose(1), prose(2, lead_text), *rows]
-    tables = {1: TableInfo(1, CAPTION, None, True)}
-    if max_tokens is None:
-        unit = sum(count_tokens(s.text) for s in [sentences[2], *rows])
-        # room for the lead-in + table + context, but not for the prose before it
-        max_tokens = unit + count_tokens("Columns: Three Months Ended period 0") + 5
-    return sentences, cells, tables, max_tokens
-
-
 def split_lead_in_case(lead_text=CAPTION):
     """prose, lead-in, then an over-budget splittable table."""
     rows, cells = table(rows_per_band=8, bands=2, start=2)
@@ -231,6 +219,34 @@ def test_prose_after_a_table_joins_the_same_chunk_when_it_fits():
     tables = {1: TableInfo(1, "T", None, True)}
     chunks = chunk_sentences(sentences, tables=tables, cells=cells)
     assert [(c.sid_start, c.sid_end) for c in chunks] == [(0, 5)]
+
+
+def test_a_table_over_budget_only_with_its_context_is_split_and_the_following_prose_starts_fresh():
+    # Pins an intended drift from the legacy chunker: the table fits on text
+    # tokens alone, but not once its context line is counted, so it is split.
+    # The prose after it then starts a new chunk instead of joining the table's.
+    rows, cells = table(rows_per_band=3, bands=1, start=1)
+    caption = "The following table summarizes segment results for the period shown below:"
+    tables = {1: TableInfo(1, caption, None, True)}
+    tail = prose(rows[-1].sid + 1, "Sales rose.")
+    sentences = [prose(0, "Sales rose."), *rows, tail]
+    text_tokens = sum(count_tokens(s.text) for s in rows)
+    context_tokens = count_tokens(embed_input(
+        chunk_sentences(rows, tables=tables, cells=cells)[0]
+    )) - text_tokens
+    # Room for the prose and the table's text, but not for the context as well.
+    max_tokens = sum(count_tokens(s.text) for s in sentences)
+    assert text_tokens <= max_tokens < text_tokens + context_tokens
+
+    legacy = chunk_sentences(sentences, max_tokens=max_tokens)
+    assert [(c.sid_start, c.sid_end) for c in legacy] == [(0, tail.sid)]
+
+    chunks = chunk_sentences(sentences, max_tokens=max_tokens, tables=tables, cells=cells)
+    pieces = [c for c in chunks if c.table_id == 1]
+    assert len(pieces) >= 2
+    assert chunks[-1].sid_start == tail.sid and chunks[-1].table_id is None
+    assert pieces[-1].sid_end == rows[-1].sid
+    assert covered(chunks) == [s.sid for s in sentences]
 
 
 FIXTURE_NAMES = [
