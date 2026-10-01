@@ -150,17 +150,44 @@ string. `text` is exactly the space-join of the chunk's sentences — verificati
 reconstructs it that way, so nothing foreign may enter it. `context` carries one
 line per table the chunk holds a data row of, built from that table's first data
 row in the chunk: `Table: <caption ≤200 chars> | Scale: in millions | Columns:
-<labels, shared prefix factored> | Group: <group row>`. Context is embedded
-(`context + "\n" + text`), lexically indexed and shown to the model, but **never
-verified against**. For table chunks the 450 budget counts context tokens too.
+<labels, shared prefix factored> | Group: <group row>`. The `Table:` part is
+omitted in a chunk whose own text already holds the caption sentence. Context is
+**embedded** (`context + "\n" + text`) and **shown to the model**, but it is
+**not** in the lexical index and is **never verified against**.
 
-- A table that fits is costed whole (rows + context) and joins the greedy run.
-- An over-budget table that is **not splittable** (some data row has no header
-  band above it) stays atomic, as before.
-- An over-budget **splittable** table is isolated and split at row boundaries,
-  preferring to break where a new header band or group row begins and never
-  ending a piece on header rows; every piece gets `chunks.table_id`, and every
-  piece carries the context naming its columns.
+**Only split what must be split.** Chunk granularity is load-bearing (see below),
+so the chunker keeps the pre-column-binding greedy packing — sentences pack on
+text tokens, and a table continues the current chunk past the budget so a header
+travels with its data — and changes boundaries only around an over-budget
+**splittable** table (every data row has a header band above it) whose rows plus
+context exceed 450 tokens. That table is isolated and split at row boundaries —
+preferring to break where a new header band or group row begins, never ending a
+piece on header rows. Its lead-in sentence (the caption) moves into the first
+piece; every piece gets `chunks.table_id` and carries the context naming its
+columns. The chunk before it ends early and the prose after it starts fresh,
+re-packing until the greedy walk realigns — measured, 125 of the 15,432 legacy
+chunks (0.8%) outside split tables drift this way, mostly where a table fits on
+text alone but not with its context line. Without `tables`/`cells` the output is
+byte-identical to the legacy chunker.
+
+Known costs, measured on the final corpus: 1,027 chunks are pushed past 512
+tiktoken tokens only by their prepended context line, so their trailing rows fall
+outside `bge-small`'s window; ~190 of 1,226 lead-in moves carry a page footer
+("| Q3 2023 Form 10-Q | 7") rather than a real caption, and 451 tiny prefix
+chunks are left before split tables; 29 of 3,416 pieces exceed 450 tokens
+(a lead-in plus a header run that the splitter cannot close).
+
+*Why this shape (measured, 2026-09-30):* two earlier variants changed boundaries
+corpus-wide — costing every fitting table whole (a table that didn't fit after
+the preceding prose started a new chunk), then also ending a chunk after every
+table. Both separated tables from their lead-in sentences and fragmented the
+prose between tables (chunk-token p10 381 → 64, 3,713 chunks under 100 tokens),
+and scoped recall@10 fell from 0.56 to 0.29–0.35. Restoring legacy boundaries
+everywhere else recovered it. Ablations on the final corpus: context in the
+embedding is the big win (removing it: table-tail recall 0.375 → 0.125); context
+in the lexical index slightly *hurt* (column headings like "2026; 2025" match the
+year in nearly every question), hence the text-only index (migration 005); the
+per-table cap was neutral on the golden set.
 
 `python -m pipeline rechunk` rebuilds every filing's chunks and embeddings from
 stored sentences and cells without touching sids.
@@ -214,8 +241,9 @@ chunks (
   table_id    integer                    -- set only on pieces of a split table
 )
 -- HNSW index on chunks.embedding (cosine)
--- GIN index on to_tsvector('english', context || ' ' || text)  (migration 004;
---   api.retrieval._TSVECTOR must match it exactly, pinned by a test)
+-- GIN index on to_tsvector('english', text)  (migration 005 restored text-only after
+--   004 briefly indexed context too; api.retrieval._TSVECTOR must match it exactly,
+--   pinned by a test that reads the latest migration defining the index)
 
 filing_tables (                          -- migration 004, column binding (§4.2)
   filing_id  bigint REFERENCES filings ON DELETE CASCADE,
@@ -300,8 +328,9 @@ the first question of every conversation is unaffected.
    table. It is a separate step after scoring, so a future reranker slots in
    before it.
 
-The lexical arm searches `context || ' ' || text`, so a split table's pieces
-match on their caption and column headings as well as their rows.
+The lexical arm searches chunk **text only**; context reaches retrieval through
+the vector arm (it is part of the embedding input). Measured: indexing context
+lexically cost recall, because column-heading years match almost every question.
 
 Hybrid is non-negotiable: finance is dense with exact terms
 ("ASC 842", "RSUs", "Item 1A") where lexical retrieval beats semantic.
