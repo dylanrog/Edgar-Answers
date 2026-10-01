@@ -86,7 +86,7 @@ test("an unverified citation is badged and not clickable", async ({ page }) => {
   await expect(page.getByRole("button", { name: "[1]" })).toHaveCount(0);
 });
 
-test("a cited table figure stands out inside its row", async ({ page }) => {
+test("a cited table figure is marked on its own, without the row highlight", async ({ page }) => {
   const tableHtml = `
     <table><tbody>
       <tr data-sid="30"><td>Year Ended</td></tr>
@@ -129,7 +129,7 @@ test("a cited table figure stands out inside its row", async ({ page }) => {
   await chip.click();
 
   const cells = page.locator('tr[data-sid="31"] td');
-  await expect(page.locator('tr[data-sid="31"]')).toHaveClass(/cited-sentence/);
   await expect(cells.nth(2)).toHaveClass(/cited-figure/);
+  await expect(page.locator('tr[data-sid="31"]')).not.toHaveClass(/cited-sentence/);
   await expect(cells.nth(4)).not.toHaveClass(/cited-figure/);
 });

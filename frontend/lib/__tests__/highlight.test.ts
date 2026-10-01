@@ -63,13 +63,26 @@ function tableContainer(): HTMLElement {
   return table;
 }
 
-test("a cited cell gets the figure class inside the highlighted row", () => {
+test("a cited cell gets the figure class and its row is not highlighted", () => {
   const table = tableContainer();
   applyHighlight(table, [20], [{ sid: 20, cell: 2 }]);
   const cells = table.querySelectorAll('tr[data-sid="20"] td');
   expect(cells[2].classList.contains(FIGURE_CLASS)).toBe(true);
   expect(cells[4].classList.contains(FIGURE_CLASS)).toBe(false);
-  expect(table.querySelector('tr[data-sid="20"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+  expect(table.querySelector('tr[data-sid="20"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+});
+
+test("a cited row without a resolvable figure still highlights the whole row", () => {
+  const table = tableContainer();
+  applyHighlight(table, [20, 21], [{ sid: 20, cell: 2 }]);
+  expect(table.querySelector('tr[data-sid="20"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+  expect(table.querySelector('tr[data-sid="21"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+});
+
+test("a figure index that does not exist falls back to the row highlight", () => {
+  const table = tableContainer();
+  applyHighlight(table, [21], [{ sid: 21, cell: 9 }]);
+  expect(table.querySelector('tr[data-sid="21"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
 });
 
 test("the cited figure is what scrolls into view", () => {

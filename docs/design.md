@@ -423,9 +423,9 @@ One page: `/ask`, split-pane.
   eviction beyond that). Inactive panes stay mounted and hidden so each keeps
   its scroll position. Clicking a citation opens or activates its filing's tab
   and highlights the cited sids. When the citation names cited table figures,
-  those cells (`tr[data-sid].cells[cell]`) also get a stronger `cited-figure`
-  treatment inside the highlighted row, and the view scrolls to the first
-  figure. Each pane loads `GET /filings/{accession}` and
+  only those cells (`tr[data-sid].cells[cell]`) are marked (`cited-figure`) —
+  the row itself is not highlighted — and the view scrolls to the first figure.
+  A cited row with no resolvable figure falls back to a whole-row highlight. Each pane loads `GET /filings/{accession}` and
   renders the stored HTML (sanitized at ingestion, so `dangerouslySetInnerHTML`
   is acceptable — the server is the sanitizer).
 

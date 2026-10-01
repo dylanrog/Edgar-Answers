@@ -12,8 +12,9 @@ export type Highlight = { sids: number[]; cells: CitedCell[] };
 export const NO_HIGHLIGHT: Highlight = { sids: [], cells: [] };
 
 /**
- * Highlight the sentences a citation resolves to, inside already-mounted HTML,
- * and emphasize the table figures its quote covers (spec 2026-09-29 §5.7).
+ * Highlight the sentences a citation resolves to, inside already-mounted HTML.
+ * For a table row whose cited figures resolve, only those cells are marked
+ * (spec 2026-09-29 §5.7); every other cited sentence or row is highlighted whole.
  *
  * Operates on the live container rather than rewriting the HTML string,
  * because a real 10-K's viewer_html is ~818 KB -- re-parsing that on every
@@ -32,21 +33,27 @@ export function applyHighlight(
   // Collected into arrays rather than tracked in a `let` that a callback
   // assigns: TypeScript narrows such a variable to `null` at the use site and
   // reports `scrollIntoView` on type `never`.
-  const cited: Element[] = [];
-  for (const sid of sids) {
-    container.querySelectorAll(`[data-sid="${sid}"]`).forEach((el) => {
-      el.classList.add(HIGHLIGHT_CLASS);
-      cited.push(el);
-    });
-  }
   const figures: Element[] = [];
+  const rowsWithFigures = new Set<number>();
   for (const { sid, cell } of cells) {
     const row = container.querySelector(`tr[data-sid="${sid}"]`);
     const target = row instanceof HTMLTableRowElement ? row.cells[cell] : undefined;
     if (target !== undefined) {
       target.classList.add(FIGURE_CLASS);
       figures.push(target);
+      rowsWithFigures.add(sid);
     }
+  }
+  // A table row whose cited figure resolved is marked by that cell alone; the
+  // whole-row highlight is only the fallback for a row with no resolvable
+  // figure (a label-only quote, or a row whose cell spans are NULL).
+  const cited: Element[] = [];
+  for (const sid of sids) {
+    if (rowsWithFigures.has(sid)) continue;
+    container.querySelectorAll(`[data-sid="${sid}"]`).forEach((el) => {
+      el.classList.add(HIGHLIGHT_CLASS);
+      cited.push(el);
+    });
   }
   (figures[0] ?? cited[0])?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
