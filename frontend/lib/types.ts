@@ -11,6 +11,10 @@
  */
 export type SSEEvent = { event: string; data: unknown };
 
+/** A table cell a citation's quote covers: the row's sid and the cell's index
+ *  in that row (the browser's `tr.cells[i]`). Design §6.4. */
+export type CitedCell = { sid: number; cell: number };
+
 /** A citation event, post-verification (design §6.4). */
 export type Citation = {
   marker: number;
@@ -22,6 +26,8 @@ export type Citation = {
   filing_date: string;
   sids: number[];
   quote: string;
+  /** Figures the quote covers inside a table row; empty for prose. */
+  cells: CitedCell[];
 };
 
 /** GET /filings/{accession} */

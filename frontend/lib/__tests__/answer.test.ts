@@ -94,3 +94,17 @@ test("a resolved event records the standalone question", () => {
 test("standaloneQuestion starts null", () => {
   expect(initialAnswerState.standaloneQuestion).toBeNull();
 });
+
+test("a citation event without cells gets an empty cell list", () => {
+  const state = feed([
+    ["citation", { marker: 1, verified: true, accession: "A", ticker: "AAPL", form_type: "10-K", filing_date: "2024-11-01", sids: [7], quote: "q" }],
+  ]);
+  expect(state.citations.get(1)?.cells).toEqual([]);
+});
+
+test("a citation event keeps its cited cells", () => {
+  const state = feed([
+    ["citation", { marker: 1, verified: true, accession: "A", ticker: "AAPL", form_type: "10-K", filing_date: "2024-11-01", sids: [7], quote: "q", cells: [{ sid: 7, cell: 2 }] }],
+  ]);
+  expect(state.citations.get(1)?.cells).toEqual([{ sid: 7, cell: 2 }]);
+});

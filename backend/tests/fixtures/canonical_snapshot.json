@@ -1,0 +1,37 @@
+{
+  "edgar_aapl_segments.html": {
+    "canonical_text": "62936e2b4ba2ffa786587a911db410ab731d74219243e4a686a10e918662ace9",
+    "sentences": "bc0c00912093ff929f344b02608376c6a8f91212af01b67bd451daff230af8da",
+    "viewer_html": "473a1b48001453cd2e16e6397e5f3ae6af125037946b2f46325dd6bb71c81e68"
+  },
+  "edgar_jpm_highlights.html": {
+    "canonical_text": "e2af67c330ca1e0d5dcf1c31d67419e9333de194b084e95b368f8d11632b6fd0",
+    "sentences": "34295ce1add80a6b7a8eaa964edf78e04821c4de5af2bd5684cd3cf8c87ee728",
+    "viewer_html": "2952d1c6968f119d4f610a1ca3e5fe1c45b15b6dca14349b107f271e0c2ca593"
+  },
+  "edgar_msft_segments.html": {
+    "canonical_text": "2bfbc902a91778108c8ca67ffe17cc353d405e34028b28033dc38c5dd06b31d9",
+    "sentences": "50f8fb32294ac303c25b39937846a2aef2ba0c9b3b510c2b7f9f2216203769a2",
+    "viewer_html": "f4474ceb162652bb91698fefab5fcb83fc667dde408637488500c809ac999bbe"
+  },
+  "edgar_nvda_revenue.html": {
+    "canonical_text": "2ae99bbad8e7847755c99d7e283a94e42f8fd94d166e063d0b59f4e8b72871ad",
+    "sentences": "d60b768a37badd6710a90ee24ce67c2b5f26b78d1004812ad7febb96655b1a44",
+    "viewer_html": "5665014c84bad61342cc0f65abd4e34ff082d9b156debce8c6e271301249d535"
+  },
+  "mini_10k.html": {
+    "canonical_text": "5a92f236548232273415cd389abd88934d9e1964a2eb440de4b92cc5808297d7",
+    "sentences": "4074f8de2e123442283ea881eddbc8e48e444195c9a9947f60c8e24faa3258f3",
+    "viewer_html": "74a4153937f5c2613543f00b121e44c3a9730a923de4451e4f68da6fcc0cddda"
+  },
+  "styled_filing.html": {
+    "canonical_text": "0083f368fb91bde54050b2d3f595721674c9ccf4ddd5ef56135d4db55d50ae74",
+    "sentences": "bc9dd92daf18768d902057088a4c87ca12ab18d426d62f4b6a1acf0ff0104b65",
+    "viewer_html": "80b41bf8fc903e6845ca93d300e20c921e5f6c83693906b3ef7a33bc2b756700"
+  },
+  "table_shapes.html": {
+    "canonical_text": "a504f214d96c6bf07089d5baaf5a1af0252504a106eeedfcc26590bd70d46342",
+    "sentences": "63a97fa0a0dd47aa81acad9ae85f0789771b9e90220886b8bef576804159e052",
+    "viewer_html": "11077408bb2887736d9590bed9ba0cb308d618b1f6060c07f75d4e3658da2d73"
+  }
+}

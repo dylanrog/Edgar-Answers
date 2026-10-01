@@ -19,6 +19,12 @@ yet publicly deployed — `docs/deployment.md` is the gap analysis for that, and
 - **Ingestion** — EDGAR fetch (rate-limited, disk-cached), a canonicalizer that
   emits sentence-aligned canonical text and viewer HTML in one pass, financial
   tables indexed one sentence per row, Postgres + pgvector storage.
+- **Table column binding** — every numeric table cell is parsed into a record
+  with its row label, column label (e.g. `Year Ended › Jan 26, 2025`), scale and
+  position, in the same single DOM pass (sentences and viewer HTML stay
+  byte-identical; an unsure label is stored as NULL, never guessed). Long tables
+  are split into pieces that each carry a context line naming their columns,
+  embedded with the piece so a row deep in a table is still findable.
 - **Retrieval** — hybrid vector + full-text search fused with Reciprocal Rank
   Fusion, local `bge-small-en-v1.5` embeddings (no API cost).
 - **Answering** — `POST /ask` over SSE: an answer streams token-by-token, each
@@ -36,14 +42,16 @@ yet publicly deployed — `docs/deployment.md` is the gap analysis for that, and
 - **Frontend** — a `/ask` split pane: streamed answer and a sources panel
   (citations grouped by filing) on the left, a tabbed filing viewer on the
   right. Clicking a citation opens its filing and scrolls to the exact
-  highlighted sentence.
+  highlighted sentence — or, for a table citation, to the exact cited figure
+  inside its row.
 
 **Corpus:** ten large filers (AAPL, MSFT, AMZN, GOOGL, META, NVDA, TSLA, JPM,
-JNJ, WMT), 10-K and 10-Q over roughly three fiscal years — 120 filings, 15,432
-chunks, 296,316 sentences.
+JNJ, WMT), 10-K and 10-Q over roughly three fiscal years — 120 filings, 18,698
+chunks, 296,316 sentences, 280,770 parsed table cells (95.7% with a column
+label).
 
-**Remaining Phase 5 work:** growing the 20-question golden set, and deploying a
-public demo.
+**Remaining Phase 5 work:** deploying a public demo; the next retrieval lever is
+fiscal-period detection (see Evals).
 
 ## Demo
 
@@ -219,10 +227,15 @@ isn't up, not a bad test.
 
 The eval harness (`backend/evals/`) is the tuning instrument for every change to
 chunking, retrieval, or the prompt — it was built in Phase 2, not bolted on at
-the end. The golden set (`golden.yaml`) is 20 hand-authored questions, each
-pinned to the filing and the sentence ids where its answer lives: 16
-single-company questions on Apple 10-Ks and 10-Qs from fiscal 2024 and 2025,
-plus 4 rows forming 2 cross-company comparison groups.
+the end. The golden set (`golden.yaml`) is 34 hand-checked questions, each
+pinned to the filing and the sentence ids where its answer lives:
+
+- 16 single-company questions on Apple 10-Ks and 10-Qs (fiscal 2024–2025);
+- 4 rows forming 2 cross-company comparison groups;
+- 8 `table_tail` questions (NVDA, MSFT, AMZN, JPM, META, GOOGL, WMT) whose answer
+  is a row deep inside a long table;
+- 6 `column` questions whose answer is one cell of a multi-period table, each
+  with `expected_values` for `value_accuracy`.
 
 ```bash
 python -m evals run              # retrieval + faithfulness, appends to evals/results.jsonl
@@ -231,32 +244,42 @@ python -m evals verify           # checks every golden entry still resolves in t
 ```
 
 Each run records the git sha it ran at and whether the tree was dirty, so a row
-can be replayed. Run the evals on a clean tree.
+can be replayed. Run the evals on a clean tree, and run the full eval three
+times — the model-dependent metrics move between identical runs.
 
-**Latest run** (`git sha 958f1ea`, 2026-09-07, full ten-company corpus, 20 questions):
+What the metrics mean:
 
-| metric | value | meaning |
+| metric | Haiku calls? | meaning |
 | --- | --- | --- |
-| `recall@10` (ticker-scoped) | **0.65** | top-10 fused chunks contain a gold sentence for 13 of 20 questions |
-| `unfiltered_recall@10` | 0.60 | same, with no company filter — other filers' boilerplate competes for the top slots |
-| `targeted_recall@10` | 0.70 | same, through the real target-resolution + per-company retrieval path |
-| `verified_rate` | 0.93 | share of emitted citations whose quote matched source text (27 of 29) |
-| `answered_rate` | 0.75 | share of questions answered rather than refused |
+| `recall@10` (ticker-scoped) | none | top-10 fused chunks contain a gold sentence, retrieval filtered to the question's own ticker — isolates the retriever |
+| `unfiltered_recall@10` | none | same, no filter — what a user gets when no company is detected |
+| `targeted_recall@10` | company + period detection | the production retrieval path: detect company and filing, then retrieve |
+| `table_tail_recall@10` | none | ticker-scoped recall on the 8 `table_tail` questions |
+| `answered_rate`, `verified_rate`, `gold_sid_hit_rate`, `value_accuracy` | period detection + answer | full `/ask` path (the ticker is given, so company detection is skipped): answered, quotes verified, citation lands on the gold sentence, expected figure appears in the answer |
 
-**How to read this.** The retrieval numbers reproduce exactly across every logged
-run at this corpus size (0.65 / 0.60 / 0.70, three different shas). They dropped
-from an earlier `recall@10 = 1.0` for a concrete reason: that figure was on 16
-Apple-only questions, and the set has since grown to include cross-company
-comparison questions (`qc001`, `qc002`) that a single query embedding does not
-retrieve both sides of — this is exactly the section-targeted retrieval /
-reranker work in `docs/design.md` §14, and it is left visible in the numbers
-rather than papered over. Among the single-company questions, the remaining
-misses are period-disambiguation cases: Apple files near-identical tables every
-quarter with only the numbers changing, so lexical and vector similarity cannot
-separate "Q2 FY2024" from "Q2 FY2025". The faithfulness metrics (`verified_rate`,
-`citations_total`, `gold_sid_hit_rate`) drift between runs on identical code and
-corpus even at temperature 0 — earlier runs recorded `verified_rate` up to 1.0 —
-so a single run's movement is not read as a regression.
+**Latest runs** (git sha 02cfe57 / 570b2cb / 1b9c7f5, table column binding):
+
+| metric | before table column binding (×3) | after (×3) |
+| --- | --- | --- |
+| `recall@10` | 0.529 | **0.618** |
+| `unfiltered_recall@10` | 0.471 | **0.529** |
+| `targeted_recall@10` | 0.529 | **0.588–0.618** |
+| `table_tail_recall@10` | 0.375 | 0.375 |
+| `value_accuracy` | 0.36–0.57 | **0.571** |
+| `answered_rate` | 0.71–0.74 | **0.74–0.76** |
+| `gold_sid_hit_rate` | 0.41–0.44 | **0.471** |
+| `verified_rate` | 0.92–0.975 | 0.89–0.95 |
+
+**How to read this.** Retrieval numbers are deterministic for a given corpus and
+query plan; the model-dependent metrics drift between identical runs even at
+temperature 0, so they are read as ranges over repeated runs. The biggest
+remaining source of misses is **fiscal-period detection**: on the production path
+8 of 34 questions are routed to the wrong filing (or none), and retrieval then
+searches only that filing. Comparison questions are still weak because a single
+query embedding rarely retrieves both companies' figures. One measurement caveat:
+a ticker-filtered pgvector query may be planned as an approximate HNSW scan
+(filtered after the fact, sometimes returning fewer than 10 rows) or an exact
+scan depending on planner statistics, so compare corpora only under the same plan.
 
 ## Maintenance commands
 
@@ -264,6 +287,9 @@ so a single run's movement is not read as a regression.
 python -m pipeline recanonicalize            # rebuild viewer_html from cached HTML
 python -m pipeline recanonicalize --ticker AAPL
 python -m pipeline reprocess                  # rebuild sentences, chunks, embeddings (invalidates pinned sids)
+python -m pipeline retable                    # parse table cells from cached HTML (refuses if sentences moved)
+python -m pipeline table-report               # column-binding coverage: labelled cells, scaled / splittable tables
+python -m pipeline rechunk [--ticker T]       # rebuild chunks + embeddings from stored sentences and cells (keeps sids)
 ```
 
 `recanonicalize` re-runs the canonicalizer over already-cached raw HTML and
@@ -273,6 +299,15 @@ stored rows and skips any filing that disagrees, because silently rewriting one
 would invalidate every citation already anchored to it. `reprocess` is the
 heavier operation that does rebuild sentence ids, so it is paired with
 `python -m evals repin` to re-anchor the golden set.
+
+`retable` backfills the column-binding tables (`filing_tables`, `table_cells`)
+from cached HTML without touching sentences, chunks or embeddings, and skips any
+filing whose recomputed sentences differ from the stored ones. `rechunk` rebuilds
+chunks and embeddings from the stored sentences and cells — sids, and therefore
+the golden set's pins, are untouched — and is the explicit rebuild after a
+chunking change; it embeds locally, so run it per `--ticker` on a
+memory-constrained machine. New filings get cells and the current chunking
+automatically through `ingest` and `embed`.
 
 ## License
 

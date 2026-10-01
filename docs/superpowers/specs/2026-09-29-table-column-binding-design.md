@@ -106,7 +106,7 @@ one header cell; there is a percentage column.
 - Column binding: parsing each numeric table cell into a record carrying its
   row label, column label, value, kind and scale, persisted in new tables.
 - Splitting over-budget tables into multiple chunks, each carrying a
-  `context` string that is embedded, lexically indexed and shown to the model
+  `context` string that is embedded, lexically indexed (amended, §12: not lexically indexed) and shown to the model
   but never used for verification.
 - A per-table cap on retrieval slots.
 - Cited-figure highlighting: when a citation's quote covers figures in a
@@ -258,14 +258,15 @@ both documented invariants hold.
 Let `budget(table) = MAX_TOKENS − tokens(context for that table)`.
 
 - **A table whose rows fit its budget** is never split and joins the greedy
-  run with surrounding prose, as today — except that it is costed as a whole
-  (all rows plus its context), so a table that would not fit after the
-  preceding prose starts a new chunk rather than overflowing it.
+  run with surrounding prose, as today. *(Amended, §12: it is NOT costed as a
+  whole — that rule moved chunk boundaries corpus-wide and cost recall; a fitting
+  table continues the current chunk exactly as before.)*
 - **A table that is over budget and not splittable** stays atomic, as today.
   Nothing gets worse than now.
 - **A table that is over budget and splittable** is isolated: its first piece
   starts a new chunk and its last piece ends one, so a piece never shares a
-  chunk with prose or another table. It is split greedily at row boundaries
+  chunk with prose or another table *(amended, §12: except its lead-in caption
+  sentence, which moves into the first piece)*. It is split greedily at row boundaries
   against `budget(table)`, rows are never split, and a single row over budget
   becomes its own chunk (the existing escape hatch). **Band boundaries are
   preferred:** when a new band's header rows begin and the whole band would
@@ -276,7 +277,8 @@ Let `budget(table) = MAX_TOKENS − tokens(context for that table)`.
   piece gets `chunks.table_id`.
 
 `MAX_TOKENS` stays 450 and now counts context tokens for table chunks,
-because the embedder sees both.
+because the embedder sees both. *(Amended, §12: context counts only when deciding
+whether a table must split and when sizing its pieces; the greedy walk counts text.)*
 
 ### 5.3 The context string
 
@@ -307,7 +309,7 @@ chunks have `context = ''`.
 | consumer | uses context? |
 | --- | --- |
 | embedding input | yes: `context + "\n" + text` when context is non-empty |
-| lexical index | yes: migration 004 replaces `chunks_text_fts` with an index on `to_tsvector('english', context \|\| ' ' \|\| text)`; `retrieval._TSVECTOR` changes to match exactly |
+| lexical index | yes: migration 004 replaces `chunks_text_fts` with an index on `to_tsvector('english', context \|\| ' ' \|\| text)`; `retrieval._TSVECTOR` changes to match exactly. *Amended, §12: **no** — migration 005 restores a text-only index* |
 | prompt | yes, as a labelled line above the excerpt (§5.5) |
 | `verify.py` | **no** — only `chunk.text` |
 | SSE events, frontend | no change |
@@ -541,3 +543,62 @@ is read only across the repeated runs, never from one.
   `column_label` for comparison against a model-declared column.
 - Reranking (possibly Jev) and MMR, inserted before the cap.
 - `rowspan`, multi-level row hierarchy, column-oriented headers.
+
+## 12. Amendments after the corpus rollout (2026-09-30)
+
+Measured on the full corpus during PR B; the plan's code was changed to match.
+
+- **§4.3 rule 1 — `rowspan` is honoured, not ignored.** Ignoring it did not give NULL
+  labels as assumed: header rows below a `rowspan` cell shifted left and bound to the
+  wrong columns (JPM 1Q26 net revenue labelled "4Q25"; ~4.8% of labelled cells in a
+  20-filing sample). The grid now carries a rowspan occupancy map over all of a table's
+  own `<tr>`s. Two further NULL-over-guess guards: two figures in one row sharing a label
+  both get NULL; a bare year in the label columns is label text, not a figure; a
+  scale-phrase-only row is not a group row. Known remaining limit: JPM level-3
+  rollforward tables whose header cells span only the gap columns (browser-identical grid).
+- **§5.2 — only split what must be split.** "A fitting table is costed whole and starts a
+  new chunk if it does not fit after the preceding prose" changed boundaries corpus-wide,
+  separated tables from their lead-in sentences and (with a follow-up "a table ends its
+  chunk" rule) fragmented prose; scoped recall@10 fell from 0.56 to 0.29–0.35. The chunker
+  now reproduces the pre-change greedy chunker exactly for every chunk that does not
+  involve an over-budget splittable table; only those tables are isolated and split. A
+  split table's lead-in (caption) sentence moves into its first piece, and a chunk whose
+  text holds the caption omits `Table:` from that table's context line. The 450 budget
+  counts context only when deciding whether a table must split.
+- **§5.4 — the lexical index is text-only.** Context in the FTS index slightly hurt
+  (column-heading years match almost every question); migration 005 restores
+  `to_tsvector('english', text)`. Context stays in the embedding — ablation: removing it
+  dropped table-tail recall from 0.375 to 0.125 — and in the prompt.
+- **§5.7 — the cited figure replaces the row highlight.** When a table citation's
+  figure resolves, only that cell is marked (`cited-figure`); the row is not
+  highlighted. A row with no resolvable figure keeps the whole-row highlight.
+- **§5.6 — the cap stays** (neutral on the current golden set; it guards a future
+  reranker from filling slots with sibling pieces).
+
+Final eval (×3, `git_dirty: false`, rows at git_sha 02cfe57 / 570b2cb / 1b9c7f5),
+against two "before" references: PR A's recorded rows, and a like-for-like
+re-measurement of the pre-change corpus (the corpus dump restored, `main`'s code,
+same harness; its retrieval numbers differ from the recorded rows because the
+restored HNSW index planned filtered vector queries differently — see CLAUDE.md).
+
+| metric | PR A rows ×3 | pre-change, like-for-like | final ×3 |
+| --- | --- | --- | --- |
+| recall@10 (ticker-scoped) | 0.5294 | 0.5588 | 0.6176 |
+| unfiltered_recall@10 | 0.4706 | 0.4706 | 0.5294 |
+| targeted_recall@10 (production path) | 0.5294 | 0.5588 | 0.5882–0.6176 |
+| table_tail_recall@10 (ticker-scoped) | 0.375 | **0.50** | **0.375 (−1 of 8)** |
+| targeted table-tail recall@10 * | — | 0.50 | 0.625 |
+| value_accuracy | 0.36–0.57 | — | 0.5714 (all 3 runs) |
+| answered_rate | 0.71–0.74 | — | 0.74–0.76 |
+| gold_sid_hit_rate | 0.41–0.44 | — | 0.4706 |
+| verified_rate | 0.92–0.975 | — | 0.89–0.95 |
+
+\* scratch measurement (`run_retrieval_eval`'s targeted arm restricted to the 8
+`table_tail` entries, live detectors), not recorded in `results.jsonl`.
+
+Like-for-like, ticker-scoped table-tail recall went **down by one question**:
+t003/t004/t006's gold rows now sit in ~280-token split pieces that compete with the
+same table's pieces from the company's other filings (the old 800–975-token atomic
+chunk won lexically). With the period targeting production uses, tail recall rises.
+verified_rate's low run (0.8947) is ordinary misquotes (joined cells); an extra pass
+found no quote taken from a context line.

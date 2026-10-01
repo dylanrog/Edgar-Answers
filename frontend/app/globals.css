@@ -76,3 +76,17 @@ tr.cited-sentence th {
   background-color: #78350f;
   color: #fef3c7;
 }
+
+/* The figure a table citation's quote covers (spec 2026-09-29 §5.7). When a
+   row's figure resolves, this cell is the whole highlight — the row itself is
+   not marked (lib/highlight.ts). Outline, not box-shadow, for the same
+   cell-border reason as the row rule above. */
+td.cited-figure,
+th.cited-figure {
+  background-color: #b45309;
+  color: #ffffff;
+  font-weight: 700;
+  outline: 2px solid #fbbf24;
+  outline-offset: -2px;
+  scroll-margin-top: 4rem;
+}

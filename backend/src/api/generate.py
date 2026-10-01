@@ -16,6 +16,9 @@ MODEL = "claude-haiku-4-5"
 # Design §11: a hard output cap keeps per-answer spend bounded.
 MAX_OUTPUT_TOKENS = 1500
 FENCE = "```"
+# Spec 2026-09-29 §5.5. The label itself tells the model the line is not
+# quotable; rule 4 of SYSTEM_PROMPT says so again.
+CONTEXT_LABEL = "Table context (for reading columns; not quotable):"
 
 SYSTEM_PROMPT = """You answer questions about SEC filings using only the excerpts provided.
 
@@ -27,7 +30,12 @@ Rules:
 3. When excerpts from more than one filing support the answer, cite each of
    them. Do not collapse several filings into a single citation, and do not
    answer only from whichever excerpt appeared first.
-4. After the answer, emit a fenced JSON block and nothing after it:
+4. Lines labelled "Table context" give a table's caption, scale and column
+   headings so you can tell which column a figure sits in. Use them to read
+   the table, but never quote them: quotes come only from excerpt text.
+5. When you cite a figure from a table row, quote from the start of the row
+   through that figure and stop there.
+6. After the answer, emit a fenced JSON block and nothing after it:
 
 ```json
 {"citations": [{"marker": 1, "chunk_id": 8123, "quote": "verbatim text from that chunk"}]}
@@ -74,11 +82,13 @@ class AnthropicGenerator:
 
 
 def build_user_message(question: str, chunks: list[RetrievedChunk]) -> str:
-    blocks = [
-        f"[chunk_id={c.chunk_id}] {c.ticker} {c.form_type} {c.accession} ({c.section})"
-        f"\n{c.text}"
-        for c in chunks
-    ]
+    blocks = []
+    for c in chunks:
+        header = f"[chunk_id={c.chunk_id}] {c.ticker} {c.form_type} {c.accession} ({c.section})"
+        context = "".join(
+            f"\n{CONTEXT_LABEL} {line}" for line in c.context.splitlines() if line
+        )
+        blocks.append(f"{header}{context}\n{c.text}")
     excerpts = "\n\n".join(blocks) if blocks else "(no excerpts were retrieved)"
     return f"Excerpts:\n\n{excerpts}\n\nQuestion: {question}"
 

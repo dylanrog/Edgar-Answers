@@ -104,6 +104,7 @@ def test_ask_citation_event_matches_the_design_shape(stubbed_client):
         "filing_date",
         "sids",
         "quote",
+        "cells",
     }
     assert citation["verified"] is True
     assert citation["accession"] == ACCESSION

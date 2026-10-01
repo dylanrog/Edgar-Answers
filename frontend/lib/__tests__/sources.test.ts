@@ -13,6 +13,7 @@ function citation(marker: number, over: Partial<Citation> = {}): Citation {
     filing_date: "2024-11-01",
     sids: [marker],
     quote: `quote ${marker}`,
+    cells: [],
     ...over,
   };
 }

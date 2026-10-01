@@ -6,6 +6,7 @@ from .canonicalize import CanonicalFiling, Sentence
 from .chunk import Chunk
 from .companies import Company
 from .edgar import FilingRef
+from .tables import Cell, TableInfo
 
 
 def filing_exists(conn: psycopg.Connection, accession: str) -> bool:
@@ -61,12 +62,14 @@ def store_filing(
                 copy.write_row(
                     (filing_id, s.sid, s.section, s.text, s.char_start, s.char_end, s.table_id)
                 )
+        replace_tables(conn, filing_id, canonical.tables, canonical.cells)
     return filing_id
 
 
 def delete_derived(conn: psycopg.Connection, filing_id: int) -> None:
-    """Drop a filing's chunks and sentences, keeping the filings row itself."""
+    """Drop a filing's chunks, sentences and tables, keeping the filings row itself."""
     with conn.cursor() as cur:
+        cur.execute("DELETE FROM filing_tables WHERE filing_id = %s", (filing_id,))
         cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
         cur.execute("DELETE FROM sentences WHERE filing_id = %s", (filing_id,))
 
@@ -82,6 +85,65 @@ def replace_sentences(
             copy.write_row(
                 (filing_id, s.sid, s.section, s.text, s.char_start, s.char_end, s.table_id)
             )
+
+
+def replace_tables(
+    conn: psycopg.Connection, filing_id: int, tables: list[TableInfo], cells: list[Cell]
+) -> None:
+    """Rewrite a filing's column-binding rows. The caller owns the transaction.
+    Deleting filing_tables cascades to table_cells."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM filing_tables WHERE filing_id = %s", (filing_id,))
+        if tables:
+            cur.executemany(
+                "INSERT INTO filing_tables (filing_id, table_id, caption, scale, splittable)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                [(filing_id, t.table_id, t.caption, t.scale, t.splittable) for t in tables],
+            )
+        if cells:
+            with cur.copy(
+                "COPY table_cells (filing_id, sid, col, cell_index, char_start, char_end,"
+                " table_id, raw, value, kind, row_label, column_label, scale_applies)"
+                " FROM STDIN"
+            ) as copy:
+                for c in cells:
+                    copy.write_row(
+                        (
+                            filing_id, c.sid, c.col, c.cell_index, c.char_start, c.char_end,
+                            c.table_id, c.raw, c.value, c.kind, c.row_label, c.column_label,
+                            c.scale_applies,
+                        )
+                    )
+
+
+def load_tables(conn: psycopg.Connection, filing_id: int) -> dict[int, TableInfo]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT table_id, caption, scale, splittable FROM filing_tables"
+            " WHERE filing_id = %s ORDER BY table_id",
+            (filing_id,),
+        )
+        return {row[0]: TableInfo(*row) for row in cur.fetchall()}
+
+
+def load_cells(
+    conn: psycopg.Connection,
+    filing_id: int,
+    sid_start: int | None = None,
+    sid_end: int | None = None,
+) -> list[Cell]:
+    sql = (
+        "SELECT sid, col, cell_index, char_start, char_end, table_id, raw, value, kind,"
+        " row_label, column_label, scale_applies FROM table_cells WHERE filing_id = %s"
+    )
+    params: list[object] = [filing_id]
+    if sid_start is not None and sid_end is not None:
+        sql += " AND sid BETWEEN %s AND %s"
+        params += [sid_start, sid_end]
+    sql += " ORDER BY sid, col"
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return [Cell(*row) for row in cur.fetchall()]
 
 
 def to_pgvector(vector: list[float]) -> str:
@@ -151,7 +213,8 @@ def store_chunks(
     with conn.transaction(), conn.cursor() as cur:
         cur.executemany(
             "INSERT INTO chunks (filing_id, section, sid_start, sid_end, text,"
-            " token_count, embedding) VALUES (%s, %s, %s, %s, %s, %s, %s::vector)",
+            " token_count, embedding, context, table_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s, %s)",
             [
                 (
                     filing_id,
@@ -161,6 +224,8 @@ def store_chunks(
                     chunk.text,
                     chunk.token_count,
                     to_pgvector(vector),
+                    chunk.context,
+                    chunk.table_id,
                 )
                 # Backstops the length check above: without strict, a future
                 # refactor that drops that guard would silently truncate.
@@ -168,3 +233,8 @@ def store_chunks(
             ],
         )
     return len(chunks)
+
+
+def delete_chunks(conn: psycopg.Connection, filing_id: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM chunks WHERE filing_id = %s", (filing_id,))
