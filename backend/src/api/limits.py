@@ -9,6 +9,7 @@ would keep its own counters and double the effective limits.
 
 from __future__ import annotations
 
+import ipaddress
 import threading
 import time
 from collections import deque
@@ -71,11 +72,25 @@ class AskLimiter:
 
 
 def client_ip(headers: Mapping[str, str], peer: str | None, header: str | None) -> str:
-    """The visitor's address. `header` is trusted only when configured: on Fly
-    the edge proxy overwrites Fly-Client-IP, so a client cannot forge it there.
-    Anywhere else the header is attacker-controlled, so it is ignored."""
+    """The visitor's quota bucket. `header` is trusted only when configured: on
+    Fly the edge proxy overwrites Fly-Client-IP, so a client cannot forge it
+    there. Anywhere else the header is attacker-controlled, so it is ignored."""
     if header:
         value = headers.get(header) or headers.get(header.lower())
         if value:
-            return value.strip()
-    return peer or "unknown"
+            return _bucket(value.strip())
+    return _bucket(peer) if peer else "unknown"
+
+
+def _bucket(address: str) -> str:
+    """IPv6 visitors are keyed by their /64: one ordinary allocation holds 2**64
+    addresses, so per-address keys would let anyone rotate into fresh quota."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if ip.version == 6:
+        if ip.ipv4_mapped:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(ip)

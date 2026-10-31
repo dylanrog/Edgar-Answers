@@ -75,3 +75,23 @@ def test_client_ip_ignores_the_header_when_not_configured():
 def test_client_ip_falls_back_to_peer_then_unknown():
     assert client_ip({}, peer="10.0.0.1", header="Fly-Client-IP") == "10.0.0.1"
     assert client_ip({}, peer=None, header=None) == "unknown"
+
+
+def test_ipv6_visitors_share_a_bucket_per_slash_64():
+    # Fly passes the visitor's full IPv6 address, and anyone with an ordinary
+    # /64 can rotate through it (privacy extensions do this unprompted) --
+    # keyed per address, each rotation would be a fresh quota.
+    a = client_ip({"fly-client-ip": "2001:db8:1:2::a"}, peer=None, header="Fly-Client-IP")
+    b = client_ip({"fly-client-ip": "2001:db8:1:2:ffff::b"}, peer=None, header="Fly-Client-IP")
+    other = client_ip({"fly-client-ip": "2001:db8:1:3::a"}, peer=None, header="Fly-Client-IP")
+    assert a == b
+    assert a != other
+
+
+def test_ipv4_mapped_ipv6_is_the_ipv4_address():
+    assert client_ip({}, peer="::ffff:203.0.113.7", header=None) == "203.0.113.7"
+
+
+def test_ipv4_and_unparseable_values_pass_through():
+    assert client_ip({}, peer="203.0.113.7", header=None) == "203.0.113.7"
+    assert client_ip({}, peer="testclient", header=None) == "testclient"
