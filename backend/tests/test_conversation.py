@@ -160,3 +160,62 @@ def test_resolution_prompt_truncates_a_long_prior_answer():
     prompt = build_resolution_prompt("follow-up", history)
     assert "x" * 5000 not in prompt
     assert "…" in prompt  # the ellipsis marking the cut
+
+
+def _age(conn, conversation_id: str, days: int) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE conversation_turns SET created_at = now() - make_interval(days => %s)"
+            " WHERE conversation_id = %s",
+            (days, conversation_id),
+        )
+    conn.commit()
+
+
+def _turns(conn, conversation_id: str) -> list[int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT turn_index FROM conversation_turns WHERE conversation_id = %s"
+            " ORDER BY turn_index",
+            (conversation_id,),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def _save(conn, conversation_id: str) -> None:
+    save_turn(
+        conn, conversation_id, question="q", standalone_question="q", answer_text="a", tickers=[]
+    )
+
+
+@pytest.mark.db
+def test_save_prunes_conversations_idle_past_retention(conn):
+    _save(conn, "stale")
+    _save(conn, "stale")
+    _age(conn, "stale", days=8)
+    _save(conn, "fresh")
+    assert _turns(conn, "stale") == []
+    assert _turns(conn, "fresh") == [0]
+
+
+@pytest.mark.db
+def test_a_conversation_with_a_recent_turn_is_kept_whole(conn):
+    _save(conn, "c1")
+    _save(conn, "c1")
+    with conn.cursor() as cur:  # its first turn is old, its latest is recent
+        cur.execute(
+            "UPDATE conversation_turns SET created_at = now() - interval '30 days'"
+            " WHERE conversation_id = 'c1' AND turn_index = 0"
+        )
+    conn.commit()
+    _save(conn, "other")
+    assert _turns(conn, "c1") == [0, 1]
+
+
+@pytest.mark.db
+def test_resuming_a_pruned_conversation_restarts_cleanly(conn):
+    for _ in range(3):
+        _save(conn, "c1")
+    _age(conn, "c1", days=8)
+    _save(conn, "c1")
+    assert _turns(conn, "c1") == [0]
