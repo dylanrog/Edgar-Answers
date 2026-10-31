@@ -161,5 +161,8 @@ def answer_stream(
     except Exception as exc:  # noqa: BLE001 — deliberately broad, see below
         # Design §10: an LLM outage becomes an `error` event, not a 500. By the
         # time generation starts the response headers are already sent, so
-        # raising here would truncate the stream with no explanation.
+        # raising here would truncate the stream with no explanation. The 200 is
+        # already in the access log too, so this line is the only server-side
+        # trace of the failure (`fly logs`).
+        logger.exception("answer_stream failed")
         yield AnswerEvent("error", {"message": f"{type(exc).__name__}: {exc}"})
