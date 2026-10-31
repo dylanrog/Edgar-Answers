@@ -1,0 +1,35 @@
+# Fly.io config for the API (deployment.md bundle B). Secrets are NOT here:
+# `fly secrets set DATABASE_URL=... ANTHROPIC_API_KEY=...`.
+app = "edgar-answers-api"  # the name `fly apps create` accepted
+primary_region = "iad"     # next to Supabase us-east-1; the query path is chatty
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  FRONTEND_ORIGIN = "https://edgar-answers.vercel.app"  # exact Vercel production origin
+  CLIENT_IP_HEADER = "Fly-Client-IP"
+  ASK_PER_IP_PER_HOUR = "20"
+  ASK_DAILY_CAP = "200"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Always on, exactly one machine: no cold-start model load during a demo, and
+  # api/limits.py's in-process counters are only correct with one process.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # Measured 2026-10-30: ~56 MiB idle, ~276 MiB after an /ask (model loaded).
+  # Bump to "1gb" if `fly logs` ever shows an OOM kill.
+  memory = "512mb"
