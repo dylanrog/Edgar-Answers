@@ -9,15 +9,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FASTEMBED_CACHE_PATH=/opt/fastembed
 
 WORKDIR /app
-COPY pyproject.toml ./
-COPY src ./src
-RUN pip install .
+# Dependencies first, at the exact versions the suite passed on: `pip install .`
+# alone resolves whatever is newest at build time, and the query embedder must
+# stay compatible with the stored corpus vectors. Their own layer also means a
+# code change doesn't reinstall them.
+COPY requirements.lock ./
+RUN pip install -r requirements.lock
 
 # Bake bge-small-en-v1.5 into the layer. Left to itself fastembed downloads it
 # to a temp dir on the first /ask after every cold start (deployment.md §2.1).
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
 # ...and never phones home at runtime: a CDN hiccup must not fail an answer.
 ENV HF_HUB_OFFLINE=1
+
+COPY pyproject.toml ./
+COPY src ./src
+RUN pip install --no-deps .
 
 RUN useradd --create-home app && chown -R app /opt/fastembed
 USER app
