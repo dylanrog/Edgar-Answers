@@ -32,6 +32,7 @@ This is a learning project
 | On-demand ticker ingestion | **Out** | Requires async job queue + progress UI; v2 |
 | Auth, threading | **Out** | Not what this project is for |
 | Chat history | **In** (2026-08-30) | Anonymous, per-browser conversation continuity — no accounts; see `docs/superpowers/specs/2026-08-30-conversation-memory-design.md` |
+| Guided tour | **In** (2026-11-09) | A Phase 5 demo addition, not a scope expansion: a first-visit walkthrough, example questions and an "under the hood" panel over the existing `/ask` path. No new data, endpoints or filing types; see `docs/superpowers/specs/2026-11-09-guided-tour-design.md` |
 
 ## 3. Architecture
 
@@ -441,6 +442,20 @@ One page: `/ask`, split-pane.
   renders the stored HTML (sanitized at ingestion, so `dangerouslySetInnerHTML`
   is acceptable — the server is the sanitizer).
 
+- **Guided tour** (spec 2026-11-09): each answer carries an "under the hood"
+  panel (`components/under-the-hood.tsx`, logic in `lib/pipeline-steps.ts`)
+  driven by the real `progress` SSE events (§6.4), with the verified quote lines
+  revealed about 400 ms apart. A first-visit coach (`lib/tour.ts` state machine,
+  `components/tour-coach.tsx`, `components/example-questions.tsx`) walks
+  welcome, watch, click, source, closing, then done; it can be skipped at any
+  point and a `localStorage` flag records that it was seen. Picking an example
+  always starts a fresh conversation. The examples live in
+  `frontend/lib/examples.json` and `backend/evals/examples.yaml`;
+  `tests/test_examples.py` fails CI if they drift, and
+  `python -m evals examples` is the release check (§8).
+- **Mobile:** below `md` (768 px) the page stacks vertically instead of
+  splitting, and a citation click scrolls the viewer into view.
+
 Components: `app/ask/page.tsx`, `components/answer-stream.tsx`,
 `components/citation-chip.tsx`, `components/filing-viewer.tsx`.
 State is one object: `{activeAccession, activeSids}` — a chip click sets it, the
@@ -470,6 +485,15 @@ reading real filings):
 2. **Faithfulness — end-to-end:** run the full `/ask` path; report % citations
    verified and % questions answered (vs. refused). Costs pennies; run before/after
    meaningful changes.
+
+**Examples release check** (`python -m evals examples [--runs N]`): not a metric
+and nothing is written to `results.jsonl`. It runs each guided-tour example
+(`backend/evals/examples.yaml`) N times through the production `/ask` path with
+empty filters and no conversation id. An example passes only if it is answered,
+every citation verifies, no unverified notice appears, each pinned entry's
+accession and gold sids are hit and its expected figures stated, table examples
+cite a cell, and comparisons cite at least two tickers.
+`python -m evals verify --examples` checks that the pins exist in the DB.
 
 Each run appends `{git_sha, timestamp, metrics}` to `evals/results.jsonl` —
 regressions become visible instead of vibes.
