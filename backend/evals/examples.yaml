@@ -3,4 +3,48 @@
 # Vetted before release with `python -m evals examples`; check pins with
 # `python -m evals verify --examples`. Must match frontend/lib/examples.json
 # (id == group); tests/test_examples.py enforces that.
-[]
+#
+# Vetted 2026-11-09 with `python -m evals examples --runs 5` on the full local
+# corpus: every entry below passed 5/5. Dropped candidates:
+# - "What was Microsoft's total debt at the end of fiscal 2026?" (golden t003):
+#   0/5 -- never cited the pinned Total debt row and never stated 40,294.
+# - "What drove the increase in Microsoft's research and development expenses
+#   in fiscal 2025?": passed 5/5, dropped only because it overlaps the R&D
+#   comparison example.
+
+- id: ex-aapl-rd-2025
+  question: How much did Apple spend on research and development in fiscal 2025?
+  ticker: AAPL
+  accession: "0000320193-25-000079"
+  section: item7
+  gold_sids: [765, 898]
+  expected_values: [["34,550", "34.6 billion", "34.55 billion"]]
+- id: ex-meta-liabilities-2025
+  question: What were Meta's total liabilities at the end of 2025?
+  ticker: META
+  accession: "0001628280-26-003942"
+  section: item8
+  gold_sids: [2237]
+  expected_values: [["148,778", "148.8 billion"]]
+- id: ex-rd-compare-2025-aapl
+  group: ex-rd-compare-2025
+  question: Compare Apple's and Microsoft's research and development spending in fiscal 2025.
+  ticker: AAPL
+  accession: "0000320193-25-000079"
+  section: item7
+  gold_sids: [765, 898]
+  expected_values: [["34,550", "34.6 billion", "34.55 billion"]]
+- id: ex-rd-compare-2025-msft
+  group: ex-rd-compare-2025
+  question: Compare Apple's and Microsoft's research and development spending in fiscal 2025.
+  ticker: MSFT
+  accession: "0000950170-25-100235"
+  section: item7
+  gold_sids: [1348, 1356, 1647]
+  expected_values: [["32,488", "32.5 billion"]]
+- id: ex-aapl-europe-2025
+  question: Why did Apple's net sales in Europe increase during fiscal 2025?
+  ticker: AAPL
+  accession: "0000320193-25-000079"
+  section: item7
+  gold_sids: [712]
