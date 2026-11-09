@@ -53,9 +53,31 @@ def cmd_run(args) -> None:
     print(f"appended to {harness.RESULTS_PATH}")
 
 
+def cmd_examples(args) -> None:
+    from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
+    from api.generate import AnthropicGenerator
+    from api.rewrite import AnthropicQueryRewriter
+
+    from . import examples
+
+    # A release check, not a metric: deliberately never appends to results.jsonl.
+    with db.connect() as conn:
+        ok = examples.run_examples(
+            conn, Embedder(), AnthropicGenerator(), AnthropicCompanyDetector(),
+            AnthropicPeriodDetector(), AnthropicQueryRewriter(), runs=args.runs,
+        )
+    if not ok:
+        raise SystemExit(1)
+
+
 def cmd_verify(args) -> None:
     """Check every golden entry against the DB: accession exists, sids exist."""
-    questions = harness.load_golden()
+    if args.examples:
+        from . import examples
+
+        questions = harness.load_golden(examples.EXAMPLES_PATH)
+    else:
+        questions = harness.load_golden()
     failures = 0
     with db.connect() as conn, conn.cursor() as cur:
         for question in questions:
@@ -176,7 +198,14 @@ def main(argv: list[str] | None = None) -> None:
     p_run = sub.add_parser("run", help="run the eval harness against DATABASE_URL")
     p_run.add_argument("--retrieval-only", action="store_true")
     p_run.add_argument("--debug", action="store_true", help="print per-arm top results")
-    sub.add_parser("verify", help="validate golden entries against the DB")
+    p_verify = sub.add_parser("verify", help="validate golden entries against the DB")
+    p_verify.add_argument(
+        "--examples", action="store_true", help="check examples.yaml instead of golden.yaml"
+    )
+    p_ex = sub.add_parser(
+        "examples", help="vet the demo example questions against pinned gold"
+    )
+    p_ex.add_argument("--runs", type=int, default=5)
     p_repin = sub.add_parser(
         "repin", help="re-anchor golden gold_sids after a reprocess"
     )
@@ -202,6 +231,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.cmd == "run":
         cmd_run(args)
+    elif args.cmd == "examples":
+        cmd_examples(args)
     elif args.cmd == "repin":
         cmd_repin(args)
     elif args.cmd == "entities":

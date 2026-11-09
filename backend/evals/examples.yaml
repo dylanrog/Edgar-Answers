@@ -1,0 +1,6 @@
+# Demo example questions (guided tour). Golden-set format (see golden.yaml);
+# entries sharing a `group` are one comparison question, one entry per company.
+# Vetted before release with `python -m evals examples`; check pins with
+# `python -m evals verify --examples`. Must match frontend/lib/examples.json
+# (id == group); tests/test_examples.py enforces that.
+[]
