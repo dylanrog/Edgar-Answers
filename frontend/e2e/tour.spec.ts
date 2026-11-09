@@ -92,6 +92,19 @@ async function stub(page: Page, askBody: string) {
 const welcome = (page: Page) => page.getByText("Pick a question to see how it works.");
 const callout = (page: Page) => page.getByTestId("tour-callout");
 
+/**
+ * Reloads and waits until the client has mounted. The prerendered HTML already
+ * has the Question input, so asserting the welcome card is absent before
+ * hydration would pass vacuously; the /companies fetch fires in the same mount
+ * pass as the tour check, after it.
+ */
+async function reloadHydrated(page: Page) {
+  expect(await page.evaluate(() => localStorage.getItem("edgar-answers.tour-seen"))).toBe("1");
+  const mounted = page.waitForResponse(`${API}/companies`);
+  await page.reload();
+  await mounted;
+}
+
 /** Plays the tour from the welcome card up to the click-the-citation step. */
 async function toClickStep(page: Page) {
   await page.goto("/ask");
@@ -119,7 +132,7 @@ test("the full tour: ask, watch, click, see the source, close", async ({ page })
   await expect(chip).toHaveClass(/ring-2/);
   await chip.click();
 
-  await expect(page.locator(".cited-figure, .cited-sentence").first()).toBeVisible();
+  await expect(page.locator(".cited-figure").first()).toBeVisible();
   await expect(page.getByText(/That's the exact sentence/)).toBeVisible();
 
   await page.getByRole("button", { name: "Next" }).click();
@@ -131,8 +144,7 @@ test("the full tour: ask, watch, click, see the source, close", async ({ page })
 
   await page.getByRole("button", { name: "Done" }).click();
   await expect(callout(page)).toHaveCount(0);
-  await page.reload();
-  await expect(page.getByLabel("Question")).toBeVisible();
+  await reloadHydrated(page);
   await expect(welcome(page)).toHaveCount(0);
 });
 
@@ -141,8 +153,7 @@ test("skipping the welcome card ends the tour for good", async ({ page }) => {
   await page.goto("/ask");
   await page.getByRole("button", { name: "Skip tour" }).click();
   await expect(welcome(page)).toHaveCount(0);
-  await page.reload();
-  await expect(page.getByLabel("Question")).toBeVisible();
+  await reloadHydrated(page);
   await expect(welcome(page)).toHaveCount(0);
   await expect(callout(page)).toHaveCount(0);
 });
@@ -199,7 +210,7 @@ test.describe("on a phone", () => {
     await toClickStep(page);
     await page.getByRole("button", { name: "[1]" }).click();
 
-    const cited = page.locator(".cited-sentence, .cited-figure").first();
+    const cited = page.locator(".cited-figure").first();
     await expect(cited).toBeVisible();
     await expect(cited).toBeInViewport();
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
