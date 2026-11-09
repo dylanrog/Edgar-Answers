@@ -4,18 +4,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AskForm } from "@/components/ask-form";
 import { ConversationTurn } from "@/components/conversation-turn";
+import { ExampleQuestions } from "@/components/example-questions";
 import { FilingTabs } from "@/components/filing-tabs";
 import { FilingViewer } from "@/components/filing-viewer";
+import { TourCallout, TourWelcome } from "@/components/tour-coach";
 import { initialAnswerState, reduceAnswer } from "@/lib/answer";
 import type { AnswerState } from "@/lib/answer";
 import { askStream, fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
+import { EXAMPLES, askExampleFresh } from "@/lib/examples";
+import type { Example } from "@/lib/examples";
+import {
+  firstVerifiedMarker,
+  hasSeenTour,
+  markTourSeen,
+  reduceTour,
+} from "@/lib/tour";
+import type { TourEvent, TourStep } from "@/lib/tour";
 import { closeTab, initialTabState, openTab } from "@/lib/tabs";
 import type { Highlight } from "@/lib/highlight";
 import type { Citation, Company } from "@/lib/types";
 
-// Wired by the guided tour in a later task.
 const noop = () => {};
 
 type TurnView = { question: string; state: AnswerState };
@@ -25,6 +35,23 @@ export default function AskPage() {
   const [tabs, setTabs] = useState(initialTabState);
   const [highlights, setHighlights] = useState<Record<string, Highlight>>({});
   const [companies, setCompanies] = useState<Company[]>([]);
+  // Starts "off" and is read from storage on mount: the page is prerendered,
+  // so reading storage during render would mismatch on hydration.
+  const [tour, setTour] = useState<TourStep>("off");
+
+  useEffect(() => {
+    // Deferred so the first client render matches the prerendered "off".
+    if (!hasSeenTour()) queueMicrotask(() => setTour(reduceTour("off", { type: "start" })));
+  }, []);
+
+  function dispatch(event: TourEvent) {
+    const next = reduceTour(tour, event);
+    setTour(next);
+    // A dismissed or finished tour must never come back by itself.
+    if (next === "off" && (event.type === "skip" || event.type === "finish")) {
+      markTourSeen();
+    }
+  }
 
   useEffect(() => {
     // A failed company list only costs the filter dropdown and friendly
@@ -79,6 +106,7 @@ export default function AskPage() {
   }
 
   async function ask(question: string, filters: AskFilters) {
+    dispatch({ type: "asked" });
     const conversationId = getOrCreateConversationId();
     setTurns((previous) => [
       ...previous,
@@ -109,6 +137,7 @@ export default function AskPage() {
     // Unverified and unattributable citations are inert by design (§6.3):
     // there is nothing trustworthy to scroll to.
     if (!citation.verified || citation.accession === "") return;
+    dispatch({ type: "citationClicked" });
     setTabs((previous) => openTab(previous, citation.accession));
     setHighlights((previous) => ({
       ...previous,
@@ -121,6 +150,37 @@ export default function AskPage() {
     }
   }
 
+  function pickExample(example: Example) {
+    askExampleFresh(example, { newConversation, ask });
+  }
+
+  function takeTour() {
+    newConversation();
+    dispatch({ type: "start" });
+  }
+
+  function retry() {
+    const question = turns.at(-1)?.question;
+    if (question === undefined) return;
+    newConversation();
+    ask(question, {});
+  }
+
+  function callout(step: "watch" | "click" | "source" | "closing" | "interrupted") {
+    return (
+      <TourCallout
+        step={step}
+        onSkip={() => dispatch({ type: "skip" })}
+        onNext={() => dispatch({ type: "next" })}
+        onFinish={() => dispatch({ type: "finish" })}
+        onRetry={retry}
+        examples={EXAMPLES}
+        onPick={pickExample}
+        disabled={streaming}
+      />
+    );
+  }
+
   return (
     <main className="flex flex-col bg-slate-950 text-slate-200 md:grid md:h-screen md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       <section className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r">
@@ -128,20 +188,32 @@ export default function AskPage() {
           <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">
             EDGAR ANSWERS
           </h1>
-          {turns.length > 0 && (
+          <div className="flex items-baseline gap-4">
             <button
               type="button"
-              onClick={newConversation}
+              onClick={takeTour}
               className="text-xs text-slate-500 underline hover:text-slate-300"
             >
-              New conversation
+              Take the tour
             </button>
-          )}
+            {turns.length > 0 && (
+              <button
+                type="button"
+                onClick={newConversation}
+                className="text-xs text-slate-500 underline hover:text-slate-300"
+              >
+                New conversation
+              </button>
+            )}
+          </div>
         </div>
 
         {turns.length > 0 && (
           <div ref={threadRef} className="px-5 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
-            {turns.map((turn, index) => (
+            {turns.map((turn, index) => {
+              const latest = index === turns.length - 1;
+              const lastState = turn.state;
+              return (
               <ConversationTurn
                 key={index}
                 question={turn.question}
@@ -149,23 +221,65 @@ export default function AskPage() {
                 onSelect={select}
                 names={names}
                 expanded={index === turns.length - 1}
-                onSettled={noop}
-                emphasizeMarker={null}
+                onSettled={
+                  latest
+                    ? () =>
+                        dispatch(
+                          lastState.status === "error"
+                            ? { type: "errored" }
+                            : {
+                                type: "settled",
+                                hasVerified:
+                                  firstVerifiedMarker(lastState.citations) !== null,
+                              },
+                        )
+                    : noop
+                }
+                emphasizeMarker={
+                  latest && tour === "click"
+                    ? firstVerifiedMarker(turn.state.citations)
+                    : null
+                }
+                coachAbovePanel={latest && tour === "watch" ? callout("watch") : null}
+                coachBelowAnswer={latest && tour === "click" ? callout("click") : null}
+                coachBelowTurn={
+                  latest && (tour === "closing" || tour === "interrupted")
+                    ? callout(tour)
+                    : null
+                }
               />
-            ))}
+              );
+            })}
           </div>
+        )}
+
+        {turns.length === 0 && tour === "welcome" && (
+          <TourWelcome
+            examples={EXAMPLES}
+            onPick={pickExample}
+            onSkip={() => dispatch({ type: "skip" })}
+            disabled={streaming}
+          />
         )}
 
         <AskForm companies={companies} disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
 
-        {turns.length === 0 && (
-          <p className="flex-1 px-5 text-slate-500">
-            Ask a question about a filing.
-          </p>
+        {turns.length === 0 && tour !== "welcome" && (
+          <div className="flex-1 px-5 pt-4">
+            <p className="mb-3 text-slate-500">Ask a question about a filing.</p>
+            {tour === "off" && (
+              <ExampleQuestions
+                examples={EXAMPLES}
+                onPick={pickExample}
+                disabled={streaming}
+              />
+            )}
+          </div>
         )}
       </section>
 
       <section ref={viewerRef} className="flex h-[70vh] min-w-0 flex-col overflow-hidden md:h-auto">
+        {tour === "source" && <div className="shrink-0 px-3 pb-2">{callout("source")}</div>}
         <FilingTabs
           tabs={tabs}
           labels={labels}

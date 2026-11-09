@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { ReactNode } from "react";
 
 import { AnswerStream } from "@/components/answer-stream";
 import { SourcesPanel } from "@/components/sources-panel";
@@ -17,6 +18,9 @@ export function ConversationTurn({
   expanded,
   onSettled,
   emphasizeMarker,
+  coachAbovePanel,
+  coachBelowAnswer,
+  coachBelowTurn,
 }: {
   question: string;
   state: AnswerState;
@@ -25,6 +29,10 @@ export function ConversationTurn({
   expanded: boolean;
   onSettled: () => void;
   emphasizeMarker: number | null;
+  // Tour callouts, rendered inline at the three places the coach points.
+  coachAbovePanel?: ReactNode;
+  coachBelowAnswer?: ReactNode;
+  coachBelowTurn?: ReactNode;
 }) {
   const groups = useMemo(() => groupSources(state.citations), [state.citations]);
 
@@ -45,6 +53,8 @@ export function ConversationTurn({
           emphasizeMarker={emphasizeMarker}
         />
       </div>
+      {coachBelowAnswer}
+      {coachAbovePanel}
       <UnderTheHood
         state={state}
         names={names}
@@ -52,6 +62,7 @@ export function ConversationTurn({
         onSettled={onSettled}
       />
       <SourcesPanel groups={groups} onSelect={onSelect} />
+      {coachBelowTurn}
     </article>
   );
 }
