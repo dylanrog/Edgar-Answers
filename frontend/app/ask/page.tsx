@@ -16,6 +16,7 @@ import { getOrCreateConversationId, startNewConversation } from "@/lib/conversat
 import { EXAMPLES, askExampleFresh } from "@/lib/examples";
 import type { Example } from "@/lib/examples";
 import {
+  askEvent,
   firstVerifiedMarker,
   hasSeenTour,
   markTourSeen,
@@ -28,7 +29,9 @@ import type { Citation, Company } from "@/lib/types";
 
 const noop = () => {};
 
-type TurnView = { question: string; state: AnswerState };
+// `id` is a stable React key: index keys let a replaced thread reuse the old
+// turn's component state (its already-settled panel).
+type TurnView = { id: number; question: string; state: AnswerState };
 
 export default function AskPage() {
   const [turns, setTurns] = useState<TurnView[]>([]);
@@ -37,6 +40,7 @@ export default function AskPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   // Starts "off" and is read from storage on mount: the page is prerendered,
   // so reading storage during render would mismatch on hydration.
+  const nextTurnId = useRef(0);
   const [tour, setTour] = useState<TourStep>("off");
 
   useEffect(() => {
@@ -106,11 +110,12 @@ export default function AskPage() {
   }
 
   async function ask(question: string, filters: AskFilters) {
-    dispatch({ type: "asked" });
+    dispatch(askEvent(tour));
     const conversationId = getOrCreateConversationId();
+    const id = nextTurnId.current++;
     setTurns((previous) => [
       ...previous,
-      { question, state: { ...initialAnswerState, status: "streaming" } },
+      { id, question, state: { ...initialAnswerState, status: "streaming" } },
     ]);
     try {
       for await (const event of askStream(question, filters, conversationId)) {
@@ -162,8 +167,7 @@ export default function AskPage() {
   function retry() {
     const question = turns.at(-1)?.question;
     if (question === undefined) return;
-    newConversation();
-    ask(question, {});
+    askExampleFresh({ question }, { newConversation, ask });
   }
 
   function callout(step: "watch" | "click" | "source" | "closing" | "interrupted") {
@@ -199,7 +203,11 @@ export default function AskPage() {
             {turns.length > 0 && (
               <button
                 type="button"
-                onClick={newConversation}
+                onClick={() => {
+                  newConversation();
+                  // Mid-tour, an empty thread leaves callouts nothing to anchor to.
+                  if (tour !== "off") dispatch({ type: "start" });
+                }}
                 className="text-xs text-slate-500 underline hover:text-slate-300"
               >
                 New conversation
@@ -215,7 +223,7 @@ export default function AskPage() {
               const lastState = turn.state;
               return (
               <ConversationTurn
-                key={index}
+                key={turn.id}
                 question={turn.question}
                 state={turn.state}
                 onSelect={select}
@@ -263,6 +271,8 @@ export default function AskPage() {
         )}
 
         <AskForm companies={companies} disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
+
+        {turns.length === 0 && tour === "welcome" && <div className="flex-1" />}
 
         {turns.length === 0 && tour !== "welcome" && (
           <div className="flex-1 px-5 pt-4">

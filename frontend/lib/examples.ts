@@ -20,7 +20,7 @@ export function featuredExample(): Example | undefined {
  * never rewrite the example question into something else.
  */
 export function askExampleFresh(
-  example: Example,
+  example: Pick<Example, "question">,
   deps: {
     newConversation: () => void;
     ask: (question: string, filters: AskFilters) => void;

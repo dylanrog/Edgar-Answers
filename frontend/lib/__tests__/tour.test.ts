@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
+  askEvent,
   type TourEvent,
   type TourStep,
   firstVerifiedMarker,
@@ -163,4 +164,11 @@ describe("firstVerifiedMarker", () => {
       firstVerifiedMarker(map(citation(1, { verified: false }))),
     ).toBeNull();
   });
+});
+
+test("askEvent finishes the tour from closing and is a plain ask elsewhere", () => {
+  expect(askEvent("closing")).toEqual({ type: "finish" });
+  expect(askEvent("welcome")).toEqual({ type: "asked" });
+  expect(askEvent("interrupted")).toEqual({ type: "asked" });
+  expect(askEvent("off")).toEqual({ type: "asked" });
 });

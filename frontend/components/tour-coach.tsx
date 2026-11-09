@@ -32,7 +32,7 @@ export function TourWelcome({
   disabled: boolean;
 }) {
   return (
-    <div className="flex-1 px-5 pb-4" data-testid="tour-welcome">
+    <div className="px-5 pb-4" data-testid="tour-welcome">
       <p className="text-base text-slate-200">
         <strong className="font-semibold text-white">
           Answers from SEC filings, with every quote checked.

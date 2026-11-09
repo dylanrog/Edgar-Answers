@@ -44,6 +44,14 @@ export function reduceTour(step: TourStep, event: TourEvent): TourStep {
   return step;
 }
 
+/**
+ * What asking a question means for the tour: from `closing` it is the
+ * visitor leaving the tour for their own exploration, so it finishes it.
+ */
+export function askEvent(step: TourStep): TourEvent {
+  return step === "closing" ? { type: "finish" } : { type: "asked" };
+}
+
 /** True once the tour has been marked seen. Storage failures read as unseen. */
 export function hasSeenTour(): boolean {
   try {
