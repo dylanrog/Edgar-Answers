@@ -8,12 +8,15 @@ import { FilingTabs } from "@/components/filing-tabs";
 import { FilingViewer } from "@/components/filing-viewer";
 import { initialAnswerState, reduceAnswer } from "@/lib/answer";
 import type { AnswerState } from "@/lib/answer";
-import { askStream } from "@/lib/api";
+import { askStream, fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
 import { closeTab, initialTabState, openTab } from "@/lib/tabs";
 import type { Highlight } from "@/lib/highlight";
-import type { Citation } from "@/lib/types";
+import type { Citation, Company } from "@/lib/types";
+
+// Wired by the guided tour in a later task.
+const noop = () => {};
 
 type TurnView = { question: string; state: AnswerState };
 
@@ -21,6 +24,20 @@ export default function AskPage() {
   const [turns, setTurns] = useState<TurnView[]>([]);
   const [tabs, setTabs] = useState(initialTabState);
   const [highlights, setHighlights] = useState<Record<string, Highlight>>({});
+  const [companies, setCompanies] = useState<Company[]>([]);
+
+  useEffect(() => {
+    // A failed company list only costs the filter dropdown and friendly
+    // names, so it must not block asking questions.
+    fetchCompanies()
+      .then(setCompanies)
+      .catch(() => setCompanies([]));
+  }, []);
+
+  const names = useMemo(
+    () => Object.fromEntries(companies.map((c) => [c.ticker, c.name])),
+    [companies],
+  );
 
   const streaming = turns.at(-1)?.state.status === "streaming";
 
@@ -124,12 +141,16 @@ export default function AskPage() {
                 question={turn.question}
                 state={turn.state}
                 onSelect={select}
+                names={names}
+                expanded={index === turns.length - 1}
+                onSettled={noop}
+                emphasizeMarker={null}
               />
             ))}
           </div>
         )}
 
-        <AskForm disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
+        <AskForm companies={companies} disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
 
         {turns.length === 0 && (
           <p className="flex-1 px-5 text-slate-500">

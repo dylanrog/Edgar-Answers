@@ -17,9 +17,11 @@ function Dot({ delay }: { delay: string }) {
 export function AnswerStream({
   state,
   onSelect,
+  emphasizeMarker = null,
 }: {
   state: AnswerState;
   onSelect: (citation: Citation) => void;
+  emphasizeMarker?: number | null;
 }) {
   if (state.status === "idle") {
     return <p className="text-slate-500">Ask a question about a filing.</p>;
@@ -66,6 +68,7 @@ export function AnswerStream({
               marker={segment.marker}
               citation={state.citations.get(segment.marker)}
               onSelect={onSelect}
+              emphasized={emphasizeMarker === segment.marker}
             />
           ),
         )}

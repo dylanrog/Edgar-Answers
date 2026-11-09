@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import type { Company } from "@/lib/types";
 
@@ -10,10 +9,12 @@ import type { Company } from "@/lib/types";
 const MAX_TICKERS = 4;
 
 export function AskForm({
+  companies,
   disabled,
   onSubmit,
   docked = false,
 }: {
+  companies: Company[];
   disabled: boolean;
   onSubmit: (question: string, filters: AskFilters) => void;
   // `docked` styles the form as an always-visible bottom bar (once a
@@ -24,15 +25,6 @@ export function AskForm({
   const [question, setQuestion] = useState("");
   const [tickers, setTickers] = useState<string[]>([]);
   const [formType, setFormType] = useState("");
-  const [companies, setCompanies] = useState<Company[]>([]);
-
-  useEffect(() => {
-    // A failed company list only costs the filter dropdown, so it must not
-    // block asking questions.
-    fetchCompanies()
-      .then(setCompanies)
-      .catch(() => setCompanies([]));
-  }, []);
 
   function toggleTicker(ticker: string) {
     setTickers((current) => {
