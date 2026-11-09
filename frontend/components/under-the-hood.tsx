@@ -31,12 +31,17 @@ export function UnderTheHood({
   expanded: boolean;
   onSettled: () => void;
 }) {
-  const [open, setOpen] = useState(expanded);
+  // null until the user toggles; until then the panel follows `expanded`.
+  const [manual, setManual] = useState<boolean | null>(null);
+  const open = manual ?? expanded;
   const [revealed, setRevealed] = useState(0);
   const settledRef = useRef(false);
 
   const total = state.citations.size;
-  const started = state.progress.quotes !== null;
+  const started =
+    state.progress.quotes !== null ||
+    state.status === "done" ||
+    state.status === "error";
 
   // Only the per-quote reveal is paced; it starts once the server says it is
   // verifying and stops at the number of citations received.
@@ -65,13 +70,13 @@ export function UnderTheHood({
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setManual(!open)}
         className="flex w-full items-center justify-between text-left text-slate-400 hover:text-slate-200"
       >
         <span>
           {open
             ? "Under the hood"
-            : `Under the hood: ${passages} passages · ${verified}/${total} quotes verified`}
+            : `Under the hood: ${passages} passages · ${verified}/${total} quotes verified${state.status === "error" ? " · stopped with an error" : ""}`}
         </span>
         <span aria-hidden>{open ? "▾" : "▸"}</span>
       </button>

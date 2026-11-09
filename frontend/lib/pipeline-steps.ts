@@ -25,6 +25,7 @@ export function buildPanel(
 ): PanelLine[] {
   const { targets, retrieved, quotes } = state.progress;
   const lines: PanelLine[] = [];
+  const finished = state.status === "done" || state.status === "error";
 
   if (targets) {
     const who =
@@ -71,7 +72,8 @@ export function buildPanel(
     });
   }
 
-  if (quotes !== null) {
+  const total0 = state.citations.size;
+  if (quotes !== null || (finished && total0 > 0)) {
     const total = state.citations.size;
     lines.push({
       key: "check",
@@ -104,8 +106,22 @@ export function buildPanel(
   }
 
   if (state.status === "error") {
-    const running = lines.find((l) => l.status === "running");
-    if (running) running.status = "failed";
+    for (const l of lines) if (l.status === "running") l.status = "failed";
+    // A late error leaves nothing running; never let it look all-green.
+    if (!lines.some((l) => l.status === "failed")) {
+      const check = lines.find((l) => l.key === "check");
+      if (check) check.status = "failed";
+      else lines.push({ key: "error", status: "failed", text: "Stopped: the request failed" });
+    }
+  } else if (state.status === "done") {
+    // Stages whose event never arrived (an older server) are not spinners,
+    // and have no detail to claim.
+    for (const l of lines) {
+      if (l.status === "running" && l.key !== "check") {
+        l.status = "done";
+        delete l.detail;
+      }
+    }
   }
   return lines;
 }

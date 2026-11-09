@@ -120,3 +120,30 @@ test("isSettled needs done and every citation revealed", () => {
   expect(isSettled(s, 2)).toBe(true);
   expect(isSettled(full([cite(1)]), 1)).toBe(false);
 });
+
+test("isSettled covers error, zero citations and done without quotes", () => {
+  expect(isSettled(state({ status: "error" }), 0)).toBe(true);
+  expect(isSettled(state({ status: "done" }), 0)).toBe(true);
+  expect(isSettled(state({ status: "streaming" }), 0)).toBe(false);
+  const noQuotes = state({ status: "done", citations: new Map([[1, cite(1)]]) });
+  expect(isSettled(noQuotes, 0)).toBe(false);
+  expect(isSettled(noQuotes, 1)).toBe(true);
+});
+
+test("done without progress events leaves no spinner and no detail", () => {
+  const lines = buildPanel(state({ status: "done" }), {}, 0);
+  expect(lines.some((l) => l.status === "running")).toBe(false);
+  expect(lines[0].detail).toBeUndefined();
+});
+
+test("done without a quotes event still lists revealed quotes", () => {
+  const s = state({ status: "done", citations: new Map([[1, cite(1)]]) });
+  expect(buildPanel(s, {}, 1).some((l) => l.key === "quote-1")).toBe(true);
+});
+
+test("a late error after the reveal marks a line failed", () => {
+  const s = full([cite(1)], { status: "error" });
+  const lines = buildPanel(s, {}, 1);
+  expect(lines.some((l) => l.status === "failed")).toBe(true);
+  expect(lines.find((l) => l.key === "check")?.status).toBe("failed");
+});
