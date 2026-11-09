@@ -1,4 +1,4 @@
-import type { Citation, SSEEvent } from "./types";
+import type { Citation, Progress, SSEEvent } from "./types";
 
 export type AnswerState = {
   prose: string;
@@ -12,6 +12,8 @@ export type AnswerState = {
   /** The rewritten, self-contained question used for retrieval — set only
    *  when a follow-up was rewritten (design §6.4 `resolved` event). */
   standaloneQuestion: string | null;
+  /** Latest server progress per stage (`progress` events). */
+  progress: Progress;
 };
 
 export const initialAnswerState: AnswerState = {
@@ -22,6 +24,7 @@ export const initialAnswerState: AnswerState = {
   errorMessage: null,
   chunksRetrieved: null,
   standaloneQuestion: null,
+  progress: { targets: null, retrieved: null, quotes: null },
 };
 
 const UNVERIFIED_NOTICE =
@@ -65,6 +68,20 @@ export function reduceAnswer(state: AnswerState, event: SSEEvent): AnswerState {
     case "resolved": {
       const { standalone_question } = event.data as { standalone_question: string };
       return { ...state, standaloneQuestion: standalone_question };
+    }
+    case "progress": {
+      const { stage, ...data } = event.data as { stage: string } & Record<string, unknown>;
+      // Each stage fills its own slot; the stage key itself is not stored.
+      switch (stage) {
+        case "targets":
+          return { ...state, progress: { ...state.progress, targets: data as NonNullable<Progress["targets"]> } };
+        case "retrieved":
+          return { ...state, progress: { ...state.progress, retrieved: data as NonNullable<Progress["retrieved"]> } };
+        case "verifying":
+          return { ...state, progress: { ...state.progress, quotes: (data as { quotes: number }).quotes } };
+        default:
+          return state;
+      }
     }
     default:
       return state;
