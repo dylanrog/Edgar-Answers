@@ -42,6 +42,7 @@ export default function AskPage() {
   const streaming = turns.at(-1)?.state.status === "streaming";
 
   const threadRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<HTMLElement>(null);
 
   // When a new turn is added, pull its question to the top of the thread so
   // the answer streams into view below it. Keyed on the turn count, so it
@@ -113,11 +114,16 @@ export default function AskPage() {
       ...previous,
       [citation.accession]: { sids: citation.sids, cells: citation.cells },
     }));
+    // Stacked layout (below md): the viewer is further down the page, so bring
+    // it on screen. Its own highlight scroll then positions the sentence.
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   }
 
   return (
-    <main className="grid h-screen grid-cols-[minmax(0,5fr)_minmax(0,7fr)] bg-slate-950 text-slate-200">
-      <section className="flex min-h-0 flex-col border-r border-slate-800">
+    <main className="flex flex-col bg-slate-950 text-slate-200 md:grid md:h-screen md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <section className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r">
         <div className="flex items-baseline justify-between px-5 pb-3 pt-5">
           <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">
             EDGAR ANSWERS
@@ -134,7 +140,7 @@ export default function AskPage() {
         </div>
 
         {turns.length > 0 && (
-          <div ref={threadRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+          <div ref={threadRef} className="px-5 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
             {turns.map((turn, index) => (
               <ConversationTurn
                 key={index}
@@ -159,7 +165,7 @@ export default function AskPage() {
         )}
       </section>
 
-      <section className="flex flex-col overflow-hidden">
+      <section ref={viewerRef} className="flex h-[70vh] min-w-0 flex-col overflow-hidden md:h-auto">
         <FilingTabs
           tabs={tabs}
           labels={labels}
