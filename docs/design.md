@@ -392,6 +392,18 @@ resolved: {"standalone_question": "…"}            -- a rewritten follow-up;
                                                      emitted once before the first
                                                      token, only when the rewrite
                                                      changed the question
+progress: {"stage": "targets", "tickers": ["AAPL"],
+           "filings": [{"accession": "…", "ticker": "AAPL",
+                        "form_type": "10-K", "filing_date": "2024-11-01"}]}
+          {"stage": "retrieved", "passages": 8,
+           "filings": [{"accession": "…", "ticker": "AAPL",
+                        "form_type": "10-K", "filing_date": "2024-11-01",
+                        "passages": 3}]}
+          {"stage": "verifying", "quotes": 3}
+                                                  -- additive; emitted as each stage
+                                                     finishes; drives the
+                                                     under-the-hood panel (spec
+                                                     2026-11-09)
 citation: {"marker": 1, "verified": true,
            "accession": "0000320193-24-000123",
            "ticker": "AAPL", "form_type": "10-K",

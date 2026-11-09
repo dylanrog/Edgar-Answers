@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class AnswerEvent:
-    name: str  # token | citation | done | error
+    name: str  # token | citation | done | error | resolved | progress
     data: dict
 
 
@@ -68,8 +68,34 @@ def answer_stream(
             period_detector=period_detector,
             query_rewriter=query_rewriter,
         )
+        narrowed = [a for t in targets if t.accessions is not None for a in t.accessions]
+        yield AnswerEvent(
+            "progress",
+            {
+                "stage": "targets",
+                "tickers": [t.ticker for t in targets],
+                "filings": queries.load_filing_summaries(conn, narrowed),
+            },
+        )
         chunks = retrieve_for_targets(
             conn, embedder, standalone_question, targets, k_final=k_final, form_type=form_type
+        )
+        per_filing: dict[str, dict] = {}
+        for chunk in chunks:
+            entry = per_filing.setdefault(
+                chunk.accession,
+                {
+                    "accession": chunk.accession,
+                    "ticker": chunk.ticker,
+                    "form_type": chunk.form_type,
+                    "filing_date": chunk.filing_date.isoformat(),
+                    "passages": 0,
+                },
+            )
+            entry["passages"] += 1
+        yield AnswerEvent(
+            "progress",
+            {"stage": "retrieved", "passages": len(chunks), "filings": list(per_filing.values())},
         )
         user_message = build_user_message(standalone_question, chunks)
 
@@ -96,6 +122,8 @@ def answer_stream(
             citations = parse_citations(splitter.raw)
             if citations is not None:
                 break
+
+        yield AnswerEvent("progress", {"stage": "verifying", "quotes": len(citations or [])})
 
         by_id = {chunk.chunk_id: chunk for chunk in chunks}
         verified: list[VerifiedCitation] = []

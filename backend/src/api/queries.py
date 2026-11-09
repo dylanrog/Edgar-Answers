@@ -83,3 +83,26 @@ def load_filings_for_ticker(conn: psycopg.Connection, ticker: str) -> list[dict]
             }
             for accession, form_type, filing_date, period_end in cur.fetchall()
         ]
+
+
+def load_filing_summaries(conn: psycopg.Connection, accessions: list[str]) -> list[dict]:
+    """ticker/form/date per accession, in the order given; unknown ones are skipped."""
+    if not accessions:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT f.accession, c.ticker, f.form_type, f.filing_date"
+            " FROM filings f JOIN companies c ON c.cik = f.cik"
+            " WHERE f.accession = ANY(%s)",
+            (accessions,),
+        )
+        found = {
+            accession: {
+                "accession": accession,
+                "ticker": ticker,
+                "form_type": form_type,
+                "filing_date": filing_date.isoformat(),
+            }
+            for accession, ticker, form_type, filing_date in cur.fetchall()
+        }
+    return [found[a] for a in accessions if a in found]

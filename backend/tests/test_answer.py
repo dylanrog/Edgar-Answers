@@ -8,6 +8,7 @@ from tests.fakes import (
     StubCompanyDetector,
     StubConversationRewriter,
     StubGenerator,
+    StubPeriodDetector,
 )
 
 from api.answer import answer_stream
@@ -118,7 +119,7 @@ def test_streams_tokens_then_a_verified_citation_then_done(seeded_conn):
     quote = "Total net sales were 391.0 billion dollars"
     events, _ = collect(seeded_conn, response_with(quote, chunk_id_of(seeded_conn)))
     names = [e.name for e in events]
-    assert names[0] == "token"
+    assert next(n for n in names if n != "progress") == "token"
     assert names[-1] == "done"
     answer = "".join(e.data["text"] for e in events if e.name == "token")
     assert "391.0 billion" in answer
@@ -319,3 +320,88 @@ def test_no_turn_is_saved_when_generation_errors(seeded_conn):
     )
     assert events[-1].name == "error"
     assert load_recent_turns(seeded_conn, "conv-5") == []
+
+
+def progress(events, stage):
+    return [e.data for e in events if e.name == "progress" and e.data["stage"] == stage]
+
+
+@pytest.mark.db
+def test_progress_events_arrive_in_stage_order(seeded_conn):
+    quote = "Total net sales were 391.0 billion dollars"
+    events, _ = collect(seeded_conn, response_with(quote, chunk_id_of(seeded_conn)))
+    names = [e.name for e in events]
+    stages = [e.data["stage"] for e in events if e.name == "progress"]
+    assert stages == ["targets", "retrieved", "verifying"]
+    progress_at = {e.data["stage"]: i for i, e in enumerate(events) if e.name == "progress"}
+    token_at = [i for i, n in enumerate(names) if n == "token"]
+    assert progress_at["retrieved"] < token_at[0]
+    assert token_at[-1] < progress_at["verifying"] < names.index("citation")
+
+
+@pytest.mark.db
+def test_retrieved_progress_counts_passages_by_filing(seeded_conn):
+    quote = "Total net sales were 391.0 billion dollars"
+    events, _ = collect(seeded_conn, response_with(quote, chunk_id_of(seeded_conn)))
+    (retrieved,) = progress(events, "retrieved")
+    assert retrieved["passages"] == 1
+    assert retrieved["filings"] == [
+        {
+            "accession": ACCESSION,
+            "ticker": "TSTE",
+            "form_type": "10-K",
+            "filing_date": "2024-11-01",
+            "passages": 1,
+        }
+    ]
+
+
+@pytest.mark.db
+def test_targets_progress_lists_tickers_and_no_narrowing_without_a_period_detector(
+    seeded_conn,
+):
+    events = list(
+        answer_stream(
+            seeded_conn,
+            FakeEmbedder(),
+            StubGenerator("Nope."),
+            StubCompanyDetector(),
+            "What were total net sales?",
+            tickers=["TSTE"],
+        )
+    )
+    (targets,) = progress(events, "targets")
+    assert targets["tickers"] == ["TSTE"]
+    assert targets["filings"] == []
+
+
+@pytest.mark.db
+def test_targets_progress_lists_narrowed_filings(seeded_conn):
+    question = "What were total net sales?"
+    events = list(
+        answer_stream(
+            seeded_conn,
+            FakeEmbedder(),
+            StubGenerator("Nope."),
+            StubCompanyDetector(),
+            question,
+            tickers=["TSTE"],
+            period_detector=StubPeriodDetector({question: [ACCESSION]}),
+        )
+    )
+    (targets,) = progress(events, "targets")
+    assert targets["filings"] == [
+        {
+            "accession": ACCESSION,
+            "ticker": "TSTE",
+            "form_type": "10-K",
+            "filing_date": "2024-11-01",
+        }
+    ]
+
+
+@pytest.mark.db
+def test_verifying_progress_counts_zero_when_the_block_never_parses(seeded_conn):
+    events, _ = collect(seeded_conn, "Nope.", "Still nope.")
+    (verifying,) = progress(events, "verifying")
+    assert verifying["quotes"] == 0
