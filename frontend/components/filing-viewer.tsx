@@ -46,7 +46,19 @@ function FilingPane({
   // the injected highlight marks.
   useLayoutEffect(() => {
     if (filing !== null && containerRef.current !== null) {
-      containerRef.current.innerHTML = filing.viewer_html;
+      const container = containerRef.current;
+      // Safe here and only here: this HTML was sanitized by the
+      // canonicalizer at ingestion, so the server is the sanitizer.
+      container.innerHTML = filing.viewer_html;
+      // EDGAR-relative image sources 404 against this origin; hide the
+      // broken-image icon rather than rewrite the src.
+      for (const img of container.querySelectorAll("img")) {
+        const hide = () => {
+          img.style.display = "none";
+        };
+        if (img.complete && img.naturalWidth === 0) hide();
+        else img.addEventListener("error", hide, { once: true });
+      }
     }
   }, [filing]);
 
@@ -72,8 +84,6 @@ function FilingPane({
         <p className="text-slate-500">Loading filing…</p>
       )}
       {filing !== null && (
-        // Safe here and only here: this HTML was sanitized by the
-        // canonicalizer at ingestion, so the server is the sanitizer.
         <div ref={containerRef} className="filing-html" />
       )}
     </div>

@@ -1,7 +1,7 @@
 import type { CitedCell } from "./types";
 
 /** Plain global classes, defined in app/globals.css. They cannot be Tailwind
- *  utilities: these elements come from dangerouslySetInnerHTML, so Tailwind
+ *  utilities: these elements are injected as raw HTML (innerHTML), so Tailwind
  *  never sees them at build time. */
 export const HIGHLIGHT_CLASS = "cited-sentence";
 export const FIGURE_CLASS = "cited-figure";

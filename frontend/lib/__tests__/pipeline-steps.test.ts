@@ -73,6 +73,17 @@ test("the search detail lists at most three filings then counts the rest", () =>
   expect(buildPanel(s, {}, 0).find((l) => l.key === "search")?.detail).not.toMatch(/more/);
 });
 
+test("the understood-question filings are capped at three", () => {
+  const s = state({
+    progress: {
+      targets: { tickers: ["AAPL"], filings: [1, 2, 3, 4, 5].map((n) => filing(n)) },
+      retrieved: null,
+      quotes: null,
+    },
+  });
+  expect(buildPanel(s, {}, 0)[0].text).toMatch(/\+2 more$/);
+});
+
 test("names map tickers and unmapped tickers fall back", () => {
   const s = state({
     progress: { targets: { tickers: ["AAPL", "ZZZ"], filings: [] }, retrieved: null, quotes: null },

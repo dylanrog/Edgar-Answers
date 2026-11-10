@@ -27,7 +27,7 @@ test("the citation highlight survives a re-render of the page", async ({ page })
       contentType: "application/json",
       body: JSON.stringify({
         accession: ACCESSION,
-        viewer_html: '<p><span data-sid="646">Intro.</span></p><p><span data-sid="647">Total net sales $ 391,035</span></p>',
+        viewer_html: '<p><span data-sid="646">Intro.</span></p><img id="gone" src="missing-image.jpg"><p><span data-sid="647">Total net sales $ 391,035</span></p>',
         ticker: "AAPL",
         form_type: "10-K",
         filing_date: "2024-11-01",
@@ -46,6 +46,6 @@ test("the citation highlight survives a re-render of the page", async ({ page })
   await page.getByLabel("Question").fill("another question");
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page.getByText("another question").first()).toBeVisible();
-  await page.waitForTimeout(300);
   await expect(page.locator(".cited-sentence")).toHaveCount(1);
+  await expect(page.locator("#gone")).toBeHidden();
 });

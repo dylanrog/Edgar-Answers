@@ -46,7 +46,7 @@ export function buildPanel(
         ? "Searching every company"
         : `Understood the question: ${targets.tickers.map((t) => names[t] ?? t).join(", ")}` +
           (targets.filings.length > 0
-            ? ` · ${targets.filings.map(label).join(", ")}`
+            ? ` · ${listFilings(targets.filings)}`
             : "");
     lines.push({ key: "targets", status: "done", text: who, detail: "company and period detection" });
   } else {
