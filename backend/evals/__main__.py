@@ -67,6 +67,7 @@ def cmd_examples(args) -> None:
             conn, Embedder(), AnthropicGenerator(), AnthropicCompanyDetector(),
             AnthropicPeriodDetector(), AnthropicQueryRewriter(),
             AnthropicConversationRewriter(), runs=args.runs,
+            verbose=args.verbose,
         )
     if not ok:
         raise SystemExit(1)
@@ -208,6 +209,7 @@ def main(argv: list[str] | None = None) -> None:
         "examples", help="vet the demo example questions against pinned gold"
     )
     p_ex.add_argument("--runs", type=int, default=10)
+    p_ex.add_argument("--verbose", action="store_true", help="print every answer")
     p_repin = sub.add_parser(
         "repin", help="re-anchor golden gold_sids after a reprocess"
     )

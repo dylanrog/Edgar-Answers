@@ -67,9 +67,13 @@ def judge_run(
             reasons.append(f"{e.ticker}: expected values missing from answer")
     for e in entries:
         if e.requires_cell and not any(
-            c["accession"] == e.accession and c.get("cells") for c in verified
+            c["accession"] == e.accession
+            and any(cell["sid"] in e.gold_sids for cell in c.get("cells") or [])
+            for c in verified
         ):
-            reasons.append(f"{e.ticker}: no verified citation on {e.accession} has cells")
+            reasons.append(
+                f"{e.ticker}: no verified citation on {e.accession} has a cell on a gold sid"
+            )
     if len({e.ticker for e in entries}) >= 2 and len({c["ticker"] for c in verified}) < 2:
         reasons.append("comparison cited fewer than 2 tickers")
     return reasons
@@ -91,7 +95,7 @@ def chains() -> list[list[str]]:
 
 def run_examples(
     conn, embedder, generator, company_detector, period_detector, query_rewriter,
-    conversation_rewriter, *, runs: int = 10,
+    conversation_rewriter, *, runs: int = 10, verbose: bool = False,
 ) -> bool:
     groups = load_examples()
     all_ok = True
@@ -101,6 +105,7 @@ def run_examples(
         for n in range(1, runs + 1):
             conversation_id = str(uuid.uuid4())
             failures: list[str] = []
+            detail: list[tuple] = []
             for group in chain:
                 entries = groups[group]
                 parts: list[str] = []
@@ -123,14 +128,24 @@ def run_examples(
                         errored = True
                         break
                 conn.commit()
-                failures += [
+                answer = "".join(parts)
+                turn_failures = [
                     f"{group}: {r}"
-                    for r in judge_run(
-                        entries, "".join(parts), citations, unverified, errored
-                    )
+                    for r in judge_run(entries, answer, citations, unverified, errored)
                 ]
+                failures += turn_failures
+                detail.append((group, answer, citations, bool(turn_failures)))
             print(f"{'PASS' if not failures else 'FAIL'} {label} run {n}"
                   + (f": {'; '.join(failures)}" if failures else ""))
+            for group, answer, citations, turn_failed in detail:
+                for c in citations:
+                    print(f"  [{group}] cited {c.get('ticker')} {c.get('accession')}"
+                          f" sids={c.get('sids')} cells={c.get('cells')}")
+                if turn_failed or verbose:
+                    text = " ".join(answer.split())
+                    if len(text) > 600:
+                        text = text[:600] + "..."
+                    print(f"  [{group}] answer: {text}")
             passed += not failures
         print(f"{label}: {passed}/{runs}")
         all_ok &= passed == runs

@@ -78,6 +78,37 @@ def test_requires_cell_fails_with_cell_on_other_accession():
     assert judge([entry(requires_cell=True)], citations=[cite(), other])
 
 
+def test_requires_cell_fails_with_cell_on_non_gold_sid():
+    c = cite(cells=[{"sid": 99, "cell": 1}])
+    assert judge([entry(requires_cell=True)], citations=[c])
+
+
+def test_bare_figure_spelling_whole_figure_only():
+    from evals.faithfulness import values_present
+    exp = (("168.9 billion", "168.9"),)
+    assert values_present("Microsoft Cloud was $168.9B.", exp)
+    assert not values_present("Microsoft Cloud was 168.95.", exp)
+
+
+def test_fail_prints_answer_and_citations(monkeypatch, tmp_path, capsys):
+    _two_turn_yaml(monkeypatch, tmp_path)
+    _fake_stream(monkeypatch, [], fail_question="What about 24?")
+    ex.run_examples(_Conn(), None, None, None, None, None, None, runs=1)
+    out = capsys.readouterr().out
+    assert "cited AAPL 0000320193-24-000123 sids=[10]" in out
+    assert "answer: Net sales were $383,285 million. 1" in out
+
+
+def test_pass_prints_answer_only_when_verbose(monkeypatch, tmp_path, capsys):
+    _two_turn_yaml(monkeypatch, tmp_path)
+    _fake_stream(monkeypatch, [])
+    ex.run_examples(_Conn(), None, None, None, None, None, None, runs=1)
+    quiet = capsys.readouterr().out
+    assert "cited AAPL" in quiet and "answer:" not in quiet
+    ex.run_examples(_Conn(), None, None, None, None, None, None, runs=1, verbose=True)
+    assert "answer:" in capsys.readouterr().out
+
+
 def test_comparison_needs_two_tickers():
     msft = entry("MSFT", "0001193125-26-323660", (5,), (("1",),))
     both = [cite(), cite("MSFT", "0001193125-26-323660", (5,))]
