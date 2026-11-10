@@ -3,8 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
-import { ExampleQuestions } from "@/components/example-questions";
-import type { Example } from "@/lib/examples";
+import { TUTORIAL } from "@/lib/tutorial";
 
 const REPO_URL = "https://github.com/dylanrog/Edgar-Answers";
 
@@ -15,20 +14,18 @@ function SkipButton({ onSkip }: { onSkip: () => void }) {
       onClick={onSkip}
       className="text-xs text-slate-500 underline hover:text-slate-300"
     >
-      Skip tour
+      Skip tutorial
     </button>
   );
 }
 
 /** Replaces the empty-state text above the form on first visit. */
 export function TourWelcome({
-  examples,
-  onPick,
+  onAsk,
   onSkip,
   disabled,
 }: {
-  examples: Example[];
-  onPick: (example: Example) => void;
+  onAsk: () => void;
   onSkip: () => void;
   disabled: boolean;
 }) {
@@ -38,11 +35,16 @@ export function TourWelcome({
         <strong className="font-semibold text-white">
           Answers from SEC filings, with every quote checked.
         </strong>{" "}
-        Pick a question to see how it works.
+        Here&apos;s a question to show you how it works:
       </p>
-      <div className="mt-3">
-        <ExampleQuestions examples={examples} onPick={onPick} disabled={disabled} />
-      </div>
+      <button
+        type="button"
+        onClick={onAsk}
+        disabled={disabled}
+        className="mt-3 block w-full rounded border border-slate-700 px-3 py-2 text-left text-sm text-slate-200 hover:border-blue-500 hover:text-white disabled:opacity-50"
+      >
+        {TUTORIAL.question}
+      </button>
       <div className="mt-3">
         <SkipButton onSkip={onSkip} />
       </div>
@@ -69,7 +71,14 @@ function Frame({ children, scrollIntoView = false }: { children: ReactNode; scro
   );
 }
 
-type CalloutStep = "watch" | "click" | "source" | "closing" | "interrupted";
+type CalloutStep =
+  | "watch"
+  | "click"
+  | "source"
+  | "more"
+  | "followup"
+  | "closing"
+  | "interrupted";
 
 /** One inline coach callout. Never an overlay: nothing is covered. */
 export function TourCallout({
@@ -78,8 +87,7 @@ export function TourCallout({
   onNext,
   onFinish,
   onRetry,
-  examples = [],
-  onPick,
+  onFollowUp,
   disabled = false,
 }: {
   step: CalloutStep;
@@ -87,8 +95,7 @@ export function TourCallout({
   onNext?: () => void;
   onFinish?: () => void;
   onRetry?: () => void;
-  examples?: Example[];
-  onPick?: (example: Example) => void;
+  onFollowUp?: () => void;
   disabled?: boolean;
 }) {
   const action =
@@ -99,6 +106,9 @@ export function TourCallout({
     click: "Click the highlighted citation to see it in the original filing.",
     source:
       "That's the exact sentence (or figure) in the original filing. The server confirmed the quote word for word.",
+    more: "Want to see one more? Ask a follow-up. The conversation keeps its context, so a short question is enough.",
+    followup:
+      "It read \"What about 24?\" in context. See \"Searched for\" above. Every figure is checked against the 2024 filings.",
     closing:
       "This demo runs on 120 SEC filings from ten companies, but the pipeline underneath (sentence-anchored ingestion, hybrid search, quote verification) works on any document collection.",
     interrupted:
@@ -106,21 +116,17 @@ export function TourCallout({
   }[step];
 
   return (
-    <Frame scrollIntoView={step === "closing" || step === "interrupted"}>
+    <Frame scrollIntoView={step === "more" || step === "closing" || step === "interrupted"}>
       <p>{copy}</p>
-      {step === "closing" && onPick && (
-        <div className="mt-2">
-          <ExampleQuestions
-            examples={examples.filter((e) => !e.featured)}
-            onPick={onPick}
-            disabled={disabled}
-          />
-        </div>
-      )}
       <div className="mt-2 flex flex-wrap items-center gap-3">
         {step === "source" && (
           <button type="button" onClick={onNext} className={action}>
             Next
+          </button>
+        )}
+        {step === "more" && (
+          <button type="button" onClick={onFollowUp} disabled={disabled} className={action}>
+            Ask &quot;{TUTORIAL.followUp}&quot;
           </button>
         )}
         {step === "interrupted" && (

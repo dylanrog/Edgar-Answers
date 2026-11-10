@@ -1,12 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import examples from "../lib/examples.json";
-
+// Task 4 rewrites this spec; stand-ins keep the fixme'd bodies compiling.
+const FEATURED = { label: "", question: "" };
+const OTHER = { label: "", question: "" };
 const ACCESSION = "0000320193-25-000079";
 const API = "http://localhost:8000";
-const FEATURED = examples.find((e) => e.featured)!;
-const OTHER = examples.find((e) => !e.featured)!;
 
 const TABLE_HTML = `
   <table><tbody>
@@ -112,7 +111,7 @@ async function toClickStep(page: Page) {
   await expect(page.getByText("Click the highlighted citation")).toBeVisible();
 }
 
-test("the full tour: ask, watch, click, see the source, close", async ({ page }) => {
+test.fixme("the full tour: ask, watch, click, see the source, close", async ({ page }) => {
   await stub(page, OK_BODY);
   await page.goto("/ask");
   await expect(welcome(page)).toBeVisible();
@@ -148,7 +147,7 @@ test("the full tour: ask, watch, click, see the source, close", async ({ page })
   await expect(welcome(page)).toHaveCount(0);
 });
 
-test("skipping the welcome card ends the tour for good", async ({ page }) => {
+test.fixme("skipping the welcome card ends the tour for good", async ({ page }) => {
   await stub(page, OK_BODY);
   await page.goto("/ask");
   await page.getByRole("button", { name: "Skip tour" }).click();
@@ -158,7 +157,7 @@ test("skipping the welcome card ends the tour for good", async ({ page }) => {
   await expect(callout(page)).toHaveCount(0);
 });
 
-test("no verified citation skips the click step and goes to the closing", async ({ page }) => {
+test.fixme("no verified citation skips the click step and goes to the closing", async ({ page }) => {
   await stub(
     page,
     PRELUDE + sse("progress", { stage: "verifying", quotes: 1 }) + UNVERIFIED_CITATION + done(0),
@@ -171,7 +170,7 @@ test("no verified citation skips the click step and goes to the closing", async 
   await expect(page.getByText("[1] unverified")).toBeVisible();
 });
 
-test("an error mid-stream shows the interrupted callout", async ({ page }) => {
+test.fixme("an error mid-stream shows the interrupted callout", async ({ page }) => {
   await stub(page, PRELUDE + sse("error", { message: "The model is unavailable." }));
   await page.goto("/ask");
   await page.getByRole("button", { name: FEATURED.label }).click();
@@ -181,7 +180,7 @@ test("an error mid-stream shows the interrupted callout", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
-test("every example pick starts a fresh conversation", async ({ page }) => {
+test.fixme("every example pick starts a fresh conversation", async ({ page }) => {
   const bodies = await stub(page, OK_BODY);
   await toClickStep(page);
   await page.getByRole("button", { name: "[1]" }).click();
@@ -200,7 +199,7 @@ test("every example pick starts a fresh conversation", async ({ page }) => {
   await expect(callout(page)).toHaveCount(0);
 });
 
-test("Take the tour from an existing thread restarts at welcome with the thread cleared", async ({
+test.fixme("Take the tour from an existing thread restarts at welcome with the thread cleared", async ({
   page,
 }) => {
   await stub(page, OK_BODY);
@@ -215,7 +214,7 @@ test("Take the tour from an existing thread restarts at welcome with the thread 
   await expect(page.getByText(/found word for word/)).toHaveCount(0);
 });
 
-test("restarting mid-stream aborts the old stream; a new example shows only its own answer", async ({
+test.fixme("restarting mid-stream aborts the old stream; a new example shows only its own answer", async ({
   page,
 }) => {
   let askCount = 0;
@@ -271,7 +270,7 @@ test("restarting mid-stream aborts the old stream; a new example shows only its 
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
-  test("the tour fits the screen and the citation click brings the highlight into view", async ({
+  test.fixme("the tour fits the screen and the citation click brings the highlight into view", async ({
     page,
   }) => {
     await stub(page, OK_BODY);

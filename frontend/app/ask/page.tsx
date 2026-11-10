@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AskForm } from "@/components/ask-form";
 import { ConversationTurn } from "@/components/conversation-turn";
-import { ExampleQuestions } from "@/components/example-questions";
 import { FilingTabs } from "@/components/filing-tabs";
 import { FilingViewer } from "@/components/filing-viewer";
 import { TourCallout, TourWelcome } from "@/components/tour-coach";
@@ -13,8 +12,7 @@ import type { AnswerState } from "@/lib/answer";
 import { askStream, fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
-import { EXAMPLES, askExampleFresh } from "@/lib/examples";
-import type { Example } from "@/lib/examples";
+import { TUTORIAL, askFresh } from "@/lib/tutorial";
 import {
   askEvent,
   firstVerifiedMarker,
@@ -110,8 +108,12 @@ export default function AskPage() {
     });
   }
 
-  async function ask(question: string, filters: AskFilters) {
-    dispatch(askEvent(tour));
+  async function ask(
+    question: string,
+    filters: AskFilters,
+    options?: { tourEvent?: TourEvent },
+  ) {
+    dispatch(options?.tourEvent ?? askEvent(tour));
     askAbort.current?.abort();
     const controller = new AbortController();
     askAbort.current = controller;
@@ -168,8 +170,13 @@ export default function AskPage() {
     }
   }
 
-  function pickExample(example: Example) {
-    askExampleFresh(example, { newConversation, ask });
+  function startTutorialQuestion() {
+    askFresh(TUTORIAL.question, { newConversation, ask });
+  }
+
+  function askFollowUp() {
+    // Same conversation: the follow-up only makes sense with its context.
+    ask(TUTORIAL.followUp, {}, { tourEvent: { type: "followUp" } });
   }
 
   function takeTour() {
@@ -177,22 +184,17 @@ export default function AskPage() {
     dispatch({ type: "start" });
   }
 
-  function retry() {
-    const question = turns.at(-1)?.question;
-    if (question === undefined) return;
-    askExampleFresh({ question }, { newConversation, ask });
-  }
-
-  function callout(step: "watch" | "click" | "source" | "closing" | "interrupted") {
+  function callout(
+    step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
+  ) {
     return (
       <TourCallout
         step={step}
         onSkip={() => dispatch({ type: "skip" })}
         onNext={() => dispatch({ type: "next" })}
         onFinish={() => dispatch({ type: "finish" })}
-        onRetry={retry}
-        examples={EXAMPLES}
-        onPick={pickExample}
+        onRetry={startTutorialQuestion}
+        onFollowUp={askFollowUp}
         disabled={streaming}
       />
     );
@@ -211,7 +213,7 @@ export default function AskPage() {
               onClick={takeTour}
               className="text-xs text-slate-500 underline hover:text-slate-300"
             >
-              Take the tour
+              Take the tutorial
             </button>
             {turns.length > 0 && (
               <button
@@ -261,10 +263,14 @@ export default function AskPage() {
                     ? firstVerifiedMarker(turn.state.citations)
                     : null
                 }
-                coachAbovePanel={latest && tour === "watch" ? callout("watch") : null}
+                coachAbovePanel={
+                  latest && (tour === "watch" || tour === "followup")
+                    ? callout(tour)
+                    : null
+                }
                 coachBelowAnswer={latest && tour === "click" ? callout("click") : null}
                 coachBelowTurn={
-                  latest && (tour === "closing" || tour === "interrupted")
+                  latest && (tour === "more" || tour === "closing" || tour === "interrupted")
                     ? callout(tour)
                     : null
                 }
@@ -276,8 +282,7 @@ export default function AskPage() {
 
         {turns.length === 0 && tour === "welcome" && (
           <TourWelcome
-            examples={EXAMPLES}
-            onPick={pickExample}
+            onAsk={startTutorialQuestion}
             onSkip={() => dispatch({ type: "skip" })}
             disabled={streaming}
           />
@@ -290,13 +295,6 @@ export default function AskPage() {
         {turns.length === 0 && tour !== "welcome" && (
           <div className="flex-1 px-5 pt-4">
             <p className="mb-3 text-slate-500">Ask a question about a filing.</p>
-            {tour === "off" && (
-              <ExampleQuestions
-                examples={EXAMPLES}
-                onPick={pickExample}
-                disabled={streaming}
-              />
-            )}
           </div>
         )}
       </section>
