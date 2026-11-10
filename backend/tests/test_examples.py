@@ -60,6 +60,21 @@ def test_right_ticker_wrong_accession_names_ticker():
     assert any("AAPL" in r for r in reasons)
 
 
+def test_stray_verified_citation_to_another_accession_fails():
+    stray = cite("NVDA", "0001045810-25-000023", (10,))
+    reasons = judge(citations=[cite(), stray])
+    assert any("stray" in r and "0001045810-25-000023" in r for r in reasons)
+
+
+def test_stray_verified_citation_to_non_gold_sid_fails():
+    reasons = judge(citations=[cite(), cite(sids=(99,))])
+    assert any("stray" in r for r in reasons)
+
+
+def test_duplicate_citation_of_the_same_gold_sentence_passes():
+    assert judge(citations=[cite(), cite()]) == []
+
+
 def test_missing_values_fails():
     assert judge(answer="Net sales rose.")
 
@@ -107,6 +122,15 @@ def test_pass_prints_answer_only_when_verbose(monkeypatch, tmp_path, capsys):
     assert "cited AAPL" in quiet and "answer:" not in quiet
     ex.run_examples(_Conn(), None, None, None, None, None, None, runs=1, verbose=True)
     assert "answer:" in capsys.readouterr().out
+
+
+def test_prints_each_turns_resolved_question(monkeypatch, tmp_path, capsys):
+    _two_turn_yaml(monkeypatch, tmp_path)
+    _fake_stream(monkeypatch, [])
+    ex.run_examples(_Conn(), None, None, None, None, None, None, runs=1)
+    out = capsys.readouterr().out
+    assert "  [t2] resolved: What was it in fiscal 2024?" in out
+    assert "[t1] resolved" not in out
 
 
 def test_comparison_needs_two_tickers():
@@ -197,6 +221,8 @@ class _Ev:
 def _fake_stream(monkeypatch, calls, fail_question=None):
     def fake(conn, embedder, generator, detector, question, **kw):
         calls.append((question, kw))
+        if question == "What about 24?":
+            yield _Ev("resolved", {"standalone_question": "What was it in fiscal 2024?"})
         yield _Ev("token", {"text": GOOD + " 1"})
         if question == fail_question:
             yield _Ev("error", {})

@@ -50,6 +50,18 @@ def judge_run(
     if any(not c["verified"] for c in citations):
         reasons.append("a citation failed verification")
     verified = [c for c in citations if c["verified"]]
+    # Every verified citation must land on gold: a correct figure from the
+    # right filing plus a stray one from another filing (or another sentence)
+    # still shows the visitor a source that is not the answer.
+    for c in verified:
+        if not any(
+            c["accession"] == e.accession and set(c["sids"]) & set(e.gold_sids)
+            for e in entries
+        ):
+            reasons.append(
+                f"stray verified citation {c.get('ticker')} {c['accession']}"
+                f" sids={c['sids']} hits no gold entry"
+            )
     for e in entries:
         if not any(
             c["accession"] == e.accession and set(c["sids"]) & set(e.gold_sids)
@@ -110,6 +122,7 @@ def run_examples(
                 entries = groups[group]
                 parts: list[str] = []
                 citations: list[dict] = []
+                resolved = ""
                 unverified = errored = False
                 # Exactly the arguments /ask passes with empty filters.
                 for event in answer_stream(
@@ -120,6 +133,8 @@ def run_examples(
                 ):
                     if event.name == "token":
                         parts.append(event.data["text"])
+                    elif event.name == "resolved":
+                        resolved = event.data["standalone_question"]
                     elif event.name == "citation":
                         citations.append(event.data)
                     elif event.name == "done":
@@ -134,10 +149,15 @@ def run_examples(
                     for r in judge_run(entries, answer, citations, unverified, errored)
                 ]
                 failures += turn_failures
-                detail.append((group, answer, citations, bool(turn_failures)))
+                detail.append(
+                    (group, resolved, answer, citations, bool(turn_failures))
+                )
             print(f"{'PASS' if not failures else 'FAIL'} {label} run {n}"
                   + (f": {'; '.join(failures)}" if failures else ""))
-            for group, answer, citations, turn_failed in detail:
+            for group, resolved, answer, citations, turn_failed in detail:
+                # How a follow-up was read in context; the first turn has none.
+                if resolved:
+                    print(f"  [{group}] resolved: {resolved}")
                 for c in citations:
                     print(f"  [{group}] cited {c.get('ticker')} {c.get('accession')}"
                           f" sids={c.get('sids')} cells={c.get('cells')}")
