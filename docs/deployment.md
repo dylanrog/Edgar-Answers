@@ -262,7 +262,7 @@ dashboards. **A** only as a throwaway / first smoke test.
 - [x] `frontend/.env.local.example` exists; `NEXT_PUBLIC_API_URL` documented
 - [ ] Provision DB, `CREATE EXTENSION vector`, `python -m pipeline migrate`
 - [ ] Load corpus (`pg_dump` → `pg_restore`), spot-check row counts + one `/ask`
-- [ ] Run `python -m evals examples --runs 10` with `DATABASE_URL` pointed at prod, after the restore and `VACUUM ANALYZE`, and before posting the link
+- [ ] Run `python -m evals examples --runs 10 --verbose` with `DATABASE_URL` pointed at prod, after the restore and `VACUUM ANALYZE`, and before posting the link — and read the printed answers: derived figures (differences, growth rates) are not machine-checked
 - [ ] API env: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `FRONTEND_ORIGIN`
 - [ ] Frontend env: `NEXT_PUBLIC_API_URL` → deployed API URL; rebuild
 - [ ] Health check → `/healthz`

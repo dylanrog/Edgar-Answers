@@ -442,8 +442,15 @@ One page: `/ask`, split-pane.
   renders the stored HTML (sanitized at ingestion, so the server is the
   sanitizer). The HTML is injected imperatively, once per load, not through
   `dangerouslySetInnerHTML`: react-dom 19 compares the `{__html}` object by
-  identity, so a re-render re-set the markup and wiped the highlights. Images
-  that fail to load (EDGAR-relative `src`) are hidden.
+  identity, so a re-render re-set the markup and wiped the highlights. The HTML
+  is parsed in an inert `<template>` first and every image whose `src` is not
+  absolute http(s) or `data:` (EDGAR-relative sources, which 404 against this
+  origin) is removed before it goes live (`lib/viewer-html.ts`). Hiding them
+  after they failed was too late: the highlight had already scrolled, and the
+  content above the figure collapsed and carried it out of the pane. For 2 s
+  after a highlight a `ResizeObserver` re-centres the target on any layout
+  change, and a fresh highlight pulses twice (not under reduced motion). Below
+  640 px, inline-justified filing text is left-aligned.
 
 - **Guided tour** (spec 2026-11-09): each answer carries an "under the hood"
   panel (`components/under-the-hood.tsx`, logic in `lib/pipeline-steps.ts`)
@@ -454,9 +461,13 @@ One page: `/ask`, split-pane.
   the question "Compare NVIDIA's Data Center revenue in fiscal 2025 with
   Microsoft's Cloud revenue in fiscal 2025." and the follow-up "What about 24?"
   asked in the same conversation. Steps: welcome, watch, click, source, more
-  ("one more example" or "Skip tutorial"), followup, closing. Skip or Done lands
-  on the regular site, which has no example chips; the header's "Take the
-  tutorial" restarts it. The script lives in `frontend/lib/tutorial.json` and
+  (an `Ask "What about 24?"` button or "Skip tutorial"), followup, closing.
+  Asking the follow-up closes turn 1's filing tabs, so the viewer is empty until
+  a turn-2 citation is clicked. Skip, Done, or a question typed into the form
+  at any step lands on the regular site, which has no example chips: only the
+  scripted asks run the script, so the vetted follow-up is never offered on top
+  of an unvetted question. The header's "Take the tutorial" (hidden while the
+  tutorial runs) restarts it. The script lives in `frontend/lib/tutorial.json` and
   `backend/evals/examples.yaml`; `tests/test_examples.py` fails CI if they
   drift, and `python -m evals examples` is the release check (§8).
 - **Mobile:** below `md` (768 px) the page stacks vertically instead of
@@ -503,8 +514,10 @@ question with empty filters, then the follow-up in the same conversation through
 the production `/ask` path. A run passes only if both turns pass: answered,
 every citation verifies, no unverified notice, each pinned entry's accession and
 gold sids hit and its expected figures stated, `requires_cell` entries cite the
-cell bound to a gold sid, and comparisons cite at least two tickers. Each run's
-citations are printed (the answer too on FAIL, or always with `--verbose`).
+cell bound to a gold sid, comparisons cite at least two tickers, and no verified
+citation strays: each one must land on a gold sid of one of the turn's pinned
+filings. Each run's citations and each follow-up's resolved standalone question
+are printed (the answer too on FAIL, or always with `--verbose`).
 `python -m evals verify --examples` checks that the pins exist in the DB.
 
 ## 9. Testing
