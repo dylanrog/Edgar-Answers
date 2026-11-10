@@ -66,6 +66,7 @@ test("an answer spanning two filings opens two tabs that keep their scroll", asy
     }),
   );
 
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
   await page.goto("/ask");
   await page
     .getByLabel("Question")

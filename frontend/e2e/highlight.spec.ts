@@ -47,6 +47,7 @@ test("clicking a verified citation highlights the cited sentence", async ({ page
     }),
   );
 
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
   await page.goto("/ask");
   await page.getByLabel("Question").fill("What were total net sales?");
   await page.getByRole("button", { name: "Ask" }).click();
@@ -78,6 +79,7 @@ test("an unverified citation is badged and not clickable", async ({ page }) => {
     }),
   );
 
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
   await page.goto("/ask");
   await page.getByLabel("Question").fill("Did sales fall?");
   await page.getByRole("button", { name: "Ask" }).click();
@@ -121,6 +123,7 @@ test("a cited table figure is marked on its own, without the row highlight", asy
     }),
   );
 
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
   await page.goto("/ask");
   await page.getByLabel("Question").fill("What was Data Center revenue?");
   await page.getByRole("button", { name: "Ask" }).click();

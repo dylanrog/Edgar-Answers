@@ -108,3 +108,68 @@ test("a citation event keeps its cited cells", () => {
   ]);
   expect(state.citations.get(1)?.cells).toEqual([{ sid: 7, cell: 2 }]);
 });
+
+test("a targets progress event sets progress.targets and leaves status and prose alone", () => {
+  const state = feed([
+    ["token", { text: "Working" }],
+    [
+      "progress",
+      {
+        stage: "targets",
+        tickers: ["AAPL"],
+        filings: [{ accession: "A", ticker: "AAPL", form_type: "10-K", filing_date: "2024-11-01" }],
+      },
+    ],
+  ]);
+  expect(state.progress.targets).toEqual({
+    tickers: ["AAPL"],
+    filings: [{ accession: "A", ticker: "AAPL", form_type: "10-K", filing_date: "2024-11-01" }],
+  });
+  expect(state.status).toBe("streaming");
+  expect(state.prose).toBe("Working");
+});
+
+test("a retrieved progress event sets progress.retrieved", () => {
+  const state = feed([
+    [
+      "progress",
+      {
+        stage: "retrieved",
+        passages: 8,
+        filings: [{ accession: "A", ticker: "AAPL", form_type: "10-K", filing_date: "2024-11-01", passages: 3 }],
+      },
+    ],
+  ]);
+  expect(state.progress.retrieved).toEqual({
+    passages: 8,
+    filings: [{ accession: "A", ticker: "AAPL", form_type: "10-K", filing_date: "2024-11-01", passages: 3 }],
+  });
+});
+
+test("a verifying progress event sets progress.quotes", () => {
+  const state = feed([["progress", { stage: "verifying", quotes: 2 }]]);
+  expect(state.progress.quotes).toBe(2);
+});
+
+test("an unknown progress stage returns the state unchanged", () => {
+  const next = reduceAnswer(initialAnswerState, {
+    event: "progress",
+    data: { stage: "mystery" },
+  });
+  expect(next).toEqual(initialAnswerState);
+});
+
+test("progress starts with every stage null", () => {
+  expect(initialAnswerState.progress).toEqual({ targets: null, retrieved: null, quotes: null });
+});
+
+test("a progress event does not mutate the state it was given", () => {
+  const before = structuredClone(initialAnswerState);
+  const next = reduceAnswer(initialAnswerState, {
+    event: "progress",
+    data: { stage: "verifying", quotes: 1 },
+  });
+  expect(initialAnswerState).toEqual(before);
+  expect(next).not.toBe(initialAnswerState);
+  expect(next.progress).not.toBe(initialAnswerState.progress);
+});

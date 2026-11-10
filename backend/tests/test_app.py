@@ -84,7 +84,7 @@ def test_ask_streams_sse_events_in_order(stubbed_client):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     names = [name for name, _ in parse_sse(response.text)]
-    assert names[0] == "token"
+    assert next(n for n in names if n != "progress") == "token"
     assert "citation" in names
     assert names[-1] == "done"
 

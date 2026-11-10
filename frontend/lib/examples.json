@@ -1,0 +1,6 @@
+[
+  {"id": "ex-aapl-rd-2025", "label": "Apple's R&D spending, fiscal 2025", "question": "How much did Apple spend on research and development in fiscal 2025?", "kind": "table", "featured": true},
+  {"id": "ex-meta-liabilities-2025", "label": "Meta's total liabilities, 2025", "question": "What were Meta's total liabilities at the end of 2025?", "kind": "table", "featured": false},
+  {"id": "ex-rd-compare-2025", "label": "Apple vs Microsoft R&D, fiscal 2025", "question": "Compare Apple's and Microsoft's research and development spending in fiscal 2025.", "kind": "comparison", "featured": false},
+  {"id": "ex-aapl-europe-2025", "label": "Why Apple's Europe sales grew", "question": "Why did Apple's net sales in Europe increase during fiscal 2025?", "kind": "prose", "featured": false}
+]

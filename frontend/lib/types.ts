@@ -7,9 +7,30 @@
  *                                                         the rewrite changed the text
  * - `citation`  Citation
  * - `done`      {chunks_retrieved, citations_total, citations_verified, unverified_answer}
+ * - `progress`  {"stage": "targets" | "retrieved" | "verifying", ...}
+ *                                                       — server status, interleaved
+ *                                                         with tokens; see `Progress`
  * - `error`     {"message": string}
  */
 export type SSEEvent = { event: string; data: unknown };
+
+/** One filing the server touched while answering a question. */
+export type FilingRef = {
+  accession: string;
+  ticker: string;
+  form_type: string;
+  filing_date: string;
+};
+
+/** Latest server progress, one slot per stage (`progress` events). */
+export type Progress = {
+  targets: { tickers: string[]; filings: FilingRef[] } | null;
+  retrieved: {
+    passages: number;
+    filings: Array<FilingRef & { passages: number }>;
+  } | null;
+  quotes: number | null;
+};
 
 /** A table cell a citation's quote covers: the row's sid and the cell's index
  *  in that row (the browser's `tr.cells[i]`). Design §6.4. */
