@@ -32,7 +32,7 @@ This is a learning project
 | On-demand ticker ingestion | **Out** | Requires async job queue + progress UI; v2 |
 | Auth, threading | **Out** | Not what this project is for |
 | Chat history | **In** (2026-08-30) | Anonymous, per-browser conversation continuity — no accounts; see `docs/superpowers/specs/2026-08-30-conversation-memory-design.md` |
-| Guided tour | **In** (2026-11-09) | A Phase 5 demo addition, not a scope expansion: a first-visit walkthrough, example questions and an "under the hood" panel over the existing `/ask` path. No new corpus data, endpoints or filing types; see `docs/superpowers/specs/2026-11-09-guided-tour-design.md` |
+| Guided tour | **In** (2026-11-09) | A Phase 5 demo addition, not a scope expansion: a first-visit scripted tutorial and an "under the hood" panel over the existing `/ask` path. No new corpus data, endpoints or filing types; see `docs/superpowers/specs/2026-11-09-guided-tour-design.md` |
 
 ## 3. Architecture
 
@@ -439,27 +439,32 @@ One page: `/ask`, split-pane.
   only those cells (`tr[data-sid].cells[cell]`) are marked (`cited-figure`) —
   the row itself is not highlighted — and the view scrolls to the first figure.
   A cited row with no resolvable figure falls back to a whole-row highlight. Each pane loads `GET /filings/{accession}` and
-  renders the stored HTML (sanitized at ingestion, so `dangerouslySetInnerHTML`
-  is acceptable — the server is the sanitizer).
+  renders the stored HTML (sanitized at ingestion, so the server is the
+  sanitizer). The HTML is injected imperatively, once per load, not through
+  `dangerouslySetInnerHTML`: react-dom 19 compares the `{__html}` object by
+  identity, so a re-render re-set the markup and wiped the highlights. Images
+  that fail to load (EDGAR-relative `src`) are hidden.
 
 - **Guided tour** (spec 2026-11-09): each answer carries an "under the hood"
   panel (`components/under-the-hood.tsx`, logic in `lib/pipeline-steps.ts`)
   driven by the real `progress` SSE events (§6.4), with the verified quote lines
-  revealed about 400 ms apart. A first-visit coach (`lib/tour.ts` state machine,
-  `components/tour-coach.tsx`, `components/example-questions.tsx`) walks
-  welcome, watch, click, source, closing, then done; it can be skipped at any
-  point and a `localStorage` flag records that it was seen. Picking an example
-  always starts a fresh conversation. The examples live in
-  `frontend/lib/examples.json` and `backend/evals/examples.yaml`;
-  `tests/test_examples.py` fails CI if they drift, and
-  `python -m evals examples` is the release check (§8).
+  revealed about 400 ms apart. The panel stays on every answer; filing lists are
+  capped at 3 with a "+N more". A first-visit **scripted tutorial**
+  (`lib/tour.ts` state machine, `components/tour-coach.tsx`) is one conversation:
+  the question "Compare NVIDIA's Data Center revenue in fiscal 2025 with
+  Microsoft's Cloud revenue in fiscal 2025." and the follow-up "What about 24?"
+  asked in the same conversation. Steps: welcome, watch, click, source, more
+  ("one more example" or "Skip tutorial"), followup, closing. Skip or Done lands
+  on the regular site, which has no example chips; the header's "Take the
+  tutorial" restarts it. The script lives in `frontend/lib/tutorial.json` and
+  `backend/evals/examples.yaml`; `tests/test_examples.py` fails CI if they
+  drift, and `python -m evals examples` is the release check (§8).
 - **Mobile:** below `md` (768 px) the page stacks vertically instead of
   splitting, and a citation click scrolls the viewer into view.
 
 Components: `app/ask/page.tsx`, `components/answer-stream.tsx`,
 `components/citation-chip.tsx`, `components/filing-viewer.tsx`,
-`components/under-the-hood.tsx`, `components/tour-coach.tsx`,
-`components/example-questions.tsx`.
+`components/under-the-hood.tsx`, `components/tour-coach.tsx`.
 State is one object: `{activeAccession, activeSids}` — a chip click sets it, the
 viewer reacts. No global state library.
 
@@ -491,13 +496,15 @@ reading real filings):
 Each run appends `{git_sha, timestamp, metrics}` to `evals/results.jsonl` —
 regressions become visible instead of vibes.
 
-**Examples release check** (`python -m evals examples [--runs N]`): not a metric
-and nothing is written to `results.jsonl`. It runs each guided-tour example
-(`backend/evals/examples.yaml`) N times through the production `/ask` path with
-empty filters and no conversation id. An example passes only if it is answered,
-every citation verifies, no unverified notice appears, each pinned entry's
-accession and gold sids are hit and its expected figures stated, table examples
-cite a cell, and comparisons cite at least two tickers.
+**Examples release check** (`python -m evals examples [--runs N] [--verbose]`,
+default 10 runs): not a metric and nothing is written to `results.jsonl`. Each
+run is a two-turn chain (`after:` in `backend/evals/examples.yaml`): the opening
+question with empty filters, then the follow-up in the same conversation through
+the production `/ask` path. A run passes only if both turns pass: answered,
+every citation verifies, no unverified notice, each pinned entry's accession and
+gold sids hit and its expected figures stated, `requires_cell` entries cite the
+cell bound to a gold sid, and comparisons cite at least two tickers. Each run's
+citations are printed (the answer too on FAIL, or always with `--verbose`).
 `python -m evals verify --examples` checks that the pins exist in the DB.
 
 ## 9. Testing

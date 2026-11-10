@@ -15,7 +15,9 @@
 #   wrong), and FY2024 Intelligent Cloud was restated ($105,362M as originally
 #   reported, $87,464M restated). Hence turn 1 asks about Microsoft Cloud.
 #
-# Vetting result: VETTING_RESULT_PENDING
+# Vetting result: 2026-11-10, full local corpus, `python -m evals examples --runs 10 --verbose` -> 10/10, identical citations every run
+#   (NVDA FY25 sid 2768 cell 2; MSFT FY25 sid 2869; NVDA FY24 sid 2777 cell 2; MSFT FY24 sid 3161). With the earlier
+#   probe (5/5) and first run (10/10): 25/25 two-turn conversations correct.
 
 - id: tutorial-1-nvda
   group: tutorial-1
