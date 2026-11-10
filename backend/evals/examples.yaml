@@ -1,50 +1,55 @@
-# Demo example questions (guided tour). Golden-set format (see golden.yaml);
-# entries sharing a `group` are one comparison question, one entry per company.
-# Vetted before release with `python -m evals examples`; check pins with
-# `python -m evals verify --examples`. Must match frontend/lib/examples.json
-# (id == group); tests/test_examples.py enforces that.
+# Tutorial script (guided tour, spec 2026-11-09 §9). Golden-set format (see
+# golden.yaml). One chain: tutorial-1 is the opening question, tutorial-2 is the
+# follow-up asked in the SAME conversation (`after: tutorial-1`); a run passes
+# only if both turns pass. Entries sharing a `group` are one comparison
+# question, one entry per company. NVDA entries need a cited table cell.
+# Vetted with `python -m evals examples` (10 runs); check pins with
+# `python -m evals verify --examples`. Must match frontend/lib/tutorial.json;
+# tests/test_examples.py enforces that.
 #
-# Vetted 2026-11-09 with `python -m evals examples --runs 5` on the full local
-# corpus: every entry below passed 5/5. Dropped candidates:
-# - "What was Microsoft's total debt at the end of fiscal 2026?" (golden t003):
-#   0/5 -- never cited the pinned Total debt row and never stated 40,294.
-# - "What drove the increase in Microsoft's research and development expenses
-#   in fiscal 2025?": passed 5/5, dropped only because it overlaps the R&D
-#   comparison example.
+# Retired examples (the earlier menu of independent questions):
+# - Apple R&D fiscal 2025, Meta total liabilities 2025, Apple vs Microsoft R&D
+#   comparison, and Apple Europe net sales: replaced by the scripted conversation.
+# - "Microsoft's Intelligent Cloud revenue" fails turn 2 on every run: the model
+#   cites Microsoft Cloud revenue ($137.4B) as Intelligent Cloud (verified but
+#   wrong), and FY2024 Intelligent Cloud was restated ($105,362M as originally
+#   reported, $87,464M restated). Hence turn 1 asks about Microsoft Cloud.
+#
+# Vetting result: VETTING_RESULT_PENDING
 
-- id: ex-aapl-rd-2025
-  question: How much did Apple spend on research and development in fiscal 2025?
-  ticker: AAPL
-  accession: "0000320193-25-000079"
-  section: item7
-  gold_sids: [765, 898]
-  expected_values: [["34,550", "34.6 billion", "34.55 billion"]]
-- id: ex-meta-liabilities-2025
-  question: What were Meta's total liabilities at the end of 2025?
-  ticker: META
-  accession: "0001628280-26-003942"
-  section: item8
-  gold_sids: [2237]
-  expected_values: [["148,778", "148.8 billion"]]
-- id: ex-rd-compare-2025-aapl
-  group: ex-rd-compare-2025
-  question: Compare Apple's and Microsoft's research and development spending in fiscal 2025.
-  ticker: AAPL
-  accession: "0000320193-25-000079"
-  section: item7
-  gold_sids: [765, 898]
-  expected_values: [["34,550", "34.6 billion", "34.55 billion"]]
-- id: ex-rd-compare-2025-msft
-  group: ex-rd-compare-2025
-  question: Compare Apple's and Microsoft's research and development spending in fiscal 2025.
+- id: tutorial-1-nvda
+  group: tutorial-1
+  question: Compare NVIDIA's Data Center revenue in fiscal 2025 with Microsoft's Cloud revenue in fiscal 2025.
+  ticker: NVDA
+  accession: "0001045810-25-000023"
+  section: item15
+  gold_sids: [2768]
+  requires_cell: true
+  expected_values: [["115,186", "115.2 billion", "115.186 billion"]]
+- id: tutorial-1-msft
+  group: tutorial-1
+  question: Compare NVIDIA's Data Center revenue in fiscal 2025 with Microsoft's Cloud revenue in fiscal 2025.
   ticker: MSFT
   accession: "0000950170-25-100235"
   section: item7
-  gold_sids: [1348, 1356, 1647]
-  expected_values: [["32,488", "32.5 billion"]]
-- id: ex-aapl-europe-2025
-  question: Why did Apple's net sales in Europe increase during fiscal 2025?
-  ticker: AAPL
-  accession: "0000320193-25-000079"
+  gold_sids: [1138, 2869]
+  expected_values: [["168.9 billion"]]
+- id: tutorial-2-nvda
+  group: tutorial-2
+  after: tutorial-1
+  question: What about 24?
+  ticker: NVDA
+  accession: "0001045810-24-000029"
+  section: item15
+  gold_sids: [2777]
+  requires_cell: true
+  expected_values: [["47,525", "47.5 billion", "47.525 billion"]]
+- id: tutorial-2-msft
+  group: tutorial-2
+  after: tutorial-1
+  question: What about 24?
+  ticker: MSFT
+  accession: "0000950170-24-087843"
   section: item7
-  gold_sids: [712]
+  gold_sids: [1317, 3161]
+  expected_values: [["137.4 billion"]]

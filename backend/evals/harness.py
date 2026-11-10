@@ -32,6 +32,10 @@ class GoldenQuestion:
     category: str = ""
     # One inner tuple per required figure, holding its accepted spellings.
     expected_values: tuple[tuple[str, ...], ...] = ()
+    # Examples only: the group this one follows in the same conversation.
+    after: str = ""
+    # Examples only: a verified citation on this accession must carry cells.
+    requires_cell: bool = False
 
 
 def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
@@ -69,10 +73,21 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
                 group,
                 category,
                 tuple(tuple(spellings) for spellings in expected),
+                entry.get("after", ""),
+                bool(entry.get("requires_cell", False)),
             )
         )
     by_group: dict[str, str] = {}
+    seen_groups: set[str] = set()
     for question in questions:
+        if question.after and (
+            question.after == question.group or question.after not in seen_groups
+        ):
+            raise ValueError(
+                f"golden entry {question.id}: after {question.after!r} must name a"
+                " group defined earlier in the file"
+            )
+        seen_groups.add(question.group)
         prior = by_group.setdefault(question.group, question.question)
         if prior != question.question:
             raise ValueError(

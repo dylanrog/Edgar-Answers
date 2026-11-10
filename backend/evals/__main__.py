@@ -54,6 +54,7 @@ def cmd_run(args) -> None:
 
 
 def cmd_examples(args) -> None:
+    from api.conversation import AnthropicConversationRewriter
     from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
     from api.generate import AnthropicGenerator
     from api.rewrite import AnthropicQueryRewriter
@@ -64,7 +65,8 @@ def cmd_examples(args) -> None:
     with db.connect() as conn:
         ok = examples.run_examples(
             conn, Embedder(), AnthropicGenerator(), AnthropicCompanyDetector(),
-            AnthropicPeriodDetector(), AnthropicQueryRewriter(), runs=args.runs,
+            AnthropicPeriodDetector(), AnthropicQueryRewriter(),
+            AnthropicConversationRewriter(), runs=args.runs,
         )
     if not ok:
         raise SystemExit(1)
@@ -205,7 +207,7 @@ def main(argv: list[str] | None = None) -> None:
     p_ex = sub.add_parser(
         "examples", help="vet the demo example questions against pinned gold"
     )
-    p_ex.add_argument("--runs", type=int, default=5)
+    p_ex.add_argument("--runs", type=int, default=10)
     p_repin = sub.add_parser(
         "repin", help="re-anchor golden gold_sids after a reprocess"
     )

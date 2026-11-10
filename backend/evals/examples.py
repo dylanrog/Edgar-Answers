@@ -7,7 +7,7 @@ quote from the wrong quarter is exactly the failure this exists to catch.
 """
 from __future__ import annotations
 
-import json
+import uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -17,8 +17,8 @@ from .faithfulness import _REFUSALS, values_present
 from .harness import GoldenQuestion, load_golden
 
 EXAMPLES_PATH = Path(__file__).parent / "examples.yaml"
-FRONTEND_EXAMPLES_PATH = (
-    Path(__file__).resolve().parents[2] / "frontend" / "lib" / "examples.json"
+TUTORIAL_PATH = (
+    Path(__file__).resolve().parents[2] / "frontend" / "lib" / "tutorial.json"
 )
 
 
@@ -31,7 +31,6 @@ def load_examples() -> dict[str, list[GoldenQuestion]]:
 
 def judge_run(
     entries: list[GoldenQuestion],
-    kind: str,
     answer: str,
     citations: list[dict],
     unverified_answer: bool,
@@ -66,53 +65,74 @@ def judge_run(
             )
         if e.expected_values and not values_present(answer, e.expected_values):
             reasons.append(f"{e.ticker}: expected values missing from answer")
-    if kind == "table" and not any(c.get("cells") for c in citations):
-        reasons.append("table example cited no cells")
-    if kind == "comparison" and len({c["ticker"] for c in verified}) < 2:
+    for e in entries:
+        if e.requires_cell and not any(
+            c["accession"] == e.accession and c.get("cells") for c in verified
+        ):
+            reasons.append(f"{e.ticker}: no verified citation on {e.accession} has cells")
+    if len({e.ticker for e in entries}) >= 2 and len({c["ticker"] for c in verified}) < 2:
         reasons.append("comparison cited fewer than 2 tickers")
     return reasons
 
 
-def _kinds() -> dict[str, str]:
-    entries = json.loads(FRONTEND_EXAMPLES_PATH.read_text(encoding="utf-8"))
-    return {e["id"]: e["kind"] for e in entries}
+def chains() -> list[list[str]]:
+    """Ordered group chains: a root followed by the groups that run `after` it."""
+    groups = load_examples()
+    after = {g: entries[0].after for g, entries in groups.items()}
+    result: list[list[str]] = []
+    for group in groups:
+        if not after[group]:
+            chain = [group]
+            while nxt := next((g for g in groups if after[g] == chain[-1]), None):
+                chain.append(nxt)
+            result.append(chain)
+    return result
 
 
 def run_examples(
     conn, embedder, generator, company_detector, period_detector, query_rewriter,
-    *, runs: int = 5,
+    conversation_rewriter, *, runs: int = 10,
 ) -> bool:
-    kinds = _kinds()
+    groups = load_examples()
     all_ok = True
-    for group, entries in load_examples().items():
+    for chain in chains():
+        label = " -> ".join(chain)
         passed = 0
         for n in range(1, runs + 1):
-            parts: list[str] = []
-            citations: list[dict] = []
-            unverified = errored = False
-            # Exactly the arguments /ask passes with empty filters.
-            for event in answer_stream(
-                conn, embedder, generator, company_detector, entries[0].question,
-                tickers=None, form_type=None, period_detector=period_detector,
-                query_rewriter=query_rewriter, conversation_id=None,
-            ):
-                if event.name == "token":
-                    parts.append(event.data["text"])
-                elif event.name == "citation":
-                    citations.append(event.data)
-                elif event.name == "done":
-                    unverified = bool(event.data["unverified_answer"])
-                elif event.name == "error":
-                    errored = True
-                    break
-            reasons = judge_run(
-                entries, kinds.get(group, "prose"), "".join(parts), citations,
-                unverified, errored,
-            )
-            passed += not reasons
-            print(f"{'PASS' if not reasons else 'FAIL'} {group} run {n}"
-                  + (f": {'; '.join(reasons)}" if reasons else ""))
-        print(f"{group}: {passed}/{runs}")
+            conversation_id = str(uuid.uuid4())
+            failures: list[str] = []
+            for group in chain:
+                entries = groups[group]
+                parts: list[str] = []
+                citations: list[dict] = []
+                unverified = errored = False
+                # Exactly the arguments /ask passes with empty filters.
+                for event in answer_stream(
+                    conn, embedder, generator, company_detector, entries[0].question,
+                    tickers=None, form_type=None, period_detector=period_detector,
+                    query_rewriter=query_rewriter, conversation_id=conversation_id,
+                    conversation_rewriter=conversation_rewriter,
+                ):
+                    if event.name == "token":
+                        parts.append(event.data["text"])
+                    elif event.name == "citation":
+                        citations.append(event.data)
+                    elif event.name == "done":
+                        unverified = bool(event.data["unverified_answer"])
+                    elif event.name == "error":
+                        errored = True
+                        break
+                conn.commit()
+                failures += [
+                    f"{group}: {r}"
+                    for r in judge_run(
+                        entries, "".join(parts), citations, unverified, errored
+                    )
+                ]
+            print(f"{'PASS' if not failures else 'FAIL'} {label} run {n}"
+                  + (f": {'; '.join(failures)}" if failures else ""))
+            passed += not failures
+        print(f"{label}: {passed}/{runs}")
         all_ok &= passed == runs
     print("ALL PASSED" if all_ok else "FAILURES")
     return all_ok
