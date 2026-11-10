@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { ExampleQuestions } from "@/components/example-questions";
@@ -49,9 +50,16 @@ export function TourWelcome({
   );
 }
 
-function Frame({ children }: { children: ReactNode }) {
+function Frame({ children, scrollIntoView = false }: { children: ReactNode; scrollIntoView?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // On phones the previous card sat in the viewer; the next one renders in
+  // the thread, off screen, so bring it into view.
+  useEffect(() => {
+    if (scrollIntoView) ref.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [scrollIntoView]);
   return (
     <div
+      ref={ref}
       role="note"
       data-testid="tour-callout"
       className="mt-3 rounded border border-blue-500/60 bg-blue-950/40 px-3 py-2 text-sm text-slate-200"
@@ -98,7 +106,7 @@ export function TourCallout({
   }[step];
 
   return (
-    <Frame>
+    <Frame scrollIntoView={step === "closing" || step === "interrupted"}>
       <p>{copy}</p>
       {step === "closing" && onPick && (
         <div className="mt-2">

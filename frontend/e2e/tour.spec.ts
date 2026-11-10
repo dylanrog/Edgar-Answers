@@ -200,6 +200,74 @@ test("every example pick starts a fresh conversation", async ({ page }) => {
   await expect(callout(page)).toHaveCount(0);
 });
 
+test("Take the tour from an existing thread restarts at welcome with the thread cleared", async ({
+  page,
+}) => {
+  await stub(page, OK_BODY);
+  await page.goto("/ask");
+  await page.getByRole("button", { name: FEATURED.label }).click();
+  await expect(page.getByText(/found word for word/)).toBeVisible();
+  await expect(page.getByText(FEATURED.question)).toBeVisible();
+
+  await page.getByRole("button", { name: "Take the tour" }).click();
+  await expect(welcome(page)).toBeVisible();
+  await expect(page.getByText(FEATURED.question, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/found word for word/)).toHaveCount(0);
+});
+
+test("restarting mid-stream aborts the old stream; a new example shows only its own answer", async ({
+  page,
+}) => {
+  let askCount = 0;
+  let releaseStale!: () => void;
+  const staleGate = new Promise<void>((resolve) => (releaseStale = resolve));
+  await page.route(`${API}/companies`, (route) =>
+    route.fulfill({ contentType: "application/json", body: "[]" }),
+  );
+  await page.route(`${API}/filings/${ACCESSION}`, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        accession: ACCESSION,
+        viewer_html: TABLE_HTML,
+        ticker: "AAPL",
+        form_type: "10-K",
+        filing_date: "2025-10-31",
+        period_end: "2025-09-27",
+      }),
+    }),
+  );
+  await page.route(`${API}/ask`, async (route) => {
+    askCount += 1;
+    if (askCount === 1) {
+      // A slow stream that only delivers after the visitor has moved on.
+      await staleGate;
+      try {
+        await route.fulfill({
+          contentType: "text/event-stream",
+          body: sse("token", { text: "STALE ANSWER" }) + done(0),
+        });
+      } catch {
+        // The aborted request is already gone: that is the point.
+      }
+      return;
+    }
+    await route.fulfill({ contentType: "text/event-stream", body: OK_BODY });
+  });
+
+  await page.goto("/ask");
+  await page.getByRole("button", { name: FEATURED.label }).click();
+  await page.getByRole("button", { name: "Take the tour" }).click();
+  await expect(welcome(page)).toBeVisible();
+  await page.getByRole("button", { name: OTHER.label }).click();
+  await expect(page.getByText(/found word for word/)).toBeVisible();
+
+  releaseStale();
+  await page.waitForTimeout(300);
+  await expect(page.getByText("STALE ANSWER")).toHaveCount(0);
+  await expect(page.getByText(/R&D spending was/)).toBeVisible();
+});
+
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
@@ -215,6 +283,11 @@ test.describe("on a phone", () => {
     await expect(cited).toBeInViewport();
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(scrollWidth).toBeLessThanOrEqual(375);
+
+    // Next swaps the source card (in the viewer) for the closing card (in the
+    // thread, off screen): it must be scrolled into view.
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByText(/any document collection/)).toBeInViewport();
   });
 });
 

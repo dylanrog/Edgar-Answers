@@ -147,3 +147,15 @@ test("a late error after the reveal marks a line failed", () => {
   expect(lines.some((l) => l.status === "failed")).toBe(true);
   expect(lines.find((l) => l.key === "check")?.status).toBe("failed");
 });
+
+test("a single-sentence citation says sentence, not a range", () => {
+  const lines = buildPanel(full([cite(1, { sids: [31] })]), {}, 1);
+  expect(lines.find((l) => l.key === "quote-1")?.detail).toBe("sentence 31");
+});
+
+test("an error before any progress event is a generic failure, not a detection failure", () => {
+  const lines = buildPanel(state({ status: "error" }), {}, 0);
+  expect(lines).toEqual([
+    { key: "error", status: "failed", text: "Stopped: the request failed" },
+  ]);
+});

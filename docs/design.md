@@ -32,7 +32,7 @@ This is a learning project
 | On-demand ticker ingestion | **Out** | Requires async job queue + progress UI; v2 |
 | Auth, threading | **Out** | Not what this project is for |
 | Chat history | **In** (2026-08-30) | Anonymous, per-browser conversation continuity — no accounts; see `docs/superpowers/specs/2026-08-30-conversation-memory-design.md` |
-| Guided tour | **In** (2026-11-09) | A Phase 5 demo addition, not a scope expansion: a first-visit walkthrough, example questions and an "under the hood" panel over the existing `/ask` path. No new data, endpoints or filing types; see `docs/superpowers/specs/2026-11-09-guided-tour-design.md` |
+| Guided tour | **In** (2026-11-09) | A Phase 5 demo addition, not a scope expansion: a first-visit walkthrough, example questions and an "under the hood" panel over the existing `/ask` path. No new corpus data, endpoints or filing types; see `docs/superpowers/specs/2026-11-09-guided-tour-design.md` |
 
 ## 3. Architecture
 
@@ -457,7 +457,9 @@ One page: `/ask`, split-pane.
   splitting, and a citation click scrolls the viewer into view.
 
 Components: `app/ask/page.tsx`, `components/answer-stream.tsx`,
-`components/citation-chip.tsx`, `components/filing-viewer.tsx`.
+`components/citation-chip.tsx`, `components/filing-viewer.tsx`,
+`components/under-the-hood.tsx`, `components/tour-coach.tsx`,
+`components/example-questions.tsx`.
 State is one object: `{activeAccession, activeSids}` — a chip click sets it, the
 viewer reacts. No global state library.
 
@@ -486,6 +488,9 @@ reading real filings):
    verified and % questions answered (vs. refused). Costs pennies; run before/after
    meaningful changes.
 
+Each run appends `{git_sha, timestamp, metrics}` to `evals/results.jsonl` —
+regressions become visible instead of vibes.
+
 **Examples release check** (`python -m evals examples [--runs N]`): not a metric
 and nothing is written to `results.jsonl`. It runs each guided-tour example
 (`backend/evals/examples.yaml`) N times through the production `/ask` path with
@@ -494,9 +499,6 @@ every citation verifies, no unverified notice appears, each pinned entry's
 accession and gold sids are hit and its expected figures stated, table examples
 cite a cell, and comparisons cite at least two tickers.
 `python -m evals verify --examples` checks that the pins exist in the DB.
-
-Each run appends `{git_sha, timestamp, metrics}` to `evals/results.jsonl` —
-regressions become visible instead of vibes.
 
 ## 9. Testing
 

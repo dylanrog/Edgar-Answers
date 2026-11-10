@@ -41,6 +41,7 @@ export default function AskPage() {
   // Starts "off" and is read from storage on mount: the page is prerendered,
   // so reading storage during render would mismatch on hydration.
   const nextTurnId = useRef(0);
+  const askAbort = useRef<AbortController | null>(null);
   const [tour, setTour] = useState<TourStep>("off");
 
   useEffect(() => {
@@ -111,6 +112,9 @@ export default function AskPage() {
 
   async function ask(question: string, filters: AskFilters) {
     dispatch(askEvent(tour));
+    askAbort.current?.abort();
+    const controller = new AbortController();
+    askAbort.current = controller;
     const conversationId = getOrCreateConversationId();
     const id = nextTurnId.current++;
     setTurns((previous) => [
@@ -118,10 +122,18 @@ export default function AskPage() {
       { id, question, state: { ...initialAnswerState, status: "streaming" } },
     ]);
     try {
-      for await (const event of askStream(question, filters, conversationId)) {
+      for await (const event of askStream(
+        question,
+        filters,
+        conversationId,
+        controller.signal,
+      )) {
+        if (controller.signal.aborted) return;
         patchLastTurn((state) => reduceAnswer(state, event));
       }
     } catch (error) {
+      // An aborted ask belongs to a thread that was cleared: no error state.
+      if (controller.signal.aborted) return;
       patchLastTurn((state) => ({
         ...state,
         status: "error",
@@ -132,6 +144,7 @@ export default function AskPage() {
   }
 
   function newConversation() {
+    askAbort.current?.abort();
     startNewConversation();
     setTurns([]);
     setTabs(initialTabState);
@@ -288,7 +301,7 @@ export default function AskPage() {
         )}
       </section>
 
-      <section ref={viewerRef} className="flex h-[70vh] min-w-0 flex-col overflow-hidden md:h-auto">
+      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[70dvh]" : "h-auto"}`}>
         {tour === "source" && <div className="shrink-0 px-3 pb-2">{callout("source")}</div>}
         <FilingTabs
           tabs={tabs}

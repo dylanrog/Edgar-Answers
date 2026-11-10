@@ -38,7 +38,10 @@ export function reduceTour(step: TourStep, event: TourEvent): TourStep {
     return event.hasVerified ? "click" : "closing";
   }
   if (step === "watch" && event.type === "errored") return "interrupted";
-  if (step === "click" && event.type === "citationClicked") return "source";
+  // Clicking during the paced reveal: the highlight is already showing.
+  if ((step === "watch" || step === "click") && event.type === "citationClicked") {
+    return "source";
+  }
   if (step === "source" && event.type === "next") return "closing";
   if (step === "closing" && event.type === "finish") return "off";
   return step;

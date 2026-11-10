@@ -27,6 +27,12 @@ export function buildPanel(
   const lines: PanelLine[] = [];
   const finished = state.status === "done" || state.status === "error";
 
+  // An error before any progress event (a 429, a network failure) says nothing
+  // about question understanding, so don't blame that stage.
+  if (state.status === "error" && !targets && !retrieved && quotes === null) {
+    return [{ key: "error", status: "failed", text: "Stopped: the request failed" }];
+  }
+
   if (targets) {
     const who =
       targets.tickers.length === 0
@@ -92,7 +98,11 @@ export function buildPanel(
           status: "done",
           text: `Quote ${c.marker} → ${label(c)} ✓ found word for word`,
           detail:
-            (first !== undefined ? `sentences ${first}–${last}` : "") +
+            (first === undefined
+              ? ""
+              : first === last
+                ? `sentence ${first}`
+                : `sentences ${first}–${last}`) +
             (c.cells.length > 0 ? " · table figure" : ""),
         });
       } else {

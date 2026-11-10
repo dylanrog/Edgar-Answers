@@ -66,6 +66,7 @@ describe("reduceTour transition table", () => {
     ["watch", { type: "settled", hasVerified: false }, "closing"],
     // errored
     ["watch", { type: "errored" }, "interrupted"],
+    ["watch", { type: "citationClicked" }, "source"],
     // citation clicked
     ["click", { type: "citationClicked" }, "source"],
     // next
