@@ -1,0 +1,68 @@
+# Exact runtime dependency versions for the API image (backend/Dockerfile).
+# These are the versions the backend suite passed on, and the fastembed /
+# onnxruntime that embedded the stored corpus -- the query embedder must stay
+# compatible with those vectors, so an unpinned rebuild is not safe.
+# hf-xet is the one Linux-only package here (huggingface-hub needs it there,
+# the Windows dev machine has none); it is pinned to what the image resolved.
+# uvloop is deliberately absent: the suite never ran on it, and uvicorn falls
+# back to asyncio without it.
+#
+# To bump a version: edit it here, rebuild, and run the suite inside the image
+# (from the repo root, Git Bash, dev Postgres up; the deselected test needs git):
+#   docker build -t edgar-api backend
+#   MSYS_NO_PATHCONV=1 docker run --rm --user root \
+#     -e TEST_DATABASE_URL=postgresql://user:password@host.docker.internal:5432/edgar_answers_test \
+#     -v "$PWD/backend/tests:/app/tests" -v "$PWD/backend/evals:/app/evals" \
+#     -v "$PWD/backend/migrations:/app/migrations" edgar-api sh -c "pip install -q pytest && \
+#     python -m pytest -q -p no:cacheprovider --deselect tests/test_evals.py::test_append_results_writes_json_line"
+annotated-types==0.7.0
+anthropic==0.120.2
+anyio==4.13.0
+beautifulsoup4==4.15.0
+certifi==2025.8.3
+charset-normalizer==3.4.2
+click==8.4.1
+distro==1.9.0
+docstring-parser==0.18.0
+fastapi==0.115.0
+fastembed==0.8.0
+filelock==3.29.0
+flatbuffers==25.12.19
+fsspec==2026.4.0
+h11==0.16.0
+hf-xet==1.8.0
+httpcore==1.0.9
+httptools==0.7.1
+httpx==0.27.2
+huggingface-hub==0.36.2
+idna==3.10
+jiter==0.15.0
+loguru==0.7.3
+lxml==6.1.1
+mmh3==5.2.1
+numpy==2.3.2
+onnxruntime==1.27.0
+packaging==26.2
+pillow==11.3.0
+protobuf==7.35.1
+psycopg-binary==3.3.4
+psycopg==3.3.4
+py-rust-stemmers==0.1.8
+pydantic-core==2.23.4
+pydantic==2.9.2
+pysbd==0.3.4
+python-dotenv==1.0.1
+pyyaml==6.0.3
+regex==2026.5.9
+requests==2.32.4
+sniffio==1.3.1
+soupsieve==2.9
+starlette==0.38.6
+tiktoken==0.13.0
+tokenizers==0.22.2
+tqdm==4.67.1
+typing-extensions==4.14.1
+urllib3==2.5.0
+uvicorn==0.32.0
+watchfiles==1.2.0
+websockets==16.0

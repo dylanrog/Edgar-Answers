@@ -47,8 +47,17 @@ def save_turn(
     conversation_id (0 for the first turn) -- never passed by the caller.
     `load_recent_turns` returns at most 3 turns, so a caller deriving the
     index from `len(history)` would repeat 0-2 forever and collide with the
-    UNIQUE constraint once a conversation passed 3 turns."""
+    UNIQUE constraint once a conversation passed 3 turns.
+
+    Also deletes every conversation idle longer than RETENTION."""
     with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM conversation_turns WHERE conversation_id IN ("
+            " SELECT conversation_id FROM conversation_turns"
+            " GROUP BY conversation_id"
+            " HAVING max(created_at) < now() - %s::interval)",
+            (RETENTION,),
+        )
         cur.execute(
             "SELECT count(*) FROM conversation_turns WHERE conversation_id = %s",
             (conversation_id,),
@@ -70,6 +79,11 @@ def save_turn(
         )
     conn.commit()
 
+
+# A conversation idle this long is deleted whole on the next save. Bounds the
+# table on a public demo; whole-conversation deletion keeps turn_index (a
+# count of the conversation's rows) consistent if the browser resumes it.
+RETENTION = "7 days"
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 _OBJECT = re.compile(r"\{.*\}", re.DOTALL)

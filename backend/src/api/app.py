@@ -5,7 +5,7 @@ import os
 from collections.abc import Iterator
 from functools import lru_cache
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
@@ -24,6 +24,7 @@ from .detect import (
     PeriodDetector,
 )
 from .generate import AnthropicGenerator, Generator
+from .limits import AskLimiter, RateLimited, client_ip
 from .rewrite import AnthropicQueryRewriter, QueryRewriter
 
 # Before anything reads os.environ below. This module is the process entry
@@ -44,6 +45,10 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["content-type"],
 )
+
+# Set only where a trusted proxy overwrites it (Fly-Client-IP on Fly). Unset,
+# the TCP peer address is used, which is what local dev wants.
+CLIENT_IP_HEADER = os.environ.get("CLIENT_IP_HEADER") or None
 
 
 class Filters(BaseModel):
@@ -86,6 +91,18 @@ def get_embedder() -> Embedder:
     return _embedder()
 
 
+@lru_cache(maxsize=1)
+def _limiter() -> AskLimiter:
+    return AskLimiter(
+        per_ip_per_hour=int(os.environ.get("ASK_PER_IP_PER_HOUR", "20")),
+        daily_cap=int(os.environ.get("ASK_DAILY_CAP", "200")),
+    )
+
+
+def get_limiter() -> AskLimiter:
+    return _limiter()
+
+
 def get_generator() -> Generator:
     return AnthropicGenerator()
 
@@ -119,6 +136,8 @@ def healthz() -> dict[str, str]:
 @app.post("/ask")
 def ask(
     request: AskRequest,
+    http_request: Request,
+    limiter: AskLimiter = Depends(get_limiter),
     embedder: Embedder = Depends(get_embedder),
     generator: Generator = Depends(get_generator),
     company_detector: CompanyDetector = Depends(get_company_detector),
@@ -126,6 +145,17 @@ def ask(
     query_rewriter: QueryRewriter = Depends(get_query_rewriter),
     conversation_rewriter: ConversationRewriter = Depends(get_conversation_rewriter),
 ) -> StreamingResponse:
+    # FastAPI has validated the body by now, so a 422 never spends quota.
+    peer = http_request.client.host if http_request.client else None
+    try:
+        limiter.check(client_ip(http_request.headers, peer, CLIENT_IP_HEADER))
+    except RateLimited as limited:
+        raise HTTPException(
+            status_code=429,
+            detail=limited.message,
+            headers={"Retry-After": str(limited.retry_after)},
+        ) from None
+
     # The plural filter wins; a lone legacy singular `ticker` is wrapped into
     # a one-element list so existing single-ticker API callers keep working.
     tickers = request.filters.tickers or (
