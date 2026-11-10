@@ -24,6 +24,12 @@ export async function* askStream(
     body: JSON.stringify({ question, filters, conversation_id: conversationId }),
     signal,
   });
+  if (response.status === 429) {
+    // The API explains which limit was hit and when it resets; show that
+    // sentence rather than a status code.
+    const body: { detail?: string } | null = await response.json().catch(() => null);
+    throw new Error(body?.detail ?? "This demo is rate-limited. Try again later.");
+  }
   if (!response.ok || response.body === null) {
     throw new Error(`Ask failed with status ${response.status}`);
   }

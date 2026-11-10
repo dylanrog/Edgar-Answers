@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import date
 
@@ -197,6 +198,26 @@ def test_generator_failure_becomes_an_error_event(seeded_conn):
     )
     assert events[-1].name == "error"
     assert "message" in events[-1].data
+
+
+@pytest.mark.db
+def test_generator_failure_is_logged_with_its_traceback(seeded_conn, caplog):
+    # The stream has already returned 200, so without this log line a failed
+    # answer is invisible in the server logs (`fly logs`).
+    class Boom:
+        def stream(self, system, user):
+            raise RuntimeError("upstream is down")
+            yield  # pragma: no cover
+
+    with caplog.at_level(logging.ERROR, logger="api.answer"):
+        list(
+            answer_stream(
+                seeded_conn, FakeEmbedder(), Boom(), StubCompanyDetector(), "What were net sales?"
+            )
+        )
+    [record] = [r for r in caplog.records if r.name == "api.answer"]
+    assert record.levelno == logging.ERROR
+    assert record.exc_info is not None and "upstream is down" in str(record.exc_info[1])
 
 
 @pytest.mark.db
