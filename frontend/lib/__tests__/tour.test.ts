@@ -49,6 +49,8 @@ describe("reduceTour transition table", () => {
     ["source", { type: "skip" }, "off"],
     ["closing", { type: "skip" }, "off"],
     ["interrupted", { type: "skip" }, "off"],
+    ["more", { type: "skip" }, "off"],
+    ["followup", { type: "skip" }, "off"],
     ["off", { type: "skip" }, "off"],
     // start from any step goes to welcome
     ["off", { type: "start" }, "welcome"],
@@ -70,8 +72,15 @@ describe("reduceTour transition table", () => {
     // citation clicked
     ["click", { type: "citationClicked" }, "source"],
     // next
-    ["source", { type: "next" }, "closing"],
+    ["source", { type: "next" }, "more"],
+    ["more", { type: "followUp" }, "followup"],
+    ["followup", { type: "settled", hasVerified: true }, "closing"],
+    ["followup", { type: "settled", hasVerified: false }, "closing"],
+    ["followup", { type: "errored" }, "interrupted"],
+    ["more", { type: "start" }, "welcome"],
+    ["followup", { type: "start" }, "welcome"],
     // finish
+    ["more", { type: "finish" }, "off"],
     ["closing", { type: "finish" }, "off"],
   ])("%s + %j -> %s", (from, event, to) => {
     expect(reduceTour(from, event)).toBe(to);
@@ -91,6 +100,7 @@ describe("reduceTour transition table", () => {
       { type: "errored" },
       { type: "citationClicked" },
       { type: "next" },
+      { type: "followUp" },
       { type: "finish" },
     ];
     for (const e of events) expect(reduceTour("off", e)).toBe("off");
@@ -99,6 +109,11 @@ describe("reduceTour transition table", () => {
   test("unlisted transitions leave the step unchanged", () => {
     expect(reduceTour("welcome", { type: "finish" })).toBe("welcome");
     expect(reduceTour("closing", { type: "citationClicked" })).toBe("closing");
+  });
+
+  test("followup ignores citationClicked and next", () => {
+    expect(reduceTour("followup", { type: "citationClicked" })).toBe("followup");
+    expect(reduceTour("followup", { type: "next" })).toBe("followup");
   });
 });
 
@@ -167,9 +182,11 @@ describe("firstVerifiedMarker", () => {
   });
 });
 
-test("askEvent finishes the tour from closing and is a plain ask elsewhere", () => {
-  expect(askEvent("closing")).toEqual({ type: "finish" });
-  expect(askEvent("welcome")).toEqual({ type: "asked" });
-  expect(askEvent("interrupted")).toEqual({ type: "asked" });
-  expect(askEvent("off")).toEqual({ type: "asked" });
+test("askEvent finishes the tour from more and closing, a plain ask elsewhere", () => {
+  const finish: TourStep[] = ["more", "closing"];
+  const rest: TourStep[] = [
+    "welcome", "watch", "click", "source", "followup", "interrupted", "off",
+  ];
+  for (const s of finish) expect(askEvent(s)).toEqual({ type: "finish" });
+  for (const s of rest) expect(askEvent(s)).toEqual({ type: "asked" });
 });

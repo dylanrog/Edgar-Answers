@@ -1,7 +1,15 @@
 import type { Citation } from "./types";
 
 export type TourStep =
-  "welcome" | "watch" | "click" | "source" | "closing" | "interrupted" | "off";
+  | "welcome"
+  | "watch"
+  | "click"
+  | "source"
+  | "more"
+  | "followup"
+  | "closing"
+  | "interrupted"
+  | "off";
 
 export type TourEvent =
   | { type: "start" }
@@ -11,6 +19,7 @@ export type TourEvent =
   | { type: "errored" }
   | { type: "citationClicked" }
   | { type: "next" }
+  | { type: "followUp" }
   | { type: "finish" };
 
 const SEEN_KEY = "edgar-answers.tour-seen";
@@ -37,22 +46,28 @@ export function reduceTour(step: TourStep, event: TourEvent): TourStep {
   if (step === "watch" && event.type === "settled") {
     return event.hasVerified ? "click" : "closing";
   }
-  if (step === "watch" && event.type === "errored") return "interrupted";
+  if ((step === "watch" || step === "followup") && event.type === "errored") {
+    return "interrupted";
+  }
   // Clicking during the paced reveal: the highlight is already showing.
   if ((step === "watch" || step === "click") && event.type === "citationClicked") {
     return "source";
   }
-  if (step === "source" && event.type === "next") return "closing";
-  if (step === "closing" && event.type === "finish") return "off";
+  if (step === "source" && event.type === "next") return "more";
+  if (step === "more" && event.type === "followUp") return "followup";
+  if (step === "followup" && event.type === "settled") return "closing";
+  if ((step === "more" || step === "closing") && event.type === "finish") {
+    return "off";
+  }
   return step;
 }
 
 /**
- * What asking a question means for the tour: from `closing` it is the
- * visitor leaving the tour for their own exploration, so it finishes it.
+ * What asking a question means for the tour: from `more` or `closing` it
+ * is the visitor leaving the tour for their own exploration, so it finishes it.
  */
 export function askEvent(step: TourStep): TourEvent {
-  return step === "closing" ? { type: "finish" } : { type: "asked" };
+  return step === "more" || step === "closing" ? { type: "finish" } : { type: "asked" };
 }
 
 /** True once the tour has been marked seen. Storage failures read as unseen. */
