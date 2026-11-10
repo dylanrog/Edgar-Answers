@@ -172,11 +172,21 @@ export default function AskPage() {
     }
   }
 
+  // The scripted starts (welcome card, Try again) are the only asks that run
+  // the tutorial; a typed question leaves it (askEvent).
   function startTutorialQuestion() {
-    askFresh(TUTORIAL.question, { newConversation, ask });
+    askFresh(TUTORIAL.question, {
+      newConversation,
+      ask: (question, filters) => ask(question, filters, { tourEvent: { type: "asked" } }),
+    });
   }
 
   function askFollowUp() {
+    // The open filing belongs to turn 1; next to a fiscal-2024 answer it would
+    // read as that answer's source. Start the viewer empty until the visitor
+    // clicks one of the follow-up's citations.
+    setTabs(initialTabState);
+    setHighlights({});
     // Same conversation: the follow-up only makes sense with its context.
     ask(TUTORIAL.followUp, {}, { tourEvent: { type: "followUp" } });
   }
@@ -188,16 +198,18 @@ export default function AskPage() {
 
   function callout(
     step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
+    target?: Citation,
   ) {
     return (
       <TourCallout
         step={step}
+        marker={target?.marker}
         onSkip={() => dispatch({ type: "skip" })}
         onNext={() => dispatch({ type: "next" })}
         onFinish={() => dispatch({ type: "finish" })}
         onRetry={startTutorialQuestion}
         onFollowUp={askFollowUp}
-        figure={(clicked?.cells.length ?? 0) > 0}
+        figure={((target ?? clicked)?.cells.length ?? 0) > 0}
         followUpResolved={turns.at(-1)?.state.standaloneQuestion != null}
         disabled={streaming}
       />
@@ -212,13 +224,16 @@ export default function AskPage() {
             EDGAR ANSWERS
           </h1>
           <div className="flex items-baseline gap-4">
-            <button
-              type="button"
-              onClick={takeTour}
-              className="text-xs text-slate-500 underline hover:text-slate-300"
-            >
-              Take the tutorial
-            </button>
+            {/* Hidden while it runs: the welcome card is the one call to action. */}
+            {tour === "off" && (
+              <button
+                type="button"
+                onClick={takeTour}
+                className="text-xs text-slate-500 underline hover:text-slate-300"
+              >
+                Take the tutorial
+              </button>
+            )}
             {turns.length > 0 && (
               <button
                 type="button"
@@ -240,6 +255,8 @@ export default function AskPage() {
             {turns.map((turn, index) => {
               const latest = index === turns.length - 1;
               const lastState = turn.state;
+              const emphasized =
+                latest && tour === "click" ? firstVerifiedMarker(turn.state.citations) : null;
               return (
               <ConversationTurn
                 key={turn.id}
@@ -262,17 +279,17 @@ export default function AskPage() {
                         )
                     : noop
                 }
-                emphasizeMarker={
-                  latest && tour === "click"
-                    ? firstVerifiedMarker(turn.state.citations)
-                    : null
-                }
+                emphasizeMarker={emphasized}
                 coachAbovePanel={
                   latest && (tour === "watch" || tour === "followup")
                     ? callout(tour)
                     : null
                 }
-                coachBelowAnswer={latest && tour === "click" ? callout("click") : null}
+                coachBelowAnswer={
+                  emphasized !== null
+                    ? callout("click", turn.state.citations.get(emphasized))
+                    : null
+                }
                 coachBelowTurn={
                   latest && (tour === "more" || tour === "closing" || tour === "interrupted")
                     ? callout(tour)

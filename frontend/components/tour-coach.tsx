@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import { TUTORIAL } from "@/lib/tutorial";
@@ -16,6 +16,22 @@ function SkipButton({ onSkip }: { onSkip: () => void }) {
     >
       Skip tutorial
     </button>
+  );
+}
+
+const COARSE = "(pointer: coarse)";
+
+/** True on a touch-first device. False on the server and in the first client
+ *  render, so hydration matches the prerendered HTML. */
+function useCoarsePointer(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(COARSE);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(COARSE).matches,
+    () => false,
   );
 }
 
@@ -37,16 +53,18 @@ export function TourWelcome({
         </strong>{" "}
         Here&apos;s a question to show you how it works:
       </p>
-      <button
-        type="button"
-        onClick={onAsk}
-        disabled={disabled}
-        className="mt-3 block w-full rounded border border-blue-500 bg-blue-950/40 px-3 py-2 text-left text-sm text-slate-100 hover:bg-blue-900/50 disabled:opacity-50"
-      >
-        <span className="block">{TUTORIAL.question}</span>
-        <span className="mt-1 block font-semibold text-blue-300">Ask this question →</span>
-      </button>
-      <p className="mt-2 text-xs text-slate-500">Takes about 20 seconds.</p>
+      <div className="mt-3 rounded border border-blue-500/60 bg-blue-950/40 p-3">
+        <p className="text-sm text-slate-100">&ldquo;{TUTORIAL.question}&rdquo;</p>
+        <button
+          type="button"
+          onClick={onAsk}
+          disabled={disabled}
+          className="mt-3 rounded-md bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/50 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500"
+        >
+          Ask this question
+        </button>
+        <p className="mt-2 text-xs text-slate-400">Takes under a minute.</p>
+      </div>
       <div className="mt-3">
         <SkipButton onSkip={onSkip} />
       </div>
@@ -90,6 +108,7 @@ export function TourCallout({
   onFinish,
   onRetry,
   onFollowUp,
+  marker,
   figure = false,
   followUpResolved = false,
   disabled = false,
@@ -100,20 +119,23 @@ export function TourCallout({
   onFinish?: () => void;
   onRetry?: () => void;
   onFollowUp?: () => void;
-  /** The clicked citation points at a table figure rather than a sentence. */
+  /** The citation marker the click step points at. */
+  marker?: number;
+  /** The citation (to be) clicked points at a table figure, not a sentence. */
   figure?: boolean;
   /** The follow-up's standalone (resolved) question has arrived. */
   followUpResolved?: boolean;
   disabled?: boolean;
 }) {
+  const coarse = useCoarsePointer();
   const action =
     "rounded bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-600";
   const copy = {
     watch:
       "Watch the panel: every quote the model uses is checked against the filing before you see it.",
-    click: "Click the highlighted citation to see it in the original filing.",
+    click: `${coarse ? "Tap" : "Click"} the pulsing [${marker ?? 1}] to see that ${figure ? "figure" : "sentence"} in the original filing.`,
     source: `That's the exact ${figure ? "figure" : "sentence"} in the original filing, highlighted. The server confirmed the quote word for word before showing it.`,
-    more: "Want to see one more? Ask a follow-up. The conversation keeps its context, so a short question is enough.",
+    more: "Want to see one more? Follow-ups remember the conversation, so a short question is enough.",
     followup: followUpResolved
       ? `Follow-ups keep context: "${TUTORIAL.followUp}" was searched as the full question shown under it.`
       : `Asking "${TUTORIAL.followUp}" in the same conversation…`,

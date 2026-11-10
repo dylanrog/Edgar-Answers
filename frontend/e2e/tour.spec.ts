@@ -74,8 +74,9 @@ const TURN1 =
   msftCitation(2) +
   done(2, 2);
 
-// A long answer pushes the cards that follow it below the fold on a phone, so
-// the scroll-into-view behaviour is actually exercised.
+// A long answer, so the phone test runs against a thread taller than the
+// screen, as a real answer is. It does not by itself prove that the cards are
+// scrolled into view: the toBeInViewport assertions on each card do that.
 const TURN1_LONG = TURN1.replace(
   "NVIDIA Data Center revenue",
   "Filler sentence to lengthen the answer. ".repeat(60) + "NVIDIA Data Center revenue",
@@ -154,7 +155,11 @@ async function stub(page: Page, bodies: Body[] = [TURN1, TURN2, TYPED]) {
 
 const welcome = (page: Page) => page.getByTestId("tour-welcome");
 const callout = (page: Page) => page.getByTestId("tour-callout");
-const tutorialButton = (page: Page) => page.getByRole("button", { name: QUESTION });
+const tutorialButton = (page: Page) =>
+  welcome(page).getByRole("button", { name: "Ask this question", exact: true });
+const takeTutorial = (page: Page) => page.getByRole("button", { name: "Take the tutorial" });
+const CLICK_STEP = "Click the pulsing [1] to see that figure in the original filing.";
+const VIEWER_EMPTY = "Click a source to open the filing here.";
 const followUpButton = (page: Page) =>
   page.getByRole("button", { name: `Ask "${FOLLOW_UP}"`, exact: true });
 const chip = (page: Page) => page.getByRole("button", { name: "[1]", exact: true });
@@ -177,7 +182,7 @@ async function reloadHydrated(page: Page) {
 async function toClickStep(page: Page) {
   await page.goto("/ask");
   await tutorialButton(page).click();
-  await expect(page.getByText("Click the highlighted citation")).toBeVisible();
+  await expect(page.getByText(CLICK_STEP)).toBeVisible();
 }
 
 /** ...through the click and Next, to the "more" card. */
@@ -202,11 +207,16 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   ]);
 
   await page.goto("/ask");
-  // Welcome: exactly one question button, plus Skip tutorial.
+  // Welcome: the question, one filled call to action, and Skip tutorial.
   await expect(welcome(page)).toBeVisible();
+  await expect(welcome(page).getByText(QUESTION)).toBeVisible();
   await expect(tutorialButton(page)).toHaveCount(1);
+  await expect(tutorialButton(page)).toHaveClass(/bg-blue-600/);
+  await expect(welcome(page).getByText("Takes under a minute.")).toBeVisible();
   await expect(welcome(page).getByRole("button")).toHaveCount(2);
   await expect(welcome(page).getByRole("button", { name: "Skip tutorial" })).toBeVisible();
+  // While the tutorial runs, the header link to start it is hidden.
+  await expect(takeTutorial(page)).toHaveCount(0);
   await tutorialButton(page).click();
 
   // The panel ticks.
@@ -215,17 +225,28 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await expect(page.getByText(/Quote 1 → NVDA 10-K 2025 ✓ found word for word/)).toBeVisible();
   await expect(page.getByText(/table figure/)).toBeVisible();
 
-  // Click callout + pulsing [1].
-  await expect(page.getByText("Click the highlighted citation")).toBeVisible();
-  await expect(chip(page)).toHaveClass(/animate-pulse/);
+  // Click callout + [1] with a pulsing ring.
+  await expect(page.getByText(CLICK_STEP)).toBeVisible();
+  await expect(chip(page)).toHaveAttribute("data-emphasized", "true");
+  await expect(page.getByTestId("chip-ping")).toHaveCSS("animation-name", "ping");
   await chip(page).click();
+  await expect(page.getByTestId("chip-ping")).toHaveCount(0);
 
   await expect(page.locator(".cited-figure").first()).toBeVisible();
   await expect(page.getByText(/That's the exact figure in the original filing, highlighted/)).toBeVisible();
 
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText(/Want to see one more/)).toBeVisible();
+  await expect(
+    page.getByText(
+      "Want to see one more? Follow-ups remember the conversation, so a short question is enough.",
+    ),
+  ).toBeVisible();
   await followUpButton(page).click();
+
+  // Turn 1's filing must not sit next to the fiscal-2024 answer: the viewer
+  // starts empty until a turn-2 citation is clicked.
+  await expect(page.getByText(VIEWER_EMPTY)).toBeVisible();
+  await expect(page.locator("[data-accession]")).toHaveCount(0);
 
   // Review Focus 1: the follow-up reuses the first turn's conversation.
   await expect.poll(() => requests.length).toBe(2);
@@ -250,8 +271,13 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await expect(followUpButton(page)).toHaveCount(0);
   await expect(tutorialButton(page)).toHaveCount(0);
 
+  // A turn-2 citation opens its own filing and highlight.
+  await chip(page).last().click();
+  await expect(page.locator(".cited-figure")).toHaveText("115,186");
+
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(callout(page)).toHaveCount(0);
+  await expect(takeTutorial(page)).toBeVisible();
   await reloadHydrated(page);
   await expect(welcome(page)).toHaveCount(0);
   await expect(callout(page)).toHaveCount(0);
@@ -292,6 +318,43 @@ test("skipping from the more card keeps the thread and removes every callout", a
   await expect(callout(page)).toHaveCount(0);
 });
 
+test("a typed question at the welcome card leaves for the regular site, with no callouts", async ({
+  page,
+}) => {
+  const requests = await stub(page, [TYPED]);
+  await page.goto("/ask");
+  await expect(welcome(page)).toBeVisible();
+
+  await page.getByLabel("Question").fill("my own question");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+
+  await expect(page.getByText(/TYPED ANSWER/)).toBeVisible();
+  await expect(welcome(page)).toHaveCount(0);
+  await expect(callout(page)).toHaveCount(0);
+  await expect(chip(page)).not.toHaveAttribute("data-emphasized", "true");
+  await expect(takeTutorial(page)).toBeVisible();
+  expect(requests[0].question).toBe("my own question");
+  expect(await page.evaluate(() => localStorage.getItem("edgar-answers.tour-seen"))).toBe("1");
+});
+
+test("a typed question mid-tutorial never gets the scripted follow-up offered on top", async ({
+  page,
+}) => {
+  await stub(page, [TURN1, TYPED]);
+  await toClickStep(page);
+
+  await page.getByLabel("Question").fill("my own question");
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  await expect(page.getByText(/TYPED ANSWER/)).toBeVisible();
+  await expect(callout(page)).toHaveCount(0);
+
+  // Clicking through the unvetted answer stays on the regular site.
+  await chip(page).last().click();
+  await expect(page.locator(".cited-figure")).toBeVisible();
+  await expect(callout(page)).toHaveCount(0);
+  await expect(followUpButton(page)).toHaveCount(0);
+});
+
 test("a typed question at the more card finishes the tutorial", async ({ page }) => {
   const requests = await stub(page, [TURN1, TYPED]);
   await toMoreStep(page);
@@ -313,7 +376,7 @@ test("no verified citation on turn 1 goes straight to the closing, with the unve
   await tutorialButton(page).click();
 
   await expect(page.getByText(/works on any document collection/)).toBeVisible();
-  await expect(page.getByText("Click the highlighted citation")).toHaveCount(0);
+  await expect(page.getByText(CLICK_STEP)).toHaveCount(0);
   await expect(page.getByText("[1] unverified")).toBeVisible();
   await expect(callout(page).getByRole("button", { name: "Done", exact: true })).toBeVisible();
 });
@@ -339,7 +402,7 @@ test("an error on the follow-up shows the interrupted card; Try again starts a n
   expect(requests[2].conversation_id).toBeTruthy();
   expect(requests[2].conversation_id).not.toBe(requests[0].conversation_id);
   // And the tutorial resumes from the top: watch, then the click step.
-  await expect(page.getByText("Click the highlighted citation")).toBeVisible();
+  await expect(page.getByText(CLICK_STEP)).toBeVisible();
 });
 
 test("Take the tutorial from an existing thread restarts at welcome in a fresh conversation", async ({
@@ -350,7 +413,8 @@ test("Take the tutorial from an existing thread restarts at welcome in a fresh c
   await followUpButton(page).click();
   await expect(page.getByText(/works on any document collection/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Take the tutorial" }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await takeTutorial(page).click();
   await expect(welcome(page)).toBeVisible();
   await expect(callout(page)).toHaveCount(0);
   await expect(page.getByText(/NVIDIA Data Center revenue was/)).toHaveCount(0);
@@ -389,10 +453,11 @@ test("restarting mid-stream aborts the old stream; the new run shows only its ow
 
   await page.goto("/ask");
   await tutorialButton(page).click();
-  await page.getByRole("button", { name: "Take the tutorial" }).click();
+  // Mid-run the header offers "New conversation", which restarts at welcome.
+  await page.getByRole("button", { name: "New conversation" }).click();
   await expect(welcome(page)).toBeVisible();
   await tutorialButton(page).click();
-  await expect(page.getByText("Click the highlighted citation")).toBeVisible();
+  await expect(page.getByText(CLICK_STEP)).toBeVisible();
 
   releaseStale();
   // A negative assertion needs a bounded wait: there is no event to await for
@@ -401,7 +466,7 @@ test("restarting mid-stream aborts the old stream; the new run shows only its ow
   await page.waitForTimeout(300);
   await expect(page.getByText("STALE ANSWER")).toHaveCount(0);
   await expect(page.getByText(/NVIDIA Data Center revenue was/)).toBeVisible();
-  await expect(page.getByText("Click the highlighted citation")).toBeVisible();
+  await expect(page.getByText(CLICK_STEP)).toBeVisible();
   await expect(callout(page)).toHaveCount(1);
 });
 
@@ -414,7 +479,7 @@ test.describe("on a phone", () => {
     await page.goto("/ask");
     await expect(welcome(page)).toBeInViewport();
     await tutorialButton(page).click();
-    await expect(page.getByText("Click the highlighted citation")).toBeVisible();
+    await expect(page.getByText(CLICK_STEP)).toBeVisible();
     expect(await scrollWidth()).toBeLessThanOrEqual(375);
 
     await chip(page).click();
@@ -435,4 +500,45 @@ test.describe("on a phone", () => {
     await expect(callout(page)).toBeInViewport();
     expect(await scrollWidth()).toBeLessThanOrEqual(375);
   });
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
+
+  test("the click step says Tap, and the chip's hit area is at least 40 px", async ({ page }) => {
+    await stub(page);
+    await page.goto("/ask");
+    await tutorialButton(page).click();
+    await expect(
+      page.getByText("Tap the pulsing [1] to see that figure in the original filing."),
+    ).toBeVisible();
+    const hit = await chip(page).evaluate((el) => {
+      const after = getComputedStyle(el, "::after");
+      return { width: parseFloat(after.width), height: parseFloat(after.height) };
+    });
+    expect(hit.width).toBeGreaterThanOrEqual(40);
+    expect(hit.height).toBeGreaterThanOrEqual(40);
+  });
+});
+
+test("answer prose is single-spaced: chips are compact badges that don't push lines apart", async ({
+  page,
+}) => {
+  await stub(page);
+  await toClickStep(page);
+  const prose = page.locator("p", { hasText: "NVIDIA Data Center revenue was" });
+  await expect(prose).toHaveCSS("line-height", "24px");
+  const chipBox = await chip(page).boundingBox();
+  expect(chipBox!.height).toBeLessThanOrEqual(16);
+  // No touch hit-area on a mouse pointer.
+  expect(await chip(page).evaluate((el) => getComputedStyle(el, "::after").content)).toBe("none");
+});
+
+test("with reduced motion the emphasized chip keeps a still ring", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await stub(page);
+  await toClickStep(page);
+  await expect(page.getByTestId("chip-ping")).toBeVisible();
+  await expect(page.getByTestId("chip-ping")).toHaveCSS("animation-name", "none");
+  await expect(chip(page)).toHaveClass(/ring-amber-400/);
 });

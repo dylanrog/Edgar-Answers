@@ -1,5 +1,9 @@
 const KEY = "edgar-answers.conversation-id";
 
+// Used only when sessionStorage is unavailable: stable for the life of the
+// page, so a follow-up still reaches the same conversation.
+let memoryId: string | null = null;
+
 /**
  * A conversation is one browser session: sessionStorage survives a reload
  * but not a tab close, which matches "no chat-history across sessions" as
@@ -14,14 +18,16 @@ export function getOrCreateConversationId(): string {
     sessionStorage.setItem(KEY, id);
     return id;
   } catch {
-    // Storage disabled (private mode, hardened browser): fall back to a
-    // per-call id. The conversation won't persist between questions — no
-    // worse than the pre-memory single-shot behaviour.
-    return crypto.randomUUID();
+    // Storage disabled (private mode, hardened browser): keep the id in
+    // memory instead. The conversation lasts until a reload rather than the
+    // whole tab session, but follow-ups within the page keep their context.
+    memoryId ??= crypto.randomUUID();
+    return memoryId;
   }
 }
 
 export function startNewConversation(): void {
+  memoryId = null;
   try {
     sessionStorage.removeItem(KEY);
   } catch {

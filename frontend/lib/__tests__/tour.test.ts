@@ -57,11 +57,14 @@ describe("reduceTour transition table", () => {
     ["welcome", { type: "start" }, "welcome"],
     ["watch", { type: "start" }, "welcome"],
     ["closing", { type: "start" }, "welcome"],
-    // asked
+    // asked: only the scripted starts (welcome button, Try again)
     ["welcome", { type: "asked" }, "watch"],
-    ["click", { type: "asked" }, "watch"],
-    ["source", { type: "asked" }, "watch"],
     ["interrupted", { type: "asked" }, "watch"],
+    ["click", { type: "asked" }, "click"],
+    ["source", { type: "asked" }, "source"],
+    ["more", { type: "asked" }, "more"],
+    ["followup", { type: "asked" }, "followup"],
+    ["closing", { type: "asked" }, "closing"],
     // settled with a verified citation
     ["watch", { type: "settled", hasVerified: true }, "click"],
     // settled without one
@@ -79,9 +82,17 @@ describe("reduceTour transition table", () => {
     ["followup", { type: "errored" }, "interrupted"],
     ["more", { type: "start" }, "welcome"],
     ["followup", { type: "start" }, "welcome"],
-    // finish
+    // more ignores a citation click: the source was already shown
+    ["more", { type: "citationClicked" }, "more"],
+    // finish ends the tutorial from any step (a typed question, or Done)
+    ["welcome", { type: "finish" }, "off"],
+    ["watch", { type: "finish" }, "off"],
+    ["click", { type: "finish" }, "off"],
+    ["source", { type: "finish" }, "off"],
     ["more", { type: "finish" }, "off"],
+    ["followup", { type: "finish" }, "off"],
     ["closing", { type: "finish" }, "off"],
+    ["interrupted", { type: "finish" }, "off"],
   ])("%s + %j -> %s", (from, event, to) => {
     expect(reduceTour(from, event)).toBe(to);
   });
@@ -107,7 +118,7 @@ describe("reduceTour transition table", () => {
   });
 
   test("unlisted transitions leave the step unchanged", () => {
-    expect(reduceTour("welcome", { type: "finish" })).toBe("welcome");
+    expect(reduceTour("welcome", { type: "next" })).toBe("welcome");
     expect(reduceTour("closing", { type: "citationClicked" })).toBe("closing");
   });
 
@@ -182,11 +193,13 @@ describe("firstVerifiedMarker", () => {
   });
 });
 
-test("askEvent finishes the tour from more and closing, a plain ask elsewhere", () => {
-  const finish: TourStep[] = ["more", "closing"];
-  const rest: TourStep[] = [
-    "welcome", "watch", "click", "source", "followup", "interrupted", "off",
+test("a typed question finishes the tutorial from every step; with it off, a plain ask", () => {
+  const on: TourStep[] = [
+    "welcome", "watch", "click", "source", "more", "followup", "closing", "interrupted",
   ];
-  for (const s of finish) expect(askEvent(s)).toEqual({ type: "finish" });
-  for (const s of rest) expect(askEvent(s)).toEqual({ type: "asked" });
+  for (const s of on) {
+    expect(askEvent(s)).toEqual({ type: "finish" });
+    expect(reduceTour(s, askEvent(s))).toBe("off");
+  }
+  expect(askEvent("off")).toEqual({ type: "asked" });
 });

@@ -58,7 +58,7 @@ export function AnswerStream({
           {state.notice}
         </p>
       )}
-      <p className="text-sm leading-7 whitespace-pre-wrap">
+      <p className="text-sm leading-6 whitespace-pre-wrap">
         {splitOnMarkers(state.prose).map((segment, index) =>
           typeof segment === "string" ? (
             <span key={index}>{segment}</span>
