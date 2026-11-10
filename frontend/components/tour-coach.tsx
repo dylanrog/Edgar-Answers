@@ -41,10 +41,12 @@ export function TourWelcome({
         type="button"
         onClick={onAsk}
         disabled={disabled}
-        className="mt-3 block w-full rounded border border-slate-700 px-3 py-2 text-left text-sm text-slate-200 hover:border-blue-500 hover:text-white disabled:opacity-50"
+        className="mt-3 block w-full rounded border border-blue-500 bg-blue-950/40 px-3 py-2 text-left text-sm text-slate-100 hover:bg-blue-900/50 disabled:opacity-50"
       >
-        {TUTORIAL.question}
+        <span className="block">{TUTORIAL.question}</span>
+        <span className="mt-1 block font-semibold text-blue-300">Ask this question →</span>
       </button>
+      <p className="mt-2 text-xs text-slate-500">Takes about 20 seconds.</p>
       <div className="mt-3">
         <SkipButton onSkip={onSkip} />
       </div>
@@ -88,6 +90,8 @@ export function TourCallout({
   onFinish,
   onRetry,
   onFollowUp,
+  figure = false,
+  followUpResolved = false,
   disabled = false,
 }: {
   step: CalloutStep;
@@ -96,6 +100,10 @@ export function TourCallout({
   onFinish?: () => void;
   onRetry?: () => void;
   onFollowUp?: () => void;
+  /** The clicked citation points at a table figure rather than a sentence. */
+  figure?: boolean;
+  /** The follow-up's standalone (resolved) question has arrived. */
+  followUpResolved?: boolean;
   disabled?: boolean;
 }) {
   const action =
@@ -104,11 +112,11 @@ export function TourCallout({
     watch:
       "Watch the panel: every quote the model uses is checked against the filing before you see it.",
     click: "Click the highlighted citation to see it in the original filing.",
-    source:
-      "That's the exact sentence (or figure) in the original filing. The server confirmed the quote word for word.",
+    source: `That's the exact ${figure ? "figure" : "sentence"} in the original filing, highlighted. The server confirmed the quote word for word before showing it.`,
     more: "Want to see one more? Ask a follow-up. The conversation keeps its context, so a short question is enough.",
-    followup:
-      "It read \"What about 24?\" in context. See \"Searched for\" above. Every figure is checked against the 2024 filings.",
+    followup: followUpResolved
+      ? `Follow-ups keep context: "${TUTORIAL.followUp}" was searched as the full question shown under it.`
+      : `Asking "${TUTORIAL.followUp}" in the same conversation…`,
     closing:
       "This demo runs on 120 SEC filings from ten companies, but the pipeline underneath (sentence-anchored ingestion, hybrid search, quote verification) works on any document collection.",
     interrupted:

@@ -40,6 +40,7 @@ export default function AskPage() {
   // so reading storage during render would mismatch on hydration.
   const nextTurnId = useRef(0);
   const askAbort = useRef<AbortController | null>(null);
+  const [clicked, setClicked] = useState<Citation | null>(null);
   const [tour, setTour] = useState<TourStep>("off");
 
   useEffect(() => {
@@ -158,6 +159,7 @@ export default function AskPage() {
     // there is nothing trustworthy to scroll to.
     if (!citation.verified || citation.accession === "") return;
     dispatch({ type: "citationClicked" });
+    setClicked(citation);
     setTabs((previous) => openTab(previous, citation.accession));
     setHighlights((previous) => ({
       ...previous,
@@ -195,6 +197,8 @@ export default function AskPage() {
         onFinish={() => dispatch({ type: "finish" })}
         onRetry={startTutorialQuestion}
         onFollowUp={askFollowUp}
+        figure={(clicked?.cells.length ?? 0) > 0}
+        followUpResolved={turns.at(-1)?.state.standaloneQuestion != null}
         disabled={streaming}
       />
     );

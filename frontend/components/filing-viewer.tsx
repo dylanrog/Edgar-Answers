@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { fetchFiling } from "@/lib/api";
 import { NO_HIGHLIGHT, applyHighlight } from "@/lib/highlight";
@@ -41,6 +41,15 @@ function FilingPane({
     };
   }, [accession]);
 
+  // Inject the HTML imperatively so React never manages these children: with
+  // dangerouslySetInnerHTML a parent re-render could replace them and wipe
+  // the injected highlight marks.
+  useLayoutEffect(() => {
+    if (filing !== null && containerRef.current !== null) {
+      containerRef.current.innerHTML = filing.viewer_html;
+    }
+  }, [filing]);
+
   // Highlighting scrolls the cited sentence into view, so it must not run
   // while the pane is hidden -- display:none elements have no layout box and
   // scrollIntoView would do nothing.
@@ -65,11 +74,7 @@ function FilingPane({
       {filing !== null && (
         // Safe here and only here: this HTML was sanitized by the
         // canonicalizer at ingestion, so the server is the sanitizer.
-        <div
-          ref={containerRef}
-          className="filing-html"
-          dangerouslySetInnerHTML={{ __html: filing.viewer_html }}
-        />
+        <div ref={containerRef} className="filing-html" />
       )}
     </div>
   );

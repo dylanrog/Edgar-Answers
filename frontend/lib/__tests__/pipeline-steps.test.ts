@@ -60,6 +60,19 @@ test("search counts the distinct filings", () => {
   );
 });
 
+test("the search detail lists at most three filings then counts the rest", () => {
+  const s = full([]);
+  s.progress.retrieved = {
+    passages: 8,
+    filings: [1, 2, 3, 4, 5].map((n) => ({ ...filing(n), passages: 2 })),
+  };
+  const detail = buildPanel(s, {}, 0).find((l) => l.key === "search")?.detail;
+  expect(detail).toMatch(/\+2 more$/);
+  expect(detail?.split(",")).toHaveLength(3);
+  s.progress.retrieved.filings = s.progress.retrieved.filings.slice(0, 3);
+  expect(buildPanel(s, {}, 0).find((l) => l.key === "search")?.detail).not.toMatch(/more/);
+});
+
 test("names map tickers and unmapped tickers fall back", () => {
   const s = state({
     progress: { targets: { tickers: ["AAPL", "ZZZ"], filings: [] }, retrieved: null, quotes: null },
