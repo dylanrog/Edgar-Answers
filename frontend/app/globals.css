@@ -90,3 +90,31 @@ th.cited-figure {
   outline-offset: -2px;
   scroll-margin-top: 4rem;
 }
+
+/* A freshly applied highlight pulses twice (~1.5 s) so the eye finds it on
+   first open (lib/highlight.ts PULSE_CLASS). Motion only when the visitor has
+   not asked for less; otherwise the steady highlight above is the whole cue.
+   A row's background lives on its cells, so that is where it animates. */
+@keyframes cited-pulse {
+  50% {
+    background-color: #f59e0b;
+    color: #1c1917;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cited-sentence.cited-pulse:not(tr),
+  tr.cited-sentence.cited-pulse td,
+  tr.cited-sentence.cited-pulse th,
+  .cited-figure.cited-pulse {
+    animation: cited-pulse 0.75s ease-in-out 2;
+  }
+}
+
+/* Filings justify their body text inline; on a phone-width column that opens
+   huge gaps between words. Table cells keep their own alignment. */
+@media (max-width: 639px) {
+  .filing-html [style*="justify"]:not(td, th) {
+    text-align: left !important;
+  }
+}

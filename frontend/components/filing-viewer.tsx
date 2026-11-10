@@ -3,10 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { fetchFiling } from "@/lib/api";
-import { NO_HIGHLIGHT, applyHighlight } from "@/lib/highlight";
+import { NO_HIGHLIGHT, applyHighlight, keepCentred } from "@/lib/highlight";
 import type { Highlight } from "@/lib/highlight";
 import type { TabState } from "@/lib/tabs";
 import type { Filing } from "@/lib/types";
+import { parseViewerHtml } from "@/lib/viewer-html";
 
 /**
  * One mounted filing. Kept in the DOM while its tab is open even when
@@ -49,16 +50,9 @@ function FilingPane({
       const container = containerRef.current;
       // Safe here and only here: this HTML was sanitized by the
       // canonicalizer at ingestion, so the server is the sanitizer.
-      container.innerHTML = filing.viewer_html;
-      // EDGAR-relative image sources 404 against this origin; hide the
-      // broken-image icon rather than rewrite the src.
-      for (const img of container.querySelectorAll("img")) {
-        const hide = () => {
-          img.style.display = "none";
-        };
-        if (img.complete && img.naturalWidth === 0) hide();
-        else img.addEventListener("error", hide, { once: true });
-      }
+      // Images that cannot load are dropped before the HTML goes live, so
+      // nothing above the cited figure collapses after it is scrolled to.
+      container.replaceChildren(parseViewerHtml(filing.viewer_html));
     }
   }, [filing]);
 
@@ -66,9 +60,16 @@ function FilingPane({
   // while the pane is hidden -- display:none elements have no layout box and
   // scrollIntoView would do nothing.
   useEffect(() => {
-    if (active && filing !== null && containerRef.current !== null) {
-      applyHighlight(containerRef.current, highlight.sids, highlight.cells);
-    }
+    const container = containerRef.current;
+    if (!active || filing === null || container === null) return;
+    const target = applyHighlight(container, highlight.sids, highlight.cells);
+    if (target === null) return;
+    // Watch the scrolling pane as well as the HTML: a card mounting above
+    // the viewer shrinks the pane without resizing the HTML.
+    const watched = [container, container.parentElement].filter(
+      (el): el is HTMLElement => el !== null,
+    );
+    return keepCentred(target, watched);
   }, [active, filing, highlight]);
 
   return (
