@@ -454,10 +454,15 @@ One page: `/ask`, split-pane.
   re-centres the target on any layout change (a card mounting above the viewer
   shrinks the pane); the visitor's first wheel, touch, pointer press or key
   ends that early. A fresh highlight pulses twice (not under reduced motion).
-  Below 640 px, inline-justified filing text is left-aligned, and filing tables
-  keep their natural width (cells don't wrap) and scroll sideways inside the
-  pane, whose right edge fades while there is more to the right (a CSS
-  scroll-driven animation; no fade where unsupported).
+  Below 640 px, inline-justified filing text is left-aligned, and figure cells
+  (tagged `fig` at injection when their whole text is one number; stored HTML
+  untouched) don't wrap while text cells do. A table whose figures cannot fit
+  overflows and scrolls sideways inside the pane, whose right edge fades while
+  there is more to the right (a CSS scroll-driven animation; no fade where
+  unsupported). The cited figure gets its own horizontal padding, because
+  filings zero it inline and the inset outline would otherwise be drawn over
+  the first and last digit. A target wider or taller than the pane is aligned
+  by its start (20 px inset) rather than centred.
 
 - **Guided tour** (spec 2026-11-09): each answer carries an "under the hood"
   panel (`components/under-the-hood.tsx`, logic in `lib/pipeline-steps.ts`)
@@ -473,7 +478,8 @@ One page: `/ask`, split-pane.
   a turn-2 citation is clicked. At the closing the latest turn's panel folds to
   its summary line and, on md+ only, the viewer opens that turn's first verified
   citation as if clicked (on a phone it would scroll away from the closing
-  card). While the welcome card shows, the composer's Ask is a secondary
+  card), unless the visitor already opened one of that answer's citations;
+  the panel stays folded after Done. While the welcome card shows, the composer's Ask is a secondary
   button. Skip, Done, or a question typed into the form
   at any step lands on the regular site, which has no example chips: only the
   scripted asks run the script, so the vetted follow-up is never offered on top
@@ -483,9 +489,10 @@ One page: `/ask`, split-pane.
   `backend/evals/examples.yaml`; `tests/test_examples.py` fails CI if they
   drift, and `python -m evals examples` is the release check (§8).
 - **Mobile:** below `md` (768 px) the page stacks vertically instead of
-  splitting. An open viewer is a full screen tall (it is the last thing on the
-  page, so a shorter one could not be scrolled to the top), and a citation tap
-  scrolls the page to it after the tap has rendered.
+  splitting. An open viewer is a screen tall less 3rem (it is the last thing
+  on the page, so a much shorter one could not be scrolled to the top), a
+  citation tap scrolls the page to it after the tap has rendered, and a
+  phone-only "Back to answer" button scrolls back to the latest turn.
 
 Components: `app/ask/page.tsx`, `components/answer-stream.tsx`,
 `components/citation-chip.tsx`, `components/filing-viewer.tsx`,
