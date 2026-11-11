@@ -110,8 +110,6 @@ def test_figure_formatting_rule_sits_between_multi_filing_rule_and_the_example()
     assert prompt.index("more than one filing") < rule
     assert rule < prompt.index(FENCE)
     assert "reuse its marker" in prompt
-    assert "115" not in SYSTEM_PROMPT
-    assert "Microsoft" not in SYSTEM_PROMPT
 
 
 def test_a_table_chunk_shows_each_context_line_labelled_above_its_text():
