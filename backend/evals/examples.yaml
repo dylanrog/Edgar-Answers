@@ -31,7 +31,7 @@
   gold_sids: [2768]
   requires_cell: true
   gold_cells: [2]
-  expected_values: [["115,186", "115.2 billion", "115.186 billion", "115.2"]]
+  expected_values: [["115,186", "115.2 billion", "115.2"]]
 - id: tutorial-1-msft
   group: tutorial-1
   question: Compare NVIDIA's Data Center revenue in fiscal 2025 with Microsoft's Cloud revenue in fiscal 2025.
@@ -50,7 +50,7 @@
   gold_sids: [2777]
   requires_cell: true
   gold_cells: [2]
-  expected_values: [["47,525", "47.5 billion", "47.525 billion", "47.5"]]
+  expected_values: [["47,525", "47.5 billion", "47.5"]]
 - id: tutorial-2-msft
   group: tutorial-2
   after: tutorial-1

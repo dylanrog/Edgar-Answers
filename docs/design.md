@@ -348,6 +348,11 @@ One Claude Haiku call. The prompt contract:
   cannot verify, because context is not part of the chunk's text.
 - When citing a figure from a table row, quote from the row's start through that
   figure and stop, so the cited-figure highlight (§7) lands on it.
+- In the answer text (never inside quotes, which stay verbatim), write figures
+  as the exact figure with its unit or rounded to one decimal place in
+  billions, never more decimals than that; name a metric once without repeating
+  the company name inside it; reuse a marker when the same quote supports a
+  later claim. Added 2026-11-10, measured with an eval bracket.
 - After the answer, emit a fenced JSON block:
   `{"citations": [{"marker": 1, "chunk_id": 8123, "quote": "<verbatim text from that chunk, ≤300 chars>"}]}`
 
@@ -538,8 +543,8 @@ gold sids hit and its expected figures stated, `requires_cell` entries cite a
 cell bound to a gold sid, comparisons cite at least two tickers, and no
 verified citation strays: each one's sids must be a subset of the gold sids of
 one of the turn's pinned filings (a quote spanning a gold row and its
-neighbour fails, since the viewer would highlight the neighbour too). Where an entry sets `gold_cells`, the column is checked
-as well as the row: every cell a verified citation marks on a gold sid must be
+neighbour fails, since the viewer would highlight the neighbour too). Where an
+entry sets `gold_cells`, the column is checked as well as the row: every cell a verified citation marks on a gold sid must be
 one of those cell indexes, and a `requires_cell` entry must cite one of them.
 A multi-year row (NVIDIA's Data Center line carries three fiscal years) would
 otherwise let a quote spanning two columns verify, pass, and highlight the
