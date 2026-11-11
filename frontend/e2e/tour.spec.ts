@@ -205,10 +205,10 @@ const chip = (page: Page) => page.getByRole("button", { name: "[1]", exact: true
 const EMPTY = "Ask a question about a filing.";
 
 /**
- * Reloads and waits until the client has mounted. The prerendered HTML already
- * has the Question input, so asserting the welcome card is absent before
- * hydration would pass vacuously; the /companies fetch fires in the same mount
- * pass as the tour check, after it.
+ * Reloads and waits until the client has mounted. Before hydration the welcome
+ * card is absent for every visitor, so asserting its absence then would pass
+ * vacuously; the /companies fetch fires in the same mount pass as the tour
+ * check, after it.
  */
 async function reloadHydrated(page: Page) {
   expect(await page.evaluate(() => localStorage.getItem("edgar-answers.tour-seen"))).toBe("1");
@@ -644,18 +644,34 @@ test("paragraphs render as separate blocks, and a marker in each still opens its
   await expect(page.locator(`[data-accession="${NVDA}"] .cited-figure`)).toHaveText("115,186");
 });
 
-test("the prerendered page has no tutorial link, so a first visit never flashes it", async ({
+test("the prerendered page has neither the tutorial link nor the regular site, so nothing flashes or jumps", async ({
   page,
   request,
 }) => {
   const html = await (await request.get("/ask")).text();
   expect(html).not.toContain("Take the tutorial");
+  // Nor the regular empty state: a first visit would see it pushed down and
+  // restyled as the welcome card arrives, and its form could be submitted
+  // natively before hydration.
+  expect(html).not.toContain(EMPTY);
+  expect(html).not.toContain('aria-label="Question"');
+  expect(html).not.toContain("<form");
 
-  // A returning visitor gets it once the mount-time check has run.
+  // A first visit gets the welcome card above the composer once mounted.
   await stub(page);
-  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
   await page.goto("/ask");
+  await expect(welcome(page)).toBeVisible();
+  await expect(page.getByLabel("Question")).toBeVisible();
+  await expect(page.getByText(EMPTY)).toHaveCount(0);
+  await expect(takeTutorial(page)).toHaveCount(0);
+
+  // A returning visitor gets the regular site and the tutorial link.
+  await page.evaluate(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
+  await reloadHydrated(page);
+  await expect(page.getByText(EMPTY)).toBeVisible();
+  await expect(page.getByLabel("Question")).toBeVisible();
   await expect(takeTutorial(page)).toBeVisible();
+  await expect(welcome(page)).toHaveCount(0);
 });
 
 test("a source the visitor opens during the follow-up is not switched by the closing", async ({
@@ -701,6 +717,27 @@ test.describe("back to the answer on a phone", () => {
 
     await back.click();
     await expect(question).toBeInViewport();
+  });
+});
+
+test.describe("back to the answer during the tutorial on a phone", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("the source step has no Back to answer under its Next; it returns once the tutorial ends", async ({
+    page,
+  }) => {
+    await stub(page, [TURN1_LONG]);
+    await page.goto("/ask");
+    await tutorialButton(page).click();
+    await chip(page).click();
+    await expect(page.locator(".cited-figure")).toBeInViewport();
+    await expect(callout(page)).toContainText("That's the exact figure");
+    // Tapping it would scroll to a thread with no card to go on from.
+    await expect(page.getByRole("button", { name: "Back to answer" })).toHaveCount(0);
+
+    await callout(page).getByRole("button", { name: "Skip tutorial" }).click();
+    await expect(callout(page)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Back to answer" })).toBeVisible();
   });
 });
 

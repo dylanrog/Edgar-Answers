@@ -36,15 +36,16 @@ export default function AskPage() {
   const [tabs, setTabs] = useState(initialTabState);
   const [highlights, setHighlights] = useState<Record<string, Highlight>>({});
   const [companies, setCompanies] = useState<Company[]>([]);
-  // Starts "off" and is read from storage on mount: the page is prerendered,
-  // so reading storage during render would mismatch on hydration.
   const nextTurnId = useRef(0);
   const askAbort = useRef<AbortController | null>(null);
   const [clicked, setClicked] = useState<Citation | null>(null);
+  // Starts "off" and is read from storage on mount: the page is prerendered,
+  // so reading storage during render would mismatch on hydration.
   const [tour, setTour] = useState<TourStep>("off");
   // Until the mount-time check has run, "off" only means "not read yet": the
-  // header's tutorial link waits for it, or a first-time visitor sees it flash
-  // before the welcome card replaces it.
+  // header's tutorial link and the empty conversation (composer and welcome
+  // card alike) wait for it, or a first-time visitor sees the regular site
+  // flash before the welcome card replaces it.
   const [tourChecked, setTourChecked] = useState(false);
   // The turn whose panel the closing folded (see `expanded` below).
   const [foldedTurn, setFoldedTurn] = useState<number | null>(null);
@@ -312,57 +313,66 @@ export default function AskPage() {
               const emphasized =
                 latest && tour === "click" ? firstVerifiedMarker(turn.state.citations) : null;
               return (
-              <ConversationTurn
-                key={turn.id}
-                question={turn.question}
-                state={turn.state}
-                onSelect={select}
-                names={names}
-                // From the closing on, this turn's panel stays folded to its
-                // summary line -- also after Done, when the closing card goes
-                // and a re-expanding panel would push the answer away. A new
-                // turn has a new id, so it starts expanded.
-                expanded={latest && turn.id !== foldedTurn}
-                onSettled={
-                  latest
-                    ? () => {
-                        const before = tour;
-                        const next = dispatch(
-                          lastState.status === "error"
-                            ? { type: "errored" }
-                            : {
-                                type: "settled",
-                                hasVerified:
-                                  firstVerifiedMarker(lastState.citations) !== null,
-                              },
-                        );
-                        if (next === "closing" && before !== "closing") {
-                          setFoldedTurn(turn.id);
-                          showPayoff(lastState);
+                <ConversationTurn
+                  key={turn.id}
+                  question={turn.question}
+                  state={turn.state}
+                  onSelect={select}
+                  names={names}
+                  // From the closing on, this turn's panel stays folded to its
+                  // summary line -- also after Done, when the closing card goes
+                  // and a re-expanding panel would push the answer away. A new
+                  // turn has a new id, so it starts expanded.
+                  expanded={latest && turn.id !== foldedTurn}
+                  onSettled={
+                    latest
+                      ? () => {
+                          const before = tour;
+                          const next = dispatch(
+                            lastState.status === "error"
+                              ? { type: "errored" }
+                              : {
+                                  type: "settled",
+                                  hasVerified:
+                                    firstVerifiedMarker(lastState.citations) !== null,
+                                },
+                          );
+                          if (next === "closing" && before !== "closing") {
+                            setFoldedTurn(turn.id);
+                            showPayoff(lastState);
+                          }
                         }
-                      }
-                    : noop
-                }
-                emphasizeMarker={emphasized}
-                coachAbovePanel={
-                  latest && (tour === "watch" || tour === "followup")
-                    ? callout(tour)
-                    : null
-                }
-                coachBelowAnswer={
-                  emphasized !== null
-                    ? callout("click", turn.state.citations.get(emphasized))
-                    : null
-                }
-                coachBelowTurn={
-                  latest && (tour === "more" || tour === "closing" || tour === "interrupted")
-                    ? callout(tour)
-                    : null
-                }
-              />
+                      : noop
+                  }
+                  emphasizeMarker={emphasized}
+                  coachAbovePanel={
+                    latest && (tour === "watch" || tour === "followup")
+                      ? callout(tour)
+                      : null
+                  }
+                  coachBelowAnswer={
+                    emphasized !== null
+                      ? callout("click", turn.state.citations.get(emphasized))
+                      : null
+                  }
+                  coachBelowTurn={
+                    latest && (tour === "more" || tour === "closing" || tour === "interrupted")
+                      ? callout(tour)
+                      : null
+                  }
+                />
               );
             })}
           </div>
+        )}
+
+        {/* Prerendered and until the mount-time check has run: an empty,
+            composer-sized space rather than the regular site, which a
+            first-time visitor would see jump as the welcome card is inserted
+            above it (and whose form a pre-hydration tap would submit
+            natively). */}
+        {turns.length === 0 && !tourChecked && (
+          <div aria-busy="true" className="min-h-64 flex-1" />
         )}
 
         {turns.length === 0 && tour === "welcome" && (
@@ -373,17 +383,19 @@ export default function AskPage() {
           />
         )}
 
-        <AskForm
-          companies={companies}
-          disabled={streaming}
-          onSubmit={ask}
-          docked={turns.length > 0}
-          quiet={tour === "welcome"}
-        />
+        {(turns.length > 0 || tourChecked) && (
+          <AskForm
+            companies={companies}
+            disabled={streaming}
+            onSubmit={ask}
+            docked={turns.length > 0}
+            quiet={tour === "welcome"}
+          />
+        )}
 
         {turns.length === 0 && tour === "welcome" && <div className="flex-1" />}
 
-        {turns.length === 0 && tour !== "welcome" && (
+        {turns.length === 0 && tourChecked && tour !== "welcome" && (
           <div className="flex-1 px-5 pt-4">
             <p className="mb-3 text-slate-500">Ask a question about a filing.</p>
           </div>
@@ -396,9 +408,11 @@ export default function AskPage() {
           composer. 3rem short of full, so the thread still peeks above it. */}
       <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[calc(100dvh-3rem)]" : "h-auto"}`}>
         {tour === "source" && <div className="shrink-0 px-3 pb-2">{callout("source")}</div>}
-        {tabs.open.length > 0 && (
+        {tabs.open.length > 0 && tour !== "source" && (
           // Phones only: with the filing filling the screen, a plain way back
           // to the answer rather than the tab strip's small close buttons.
+          // Not at the tutorial's source step: right under that card's Next,
+          // it would take the visitor to a thread with no card to go on from.
           <button
             type="button"
             onClick={backToAnswer}
