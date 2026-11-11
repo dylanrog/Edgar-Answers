@@ -61,7 +61,6 @@ body {
   background-color: #78350f;
   color: #fef3c7;
   box-shadow: 0 0 0 3px #78350f;
-  scroll-margin-top: 4rem;
 }
 
 /* A cited table row carries data-sid on the <tr> itself, because a <span>
@@ -94,7 +93,6 @@ th.cited-figure {
      47,525 on a phone). Room for it, whatever the inline style says. */
   padding-left: 0.375rem !important;
   padding-right: 0.375rem !important;
-  scroll-margin-top: 4rem;
 }
 
 /* A freshly applied highlight pulses twice (~1.5 s) so the eye finds it on

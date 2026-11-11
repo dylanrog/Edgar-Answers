@@ -35,7 +35,8 @@ function useCoarsePointer(): boolean {
   );
 }
 
-/** Replaces the empty-state text above the form on first visit. */
+/** The first-visit welcome card. It renders above the form, in place of the
+ *  empty-state text that otherwise sits below it. */
 export function TourWelcome({
   onAsk,
   onSkip,
