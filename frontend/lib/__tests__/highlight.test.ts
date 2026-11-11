@@ -8,6 +8,7 @@ import {
   HIGHLIGHT_CLASS,
   PULSE_CLASS,
   applyHighlight,
+  centreInPane,
   keepCentred,
 } from "../highlight";
 
@@ -42,10 +43,11 @@ test("clears the previous highlight before applying the next", () => {
   expect(container.querySelector('[data-sid="11"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
 });
 
-test("scrolls the first cited sentence into view", () => {
-  applyHighlight(container, [11, 12]);
-  const first = container.querySelector('[data-sid="11"]');
-  expect(first?.scrollIntoView).toHaveBeenCalledTimes(1);
+test("targets the first cited sentence, and never scrolls the window itself", () => {
+  const target = applyHighlight(container, [11, 12]);
+  expect(target).toBe(container.querySelector('[data-sid="11"]'));
+  // scrollIntoView would scroll every ancestor, the window included.
+  expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
 });
 
 test("an unknown sid highlights nothing and does not throw", () => {
@@ -91,11 +93,40 @@ test("a figure index that does not exist falls back to the row highlight", () =>
   expect(table.querySelector('tr[data-sid="21"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
 });
 
-test("the cited figure is what scrolls into view", () => {
+test("the cited figure is the target", () => {
   const table = tableContainer();
-  applyHighlight(table, [20], [{ sid: 20, cell: 2 }]);
   const figure = table.querySelectorAll('tr[data-sid="20"] td')[2];
-  expect(figure.scrollIntoView).toHaveBeenCalledTimes(1);
+  expect(applyHighlight(table, [20], [{ sid: 20, cell: 2 }])).toBe(figure);
+});
+
+function rect(left: number, top: number, width: number, height: number): DOMRect {
+  return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) } as DOMRect;
+}
+
+/** A pane 400 x 300 at (100, 50) on screen, already scrolled to (40, 1000). */
+function fakePane(): HTMLElement {
+  const pane = document.createElement("div");
+  pane.getBoundingClientRect = () => rect(100, 50, 400, 300);
+  Object.defineProperty(pane, "clientWidth", { value: 400 });
+  Object.defineProperty(pane, "clientHeight", { value: 300 });
+  Object.defineProperty(pane, "scrollTop", { value: 1000 });
+  Object.defineProperty(pane, "scrollLeft", { value: 40 });
+  pane.scrollTo = vi.fn() as unknown as HTMLElement["scrollTo"];
+  return pane;
+}
+
+test("centreInPane centres the target on both axes by scrolling the pane only", () => {
+  const pane = fakePane();
+  const target = document.createElement("td");
+  // 60 x 20 at (600, 900): right of and below the visible area.
+  target.getBoundingClientRect = () => rect(600, 900, 60, 20);
+  centreInPane(pane, target, "smooth");
+  expect(pane.scrollTo).toHaveBeenCalledWith({
+    top: 1000 + (900 - 50) - (300 - 20) / 2,
+    left: 40 + (600 - 100) - (400 - 60) / 2,
+    behavior: "smooth",
+  });
+  expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
 });
 
 test("the next highlight clears the previous figure", () => {
@@ -176,27 +207,41 @@ describe("keepCentred", () => {
     contentRect: { width: 300, height },
   });
 
-  test("re-centres the target when a watched element changes size", () => {
+  test("re-centres the target in the pane, instantly, when a watched element changes size", () => {
+    const pane = fakePane();
     const target = container.querySelector('[data-sid="11"]')!;
-    keepCentred(target, [container]);
+    keepCentred(pane, target, [container, pane]);
     const { callback, observed } = observers[0];
-    expect(observed).toEqual([container]);
-    callback([size(container, 500)]); // the initial report is not a shift
-    expect(target.scrollIntoView).not.toHaveBeenCalled();
-    callback([size(container, 1400)]);
-    expect(target.scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    expect(observed).toEqual([container, pane]);
+    callback([size(container, 500), size(pane, 300)]); // initial reports are not shifts
+    expect(pane.scrollTo).not.toHaveBeenCalled();
+    callback([size(pane, 120)]); // a card mounted above the viewer
+    expect(pane.scrollTo).toHaveBeenCalledTimes(1);
+    expect(pane.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: "auto" }));
+    expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
   });
 
   test("stops watching after the window, or when stopped", () => {
     const target = container.querySelector('[data-sid="11"]')!;
-    keepCentred(target, [container], 2000);
+    keepCentred(fakePane(), target, [container], 2000);
     vi.advanceTimersByTime(1999);
     expect(observers[0].disconnected).toBe(false);
     vi.advanceTimersByTime(1);
     expect(observers[0].disconnected).toBe(true);
 
-    const stop = keepCentred(target, [container], 2000);
+    const stop = keepCentred(fakePane(), target, [container], 2000);
     stop();
     expect(observers[1].disconnected).toBe(true);
   });
+
+  test.each(["wheel", "touchstart", "pointerdown", "keydown"])(
+    "the visitor's first %s ends it",
+    (type) => {
+      const pane = fakePane();
+      const target = container.querySelector('[data-sid="11"]')!;
+      keepCentred(pane, target, [container], 2000);
+      window.dispatchEvent(new Event(type));
+      expect(observers[0].disconnected).toBe(true);
+    },
+  );
 });

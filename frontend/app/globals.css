@@ -118,3 +118,46 @@ th.cited-figure {
     text-align: left !important;
   }
 }
+
+/* Phones: a filing table keeps its natural width instead of squeezing its
+   columns until figures overflow their cells (the cited-figure box then
+   slices through a digit). The pane scrolls sideways (overflow-auto on
+   .filing-pane), and its right edge fades while there is more to the right.
+   The fade is a scroll-driven animation: where that is unsupported, or the
+   pane cannot scroll sideways, the timeline is inactive and --edge-fade stays
+   0px, so nothing is masked. */
+@property --edge-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes edge-fade {
+  from,
+  90% {
+    --edge-fade: 32px;
+  }
+  to {
+    --edge-fade: 0px;
+  }
+}
+
+@media (max-width: 639px) {
+  .filing-html table {
+    width: max-content !important;
+    min-width: 100%;
+  }
+
+  .filing-html td,
+  .filing-html th {
+    white-space: nowrap;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .filing-pane {
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--edge-fade)), transparent);
+      animation: edge-fade linear both;
+      animation-timeline: scroll(self x);
+    }
+  }
+}
