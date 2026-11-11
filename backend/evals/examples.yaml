@@ -10,8 +10,9 @@
 # expected_values, optional gold_cells/requires_cell) that satisfy it instead of
 # its own pin, judged by the same rules; a citation inside an alternative's gold
 # sids is not stray when that alternative passes on its own. tutorial-2-msft
-# uses this for a restatement: Microsoft's FY2025 and FY2026 10-Ks report fiscal 2024 Microsoft Cloud revenue as $137.7B
-# (restated) against $137.4B as originally reported in the FY2024 10-K. Citing a
+# uses this for a restatement: Microsoft's FY2025 and FY2026 10-Ks report fiscal
+# 2024 Microsoft Cloud revenue as $137.7B (restated) against $137.4B as
+# originally reported in the FY2024 10-K. Citing a
 # later filing's restated figure for the same fiscal year is a correct answer for
 # the period asked, not period confusion -- but only with the restated figure
 # ($137.7B) stated, so a later filing's FY2025 or FY2026 figure still fails.
