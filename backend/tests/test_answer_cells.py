@@ -68,3 +68,38 @@ def test_a_table_citation_carries_its_cited_cells(seeded):
     citation = next(e for e in events if e.name == "citation")
     assert citation.data["verified"] is True
     assert citation.data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+def _ask(conn, chunk_id, prose, quote):
+    response = (
+        f"{prose}\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{quote}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"],
+        )
+    )
+    return next(e for e in events if e.name == "citation").data
+
+
+WHOLE_ROW = "Data Center $ 115,186 $ 47,525 $ 15,005"
+
+
+@pytest.mark.db
+def test_a_whole_row_quote_marks_only_the_figure_the_answer_states(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask(conn, chunk_id, "Data Center revenue was $115.2 billion [1].", WHOLE_ROW)
+    assert data["verified"] is True
+    assert data["sids"] == [data_center]
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_a_whole_row_quote_with_no_stated_figure_keeps_every_cell(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask(conn, chunk_id, "Data Center revenue grew [1].", WHOLE_ROW)
+    assert data["verified"] is True
+    assert [c["cell"] for c in data["cells"]] == [2, 6, 10]

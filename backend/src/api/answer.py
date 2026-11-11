@@ -9,6 +9,7 @@ import psycopg
 from . import queries
 from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
+from .figures import narrow_cells
 from .generate import (
     SYSTEM_PROMPT,
     AnswerSplitter,
@@ -126,6 +127,7 @@ def answer_stream(
         yield AnswerEvent("progress", {"stage": "verifying", "quotes": len(citations or [])})
 
         by_id = {chunk.chunk_id: chunk for chunk in chunks}
+        prose = "".join(answer_parts)
         verified: list[VerifiedCitation] = []
         for citation in citations or []:
             chunk = by_id.get(citation.chunk_id)
@@ -149,7 +151,11 @@ def answer_stream(
             cells = queries.load_chunk_cells(
                 conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
             )
-            verified.append(verify_citation(citation, chunk, sentences, cells))
+            # Emphasis only: a whole multi-year row verifies, but the viewer
+            # should mark just the figures the answer states (design §6.3).
+            verified.append(
+                narrow_cells(verify_citation(citation, chunk, sentences, cells), cells, prose)
+            )
 
         for citation in verified:
             yield AnswerEvent(
@@ -173,7 +179,7 @@ def answer_stream(
                 conversation_id,
                 question=question,
                 standalone_question=standalone_question,
-                answer_text="".join(answer_parts),
+                answer_text=prose,
                 tickers=[target.ticker for target in targets],
             )
 

@@ -377,7 +377,16 @@ For each citation `{chunk_id, quote}`:
    overlaps is a cited figure, reported as `(sid, cell_index)`. Cells without a
    span are skipped — the row still resolves, and the viewer falls back to
    whole-row highlighting. A prose quote, or one covering only a row label,
-   resolves no cells.
+   resolves no cells. When a verified quote covers more than one figure, the
+   emitted cells are then **narrowed to the figures the answer states** in the
+   claim its marker closes (the text back to the previous marker or sentence
+   break): a cell is kept if the prose states its exact digits (`115,186`) or,
+   for a plain number, its value divided by 1,000 (millions → billions)
+   rounded to the 1–3 decimals the prose used (`115.186`, `115.19`, `115.2` billion).
+   So a quote of NVIDIA's whole three-year Data Center row beside a fiscal-2025
+   answer marks only the FY2025 figure. If no figure matches, the cells are
+   left as resolved. This is display emphasis only (`api/figures.py`): it never
+   changes `verified` or the sids, and never hides a citation.
 5. **Emit** a `citation` SSE event with `verified: true`, the sids and the cited
    cells — or, on any failure, `verified: false` with no sids and no cells.
 
@@ -410,8 +419,10 @@ citation: {"marker": 1, "verified": true,
            "ticker": "AAPL", "form_type": "10-K",
            "filing_date": "2024-11-01",
            "sids": [1042, 1043], "quote": "…",
-           "cells": [{"sid": 1043, "cell": 4}]}   -- cited table figures;
-                                                     [] for prose
+           "cells": [{"sid": 1043, "cell": 4}]}   -- cited table figures,
+                                                     narrowed to those the
+                                                     answer states (§6.3 step
+                                                     4); [] for prose
 done:     {"chunks_retrieved": 8, "citations_total": 3,
            "citations_verified": 3, "unverified_answer": false}
 error:    {"message": "…"}
@@ -438,6 +449,9 @@ One page: `/ask`, split-pane.
   and highlights the cited sids. When the citation names cited table figures,
   only those cells (`tr[data-sid].cells[cell]`) are marked (`cited-figure`) —
   the row itself is not highlighted — and the view scrolls to the first figure.
+  The server has already narrowed the cells to the figures the answer states
+  (§6.3 step 4), so a quote of a whole multi-year row marks only the year the
+  answer is about.
   A cited row with no resolvable figure falls back to a whole-row highlight. Each pane loads `GET /filings/{accession}` and
   renders the stored HTML (sanitized at ingestion, so the server is the
   sanitizer). The HTML is injected imperatively, once per load, not through
