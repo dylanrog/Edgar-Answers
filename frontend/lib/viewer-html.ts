@@ -9,7 +9,7 @@ export const FIGURE_CELL_CLASS = "fig";
  * in parentheses or with a dash, optionally with a currency sign. Words, dates
  * ("Jan 28, 2024") and anything longer are not figures and keep wrapping.
  */
-const FIGURE_TEXT = /^[$€£¥(\-–—+\s]*\d[\d.,]*[\s)%]*$/;
+const FIGURE_TEXT = /^[$€£¥(\-–—−+\s]*\d[\d.,]*[\s)%]*$/;
 
 export function isFigureText(text: string): boolean {
   return FIGURE_TEXT.test(text.trim());

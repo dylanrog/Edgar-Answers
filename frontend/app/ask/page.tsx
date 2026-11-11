@@ -84,6 +84,9 @@ export default function AskPage() {
 
   const threadRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement>(null);
+  // Whether the visitor has opened a citation of the latest answer since it
+  // was asked; reset by every ask.
+  const openedLatest = useRef(false);
 
   // Scrolls the page to the viewer after the click has rendered, not in the
   // click handler: until then the viewer is a short placeholder at the foot
@@ -192,10 +195,6 @@ export default function AskPage() {
    * where the viewer is below the thread and opening it would scroll away from
    * the closing card.
    */
-  // Whether the visitor has opened a citation of the latest answer since it
-  // was asked; reset by every ask.
-  const openedLatest = useRef(false);
-
   function showPayoff(state: AnswerState) {
     if (!window.matchMedia("(min-width: 768px)").matches) return;
     // The visitor already opened one of this answer's sources themselves:

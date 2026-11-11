@@ -41,13 +41,13 @@ test("leaves the sentence markup untouched", () => {
 
 test.each([
   "115,186", "$ 47,525", "$47,525", "47,525 ", "(1,234)", "$ (1,234)", "1,234)",
-  "12.5%", "142 %", "(12.5)%", "—12", "-3.4", "2024",
+  "12.5%", "142 %", "(12.5)%", "—12", "-3.4", "2024", "−12", "− 12", "(−1,234)",
 ])("%j is a figure", (text) => {
   expect(isFigureText(text)).toBe(true);
 });
 
 test.each([
-  "$", "Data Center", "Jan 28, 2024", "Fiscal 2025", "—", "", "Item 7A", "10-K",
+  "$", "Data Center", "Total − net", "Jan 28, 2024", "Fiscal 2025", "—", "", "Item 7A", "10-K",
   "Revenue from the sale of products and services, net of returns, was 1,234",
 ])("%j is not a figure", (text) => {
   expect(isFigureText(text)).toBe(false);
