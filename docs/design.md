@@ -589,8 +589,10 @@ verified citation strays: each one must come from the filing of a pin that
 passes (below). Within that filing any verified quote is fine, whatever its
 sids: it is a further true fact from the right filing (turn 1 sometimes adds
 the Data Center segment's Compute and Networking rows), and narrowing (§6.3)
-leaves a neighbour row's figures marked only when the answer states them. A
-citation to any other filing is stray. Where an entry sets `gold_cells`, the column is checked
+leaves a neighbour row's figures marked only when the answer states them
+(unless narrowing fails closed, §6.3, when every resolved cell stays marked).
+The marks of such an extra citation are not column-checked: `gold_cells`
+covers only cells on gold sids. A citation to any other filing is stray. Where an entry sets `gold_cells`, the column is checked
 as well as the row: every cell a verified citation marks on a gold sid must be
 one of those cell indexes, and a `requires_cell` entry must cite one of them.
 A multi-year row (NVIDIA's Data Center line carries three fiscal years) would

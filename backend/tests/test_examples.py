@@ -112,6 +112,8 @@ def test_extra_citation_from_the_pinned_filing_fails_when_the_entry_misses():
     reasons = judge(answer="Net sales rose.", citations=[cite(), cite(sids=(99,))])
     assert any("stray" in r and "sids=[99]" in r for r in reasons)
     assert any("expected values missing" in r for r in reasons)
+    # The citation on the gold row itself is the miss, not also a stray.
+    assert not any("stray" in r and "sids=[10]" in r for r in reasons)
 
 
 def test_citation_on_a_subset_of_gold_sids_passes():
