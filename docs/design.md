@@ -396,7 +396,9 @@ For each citation `{chunk_id, quote}`:
      `trillion` for a millions table, `million` for a thousands table —
      rounded to the decimals the prose used (`$115 billion`, `$115.2B`,
      `$115.2-billion`, `115.186 billion`). A range's first end takes the
-     second's unit (`$115-116 billion`).
+     second's unit (`$115-116 billion`). A bare year (`fiscal 2025`: four
+     digits, 1900–2100, no comma, unit or `$`) is not a figure, so it never
+     marks a coinciding 2,025 cell.
      A bare `115.2` with no unit matches nothing scaled. A percent cell matches
      only a percent figure, and a number cell never does. Signs are ignored, so
      `$(1,234) million` and "a loss of $1.2 billion" match −1,234.

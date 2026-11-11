@@ -315,3 +315,31 @@ def test_trillion_is_read_and_never_hides_the_stated_cell():
     # rather than marking FY2024 alone.
     prose = "Data Center was $0.1152 trillion, up from $47.5 billion [1]."
     assert narrowed(prose) == ((SID, 2), (SID, 6), (SID, 10))
+
+
+# --- bare years are not figures ---
+
+YEAR_CELLS = CELLS + _cells(
+    (2, "102196", "number"), (6, "2025", "number"), (10, "11000", "number"), sid=SID + 1
+)
+YEAR_CITED = tuple((c.sid, c.cell_index) for c in YEAR_CELLS)
+
+
+def test_a_bare_year_does_not_mark_a_coinciding_cell():
+    c = citation(cells=YEAR_CITED)
+    prose = "In fiscal 2025 Data Center revenue was $115.2 billion [1]."
+    assert narrow_cells(c, YEAR_CELLS, prose).cells == ((SID, 2),)
+
+
+def test_a_bare_year_alone_is_not_the_only_mark():
+    # No real figure matches, so the citation stays as resolved rather than
+    # marking (and scrolling to) the 2,025 cell.
+    c = citation(cells=YEAR_CITED)
+    prose = "In fiscal 2025 Data Center revenue was over one hundred billion dollars [1]."
+    assert narrow_cells(c, YEAR_CELLS, prose).cells == YEAR_CITED
+
+
+def test_a_year_sized_figure_with_a_dollar_sign_or_comma_still_counts():
+    c = citation(cells=YEAR_CITED)
+    assert narrow_cells(c, YEAR_CELLS, "Other was $2025 [1].").cells == ((SID + 1, 6),)
+    assert narrow_cells(c, YEAR_CELLS, "Other was 2,025 [1].").cells == ((SID + 1, 6),)

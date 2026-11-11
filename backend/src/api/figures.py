@@ -141,8 +141,22 @@ def stated_figures(text: str) -> list[Figure]:
             first[3] = second[3]
     return [
         Figure(value, max(0, -value.as_tuple().exponent), unit)
-        for _, _, value, unit in found
+        for start, end, value, unit in found
+        if not _is_year(text, start, end, unit)
     ]
+
+
+def _is_year(text: str, start: int, end: int, unit: str) -> bool:
+    """A bare year ("fiscal 2025") is not a figure: it would coincide with a
+    2,025 cell. A real figure that size carries a comma or a "$" or a unit."""
+    token = text[start:end]
+    return (
+        not unit
+        and len(token) == 4
+        and token.isdigit()
+        and 1900 <= int(token) <= 2100
+        and not text[:start].rstrip().endswith("$")
+    )
 
 
 def _rounded(value: Decimal, places: int) -> Decimal:
