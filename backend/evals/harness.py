@@ -36,6 +36,10 @@ class GoldenQuestion:
     after: str = ""
     # Examples only: a verified citation on this accession must carry cells.
     requires_cell: bool = False
+    # Examples only: the cell indexes (tr.cells[i]) on the gold sids that may
+    # be cited -- the year-of-interest column of a multi-year row. Empty means
+    # any cell on a gold sid.
+    gold_cells: tuple[int, ...] = ()
 
 
 def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
@@ -67,6 +71,11 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
                 f"golden entry {entry_id}: expected_values must be a list of"
                 " non-empty lists of quoted strings"
             )
+        gold_cells = entry.get("gold_cells", [])
+        if not isinstance(gold_cells, list) or not all(
+            isinstance(c, int) and not isinstance(c, bool) for c in gold_cells
+        ):
+            raise ValueError(f"golden entry {entry_id}: gold_cells must be a list of ints")
         questions.append(
             GoldenQuestion(
                 *(entry[f] for f in _REQUIRED),
@@ -75,6 +84,7 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
                 tuple(tuple(spellings) for spellings in expected),
                 entry.get("after", ""),
                 bool(entry.get("requires_cell", False)),
+                tuple(gold_cells),
             )
         )
     by_group: dict[str, str] = {}

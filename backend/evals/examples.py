@@ -78,13 +78,28 @@ def judge_run(
         if e.expected_values and not values_present(answer, e.expected_values):
             reasons.append(f"{e.ticker}: expected values missing from answer")
     for e in entries:
-        if e.requires_cell and not any(
-            c["accession"] == e.accession
-            and any(cell["sid"] in e.gold_sids for cell in c.get("cells") or [])
+        # Figures the verified citations mark on this entry's gold rows. A gold
+        # row can hold several years: a quote spanning two columns verifies and
+        # highlights the wrong year too, so the column is checked, not just the row.
+        on_gold = [
+            cell["cell"]
             for c in verified
+            if c["accession"] == e.accession
+            for cell in c.get("cells") or []
+            if cell["sid"] in e.gold_sids
+        ]
+        if e.gold_cells:
+            outside = sorted(set(on_gold) - set(e.gold_cells))
+            if outside:
+                reasons.append(
+                    f"{e.ticker}: verified citation on {e.accession} marks cell(s)"
+                    f" {outside} on a gold sid, outside gold_cells {list(e.gold_cells)}"
+                )
+        if e.requires_cell and not any(
+            not e.gold_cells or cell in e.gold_cells for cell in on_gold
         ):
             reasons.append(
-                f"{e.ticker}: no verified citation on {e.accession} has a cell on a gold sid"
+                f"{e.ticker}: no verified citation on {e.accession} has a gold cell on a gold sid"
             )
     if len({e.ticker for e in entries}) >= 2 and len({c["ticker"] for c in verified}) < 2:
         reasons.append("comparison cited fewer than 2 tickers")

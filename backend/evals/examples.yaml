@@ -2,7 +2,10 @@
 # golden.yaml). One chain: tutorial-1 is the opening question, tutorial-2 is the
 # follow-up asked in the SAME conversation (`after: tutorial-1`); a run passes
 # only if both turns pass. Entries sharing a `group` are one comparison
-# question, one entry per company. NVDA entries need a cited table cell.
+# question, one entry per company. NVDA entries need a cited table cell, and
+# `gold_cells` pins its column: cell 2 is the year-of-interest figure on both
+# gold rows (FY25 sid 2768: 115,186; FY24 sid 2777: 47,525), cells 6 and 10
+# are the prior years.
 # Vetted with `python -m evals examples` (10 runs); check pins with
 # `python -m evals verify --examples`. Must match frontend/lib/tutorial.json;
 # tests/test_examples.py enforces that.
@@ -27,6 +30,7 @@
   section: item15
   gold_sids: [2768]
   requires_cell: true
+  gold_cells: [2]
   expected_values: [["115,186", "115.2 billion", "115.186 billion", "115.2"]]
 - id: tutorial-1-msft
   group: tutorial-1
@@ -45,6 +49,7 @@
   section: item15
   gold_sids: [2777]
   requires_cell: true
+  gold_cells: [2]
   expected_values: [["47,525", "47.5 billion", "47.525 billion", "47.5"]]
 - id: tutorial-2-msft
   group: tutorial-2

@@ -7,11 +7,11 @@ from evals.harness import GoldenQuestion, load_golden
 
 
 def entry(ticker="AAPL", accession="0000320193-24-000123", sids=(10,), values=(("383,285",),),
-          requires_cell=False):
+          requires_cell=False, gold_cells=()):
     return GoldenQuestion(
         id=f"e-{ticker}", question="q?", ticker=ticker, accession=accession,
         section="item7", gold_sids=list(sids), group="g", expected_values=values,
-        requires_cell=requires_cell,
+        requires_cell=requires_cell, gold_cells=tuple(gold_cells),
     )
 
 
@@ -98,6 +98,31 @@ def test_requires_cell_fails_with_cell_on_non_gold_sid():
     assert judge([entry(requires_cell=True)], citations=[c])
 
 
+def test_gold_cell_exactly_passes():
+    e = entry(requires_cell=True, gold_cells=(2,))
+    assert judge([e], citations=[cite(cells=[{"sid": 10, "cell": 2}])]) == []
+
+
+def test_extra_column_on_gold_row_fails():
+    # "Data Center $ 115,186 $ 47,525" verifies and marks FY2024 beside FY2025.
+    e = entry(gold_cells=(2,))
+    c = cite(cells=[{"sid": 10, "cell": 2}, {"sid": 10, "cell": 6}])
+    reasons = judge([e], citations=[c])
+    assert any("outside gold_cells" in r and "[6]" in r for r in reasons)
+
+
+def test_wrong_column_on_gold_row_fails():
+    e = entry(gold_cells=(2,))
+    reasons = judge([e], citations=[cite(cells=[{"sid": 10, "cell": 6}])])
+    assert any("outside gold_cells" in r for r in reasons)
+
+
+def test_requires_cell_fails_when_only_another_column_is_cited():
+    e = entry(requires_cell=True, gold_cells=(2,))
+    reasons = judge([e], citations=[cite(cells=[{"sid": 10, "cell": 6}])])
+    assert any("no verified citation" in r and "gold cell" in r for r in reasons)
+
+
 def test_bare_figure_spelling_whole_figure_only():
     from evals.faithfulness import values_present
     exp = (("168.9 billion", "168.9"),)
@@ -175,6 +200,24 @@ def test_load_golden_reads_after_and_requires_cell(tmp_path):
     qs = load_golden(_write(tmp_path, _BASE.format(after="g1")))
     assert (qs[0].after, qs[0].requires_cell) == ("", False)
     assert (qs[1].after, qs[1].requires_cell) == ("g1", True)
+
+
+def test_load_golden_gold_cells_default_empty_and_read(tmp_path):
+    text = _BASE.format(after="g1") + "  gold_cells: [2]\n"
+    qs = load_golden(_write(tmp_path, text))
+    assert (qs[0].gold_cells, qs[1].gold_cells) == ((), (2,))
+
+
+@pytest.mark.parametrize("bad", ["2", "[\"2\"]", "[2.5]", "[true]"])
+def test_load_golden_gold_cells_must_be_list_of_ints(tmp_path, bad):
+    text = _BASE.format(after="g1") + f"  gold_cells: {bad}\n"
+    with pytest.raises(ValueError, match="gold_cells"):
+        load_golden(_write(tmp_path, text))
+
+
+def test_examples_pin_the_nvda_year_column():
+    nvda = [q for qs in load_examples().values() for q in qs if q.ticker == "NVDA"]
+    assert nvda and all(q.gold_cells == (2,) for q in nvda)
 
 
 def test_load_golden_after_unknown_group(tmp_path):
