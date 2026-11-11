@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
 from pipeline.tables import Cell
@@ -65,68 +66,119 @@ def _after(prose: str, end: int, next_group: tuple[int, int, set[int]] | None) -
     return text
 
 
-def claim_sides(prose: str, marker: int) -> tuple[str, str]:
-    """(preferred, fallback) text for the claim `[marker]` cites. A marker that
-    starts a sentence ("comparison: [1] Revenue was $115.2 billion.") cites the
-    words after it; otherwise ("Revenue was $115.2 billion [1].") the words
-    before it. The other side is the fallback ("Per the 10-K [1], revenue was
-    ..."). Every occurrence of the marker contributes; a marker absent from the
-    prose falls back to the whole prose."""
-    preferred: list[str] = []
-    fallback: list[str] = []
+def claim_sides(prose: str, marker: int) -> tuple[str, str] | None:
+    """(before, after): the words on each side of every `[marker]`, or None
+    when the marker is not in the prose.
+
+    Before is the text back to the previous marker or sentence break; after
+    runs to the next marker or sentence end. Which side a marker cites depends
+    on style -- "Revenue was $115.2 billion [1]." vs "comparison: [1] Revenue
+    was $115.2 billion." -- and "X. [1] Y. [2]" reads either way, so callers
+    use both. Words a sentence-opening marker claimed after it are not
+    offered again as the next marker's before side.
+    """
+    befores: list[str] = []
+    afters: list[str] = []
     groups = _groups(prose)
     previous_end = 0
     claimed_until = 0  # words up to here belong to an earlier group
     for i, (start, end, markers) in enumerate(groups):
         lead = prose[previous_end:start].rstrip(" \t")
         starts_sentence = not lead.strip() or lead[-1] in ".!?:\n"
-        # Words the previous group opened are its claim, not this group's.
         before = _before(prose, start, max(previous_end, claimed_until))
         after = _after(prose, end, groups[i + 1] if i + 1 < len(groups) else None)
         if marker in markers:
-            first, second = (after, before) if starts_sentence else (before, after)
-            preferred.append(first)
-            fallback.append(second)
+            befores.append(before)
+            afters.append(after)
         claimed_until = end + len(after) if starts_sentence and after.strip() else end
         previous_end = end
-    if not preferred:
-        return prose, ""
-    return " ".join(preferred), " ".join(fallback)
+    if not befores:
+        return None
+    return " ".join(befores), " ".join(afters)
 
 
-def claim_text(prose: str, marker: int) -> str:
-    """The words each `[marker]` closes (the before side only). Adjacent
-    markers ("[1][2]") share one claim. Falls back to the whole prose if the
-    marker never appears."""
-    segments: list[str] = []
-    groups = _groups(prose)
-    previous_end = 0
-    for start, end, markers in groups:
-        if marker in markers:
-            segments.append(_before(prose, start, previous_end))
-        previous_end = end
-    return " ".join(segments) if segments else prose
+_UNIT = re.compile(
+    r"\)?\s*(?:(?P<billion>(?i:billions?|bn)|B)|(?P<million>(?i:millions?|mn)|M)"
+    r"|(?P<percent>%|(?i:percent|per cent)))(?![A-Za-z])"
+)
 
 
-def stated_figures(text: str) -> list[Decimal]:
-    return [Decimal(token.replace(",", "")) for token in _FIGURE.findall(text)]
+@dataclass(frozen=True)
+class Figure:
+    """A number the prose states, with the unit written right after it."""
+
+    value: Decimal  # absolute: "(1,234)" and "-1,234" both read 1234
+    places: int  # decimals as written: "115.2" -> 1
+    unit: str  # "billion" | "million" | "percent" | ""
 
 
-def is_stated(cell: Cell, figures: list[Decimal]) -> bool:
-    """The cell's value appears among `figures` as its exact digits, or -- for a
-    plain number, typically in millions -- in thousands of its unit rounded to
-    the 1-3 decimals the prose used ("115,186" ~ "115.186", "115.19", "115.2")."""
+def stated_figures(text: str) -> list[Figure]:
+    figures = []
+    for match in _FIGURE.finditer(text):
+        value = Decimal(match.group().replace(",", ""))
+        unit_match = _UNIT.match(text, match.end())
+        unit = unit_match.lastgroup if unit_match else ""
+        figures.append(Figure(value, max(0, -value.as_tuple().exponent), unit or ""))
+    return figures
+
+
+def _rounded(value: Decimal, places: int) -> Decimal:
+    return value.quantize(Decimal(1).scaleb(-places), ROUND_HALF_UP)
+
+
+def _scaled(cell: Cell, figure: Figure) -> Decimal | None:
+    """The cell's value in the prose figure's unit, when the figure names the
+    next unit up from the table's (millions -> billion, thousands -> million);
+    None when it doesn't. The table's own scale isn't consulted: a figure one
+    unit up is read as the cell divided by 1,000."""
+    if cell.kind != "number" or cell.value is None or figure.unit not in ("billion", "million"):
+        return None
+    return abs(cell.value) / 1000
+
+
+def is_stated(cell: Cell, figures: list[Figure]) -> bool:
+    """The cell's figure is among `figures`.
+
+    A number cell matches a non-percent figure stated with its exact digits
+    ("115,186", "$115,186 million"), or one unit up -- "billion"/"bn"/"B"
+    for a millions table, "million" for a thousands table -- rounded to the
+    decimals the prose used, none to three ("$115 billion", "$115.2B",
+    "115.186 billion"). A bare "115.2" with no unit matches nothing scaled. A
+    percent cell matches only a figure written as a percent, rounded to the
+    prose's decimals. A number never matches a percent, nor a percent a number.
+    """
     if cell.value is None:
         return False
     value = abs(cell.value)
     for figure in figures:
-        if figure == value:
+        if (cell.kind == "percent") != (figure.unit == "percent"):
+            continue
+        if figure.value == value:
             return True
-        places = -figure.as_tuple().exponent
-        if cell.kind == "number" and 1 <= places <= 3:
-            scaled = (value / 1000).quantize(Decimal(1).scaleb(-places), ROUND_HALF_UP)
-            if figure == scaled:
-                return True
+        if cell.kind == "percent" and figure.value == _rounded(value, figure.places):
+            return True
+        scaled = _scaled(cell, figure)
+        if scaled is not None and figure.places <= 3 and figure.value == _rounded(
+            scaled, figure.places
+        ):
+            return True
+    return False
+
+
+def _near_miss(cell: Cell, figures: list[Figure]) -> bool:
+    """A unit-bearing figure within rounding distance (half a unit) of the
+    cell that still didn't match it -- "$115.0 billion" beside 115,186, or
+    "47%" beside 47.5% -- so the claim may well be about this cell."""
+    if cell.value is None:
+        return False
+    value = abs(cell.value)
+    for figure in figures:
+        percent = cell.kind == "percent" and figure.unit == "percent"
+        if percent and abs(figure.value - value) <= Decimal("0.5"):
+            return True
+        scaled = _scaled(cell, figure)
+        if scaled is not None and abs(figure.value - scaled) <= Decimal("0.5"):
+            return True
     return False
 
 
@@ -134,17 +186,35 @@ def narrow_cells(
     citation: VerifiedCitation, cells: list[Cell], prose: str
 ) -> VerifiedCitation:
     """Keep only the cited cells whose figure the claim around the citation's
-    marker states -- the preferred side of the marker, else the other side.
-    A citation with one cell or none, or whose cells the claim never states,
-    is returned unchanged -- a citation is never hidden."""
+    marker states, on either side of the marker (the union: a claim that
+    reads ambiguously keeps both candidates rather than guessing one).
+
+    Fails closed -- the citation is returned unchanged -- when it cites fewer
+    than two cells, when its marker is not in the prose, when no cited figure
+    is stated, or when a stated figure nearly matches a cited cell it did not
+    match. Each row (sid) is narrowed on its own; a row none of whose cells
+    is stated keeps all of them. Never touches `verified`, `sids` or `quote`.
+    """
     if len(citation.cells) < 2:
         return citation
+    sides = claim_sides(prose, citation.marker)
+    if sides is None:
+        return citation
+    figures = [f for side in sides for f in stated_figures(_MARKER.sub(" ", side))]
     by_key = {(cell.sid, cell.cell_index): cell for cell in cells}
-    for side in claim_sides(prose, citation.marker):
-        figures = stated_figures(_MARKER.sub(" ", side))
-        kept = tuple(
-            key for key in citation.cells if key in by_key and is_stated(by_key[key], figures)
-        )
-        if kept:
-            return dataclasses.replace(citation, cells=kept)
-    return citation
+    stated = {
+        key for key in citation.cells if key in by_key and is_stated(by_key[key], figures)
+    }
+    if not stated:
+        return citation
+    if any(
+        _near_miss(by_key[key], figures)
+        for key in citation.cells
+        if key in by_key and key not in stated
+    ):
+        return citation
+    rows_stated = {sid for sid, _ in stated}
+    kept = tuple(
+        key for key in citation.cells if key in stated or key[0] not in rows_stated
+    )
+    return dataclasses.replace(citation, cells=kept)

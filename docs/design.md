@@ -378,18 +378,33 @@ For each citation `{chunk_id, quote}`:
    span are skipped — the row still resolves, and the viewer falls back to
    whole-row highlighting. A prose quote, or one covering only a row label,
    resolves no cells. When a verified quote covers more than one figure, the
-   emitted cells are then **narrowed to the figures the answer states** in the
-   claim its marker cites. A marker that ends its claim ("…was $115.2 billion
-   [1].") cites the text back to the previous marker or sentence break; one that
-   starts a sentence ("comparison: [1] Revenue was $115.2 billion.") cites the
-   text after it, up to the next marker or sentence end; if the preferred side
-   states no cited figure, the other side is tried. A cell is kept if the prose states its exact digits (`115,186`) or,
-   for a plain number, its value divided by 1,000 (millions → billions)
-   rounded to the 1–3 decimals the prose used (`115.186`, `115.19`, `115.2` billion).
+   emitted cells are then **narrowed to the figures the answer states** around
+   its marker (`api/figures.py`):
+   - *Where:* the words on both sides of each occurrence of the marker — back
+     to the previous marker or sentence break, and on to the next marker or
+     sentence end — because "…was $115.2 billion [1]." and "comparison: [1]
+     Revenue was $115.2 billion." are both common, and "X. [1] Y. [2]" reads
+     either way. Both sides count (the union), so an ambiguous claim keeps both
+     candidates rather than guessing one. Words a sentence-opening marker
+     claimed are not re-read as the next marker's before side.
+   - *What matches:* a number cell matches its exact digits (`115,186`,
+     `$115,186 million`) or the value one unit up — `billion`/`bn`/`B` for a
+     millions table, `million` for a thousands table — rounded to the 0–3
+     decimals the prose used (`$115 billion`, `$115.2B`, `115.186 billion`).
+     A bare `115.2` with no unit matches nothing scaled. A percent cell matches
+     only a percent figure, and a number cell never does. Signs are ignored, so
+     `$(1,234) million` and "a loss of $1.2 billion" match −1,234.
+   - *Per row:* each sid is narrowed on its own; a row whose cells the claim
+     never states keeps all of them.
+   - *Fail closed* — cells left exactly as resolved — when the citation has
+     fewer than two cells, its marker is not in the prose, nothing matches, a
+     unit-bearing figure is within half a unit of a cited cell it did not match
+     (`$115.0 billion` beside 115,186), or the citation block came from the
+     retry (§6.2), whose markers belong to prose the client never saw.
+
    So a quote of NVIDIA's whole three-year Data Center row beside a fiscal-2025
-   answer marks only the FY2025 figure. If no figure matches, the cells are
-   left as resolved. This is display emphasis only (`api/figures.py`): it never
-   changes `verified` or the sids, and never hides a citation.
+   answer marks only the FY2025 figure. This is display emphasis only: it never
+   changes `verified`, the sids or the quote, and never hides a citation.
 5. **Emit** a `citation` SSE event with `verified: true`, the sids and the cited
    cells — or, on any failure, `verified: false` with no sids and no cells.
 
@@ -424,8 +439,10 @@ citation: {"marker": 1, "verified": true,
            "sids": [1042, 1043], "quote": "…",
            "cells": [{"sid": 1043, "cell": 4}]}   -- cited table figures,
                                                      narrowed to those the
-                                                     answer states (§6.3 step
-                                                     4); [] for prose
+                                                     answer states, failing
+                                                     closed to all of them
+                                                     (§6.3 step 4); [] for
+                                                     prose
 done:     {"chunks_retrieved": 8, "citations_total": 3,
            "citations_verified": 3, "unverified_answer": false}
 error:    {"message": "…"}

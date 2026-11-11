@@ -151,11 +151,14 @@ def answer_stream(
             cells = queries.load_chunk_cells(
                 conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
             )
+            result = verify_citation(citation, chunk, sentences, cells)
             # Emphasis only: a whole multi-year row verifies, but the viewer
             # should mark just the figures the answer states (design §6.3).
-            verified.append(
-                narrow_cells(verify_citation(citation, chunk, sentences, cells), cells, prose)
-            )
+            # Not after a retry: the retry's markers belong to prose the client
+            # never saw, so the shown prose can't say which figure they cite.
+            if attempt == 0:
+                result = narrow_cells(result, cells, prose)
+            verified.append(result)
 
         for citation in verified:
             yield AnswerEvent(

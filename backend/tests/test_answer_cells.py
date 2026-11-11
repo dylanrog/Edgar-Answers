@@ -112,3 +112,26 @@ def test_a_marker_placed_before_its_claim_marks_the_figure_after_it(seeded):
     data = _ask(conn, chunk_id, prose, WHOLE_ROW)
     assert data["verified"] is True
     assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_citations_from_the_retry_are_not_narrowed(seeded):
+    # Attempt 1's prose streams to the client but its citation block does not
+    # parse; the retry's citations belong to prose nobody saw, so the cells
+    # stay as verified.
+    conn, chunk_id, data_center = seeded
+    first = "Data Center revenue was $115.2 billion [1].\n\n```json\nnot json\n```"
+    retry = (
+        "Data Center revenue was $47.5 billion [1].\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{WHOLE_ROW}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(first, retry), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"],
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert data["verified"] is True
+    assert [c["cell"] for c in data["cells"]] == [2, 6, 10]

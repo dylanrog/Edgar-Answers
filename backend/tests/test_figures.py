@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from api.figures import claim_text, narrow_cells
+from api.figures import claim_sides, narrow_cells
 from api.verify import VerifiedCitation
 from pipeline.tables import Cell
 
@@ -86,15 +86,19 @@ def test_only_the_claim_around_the_marker_counts():
     assert narrowed(prose, marker=2) == ((SID, 6),)
 
 
-def test_claim_text_handles_adjacent_markers_and_trailing_period():
+def test_claim_sides_handles_adjacent_markers_and_trailing_period():
     prose = "Revenue was $1.0 billion. [1][2] Margin was 46% [3]."
-    assert claim_text(prose, 1) == "Revenue was $1.0 billion"
-    assert claim_text(prose, 2) == "Revenue was $1.0 billion"
-    assert claim_text(prose, 3).strip() == "Margin was 46%"
+    # [1][2] share a group; the words after it are closed by [3], so not theirs.
+    assert claim_sides(prose, 1) == ("Revenue was $1.0 billion", "")
+    assert claim_sides(prose, 2) == ("Revenue was $1.0 billion", "")
+    before, after = claim_sides(prose, 3)
+    assert (before.strip(), after) == ("Margin was 46%", "")
 
 
-def test_marker_absent_from_prose_falls_back_to_whole_prose():
-    assert narrowed("Data Center was $115.2 billion.") == ((SID, 2),)
+def test_marker_absent_from_prose_leaves_cells_unchanged():
+    # Fail closed: with no marker there is no claim to read, so nothing narrows.
+    assert claim_sides("Data Center was $115.2 billion.", 1) is None
+    assert narrowed("Data Center was $115.2 billion.") == ((SID, 2), (SID, 6), (SID, 10))
 
 
 # --- markers placed before the claim they cite ---
@@ -142,3 +146,91 @@ def test_figure_after_a_mid_sentence_marker_is_the_fallback():
     assert narrowed("Per the 10-K [1], Data Center revenue was $115.2 billion.") == (
         (SID, 2),
     )
+
+
+# --- both sides read: an ambiguous claim keeps both candidates ---
+
+
+def test_ambiguous_period_before_marker_keeps_both_candidates():
+    # "X. [1] Y. [2]" reads as "[1] closes X" or "[1] opens Y". Picking one
+    # side marked FY2024 for [1]; the union keeps FY2025 too.
+    prose = "FY2025 Data Center was $115.2B. [1] FY2024 was $47.5B. [2]"
+    assert narrowed(prose) == ((SID, 2), (SID, 6))
+
+
+# --- units ---
+
+
+def test_zero_decimal_billions_beside_an_exact_figure():
+    prose = "Revenue was about $115 billion, up from $47,525 million [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6))
+
+
+def test_a_percent_never_matches_a_number_cell():
+    # 47.5% is not $47,525 million.
+    prose = "Data Center revenue of roughly $115 billion carried a 47.5% share [1]."
+    assert narrowed(prose) == ((SID, 2),)
+
+
+def test_a_bare_decimal_without_a_unit_matches_nothing_scaled():
+    assert narrowed("Data Center grew to 115.2 [1].") == ((SID, 2), (SID, 6), (SID, 10))
+
+
+def test_bn_and_b_abbreviations():
+    assert narrowed("Data Center revenue was 115.2bn [1].") == ((SID, 2),)
+    assert narrowed("Data Center revenue was $47.5B [1].") == ((SID, 6),)
+
+
+def test_thousands_scaled_table_reads_million_as_one_unit_up():
+    # A thousands table's 115,186 is $115.2 million.
+    assert narrowed("Revenue was $115.2 million [1].") == ((SID, 2),)
+
+
+def test_near_miss_fails_closed():
+    # $115.0 billion is within rounding of 115,186 but not its rounding, while
+    # $47,525 million matches exactly: rather than mark only FY2024 beside a
+    # claim that is likely about FY2025 as well, keep every cited cell.
+    prose = "Revenue was $115.0 billion, up from $47,525 million [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6), (SID, 10))
+
+
+def _cells(*specs, sid=SID):
+    return [
+        Cell(
+            sid=sid, col=i, cell_index=i, char_start=None, char_end=None, table_id=1,
+            raw=str(v), value=Decimal(v), kind=kind, row_label="x", column_label=None,
+            scale_applies=True,
+        )
+        for i, v, kind in specs
+    ]
+
+
+def test_parenthesised_negative_figures():
+    cells = _cells((2, "-1234", "number"), (6, "567", "number"))
+    c = citation(cells=((SID, 2), (SID, 6)))
+    assert narrow_cells(c, cells, "Other income was $(1,234) million [1].").cells == ((SID, 2),)
+    assert narrow_cells(c, cells, "A loss of $1.2 billion [1].").cells == ((SID, 2),)
+
+
+def test_percent_cells_need_a_percent_figure():
+    cells = _cells((2, "75.0", "percent"), (6, "72.7", "percent"))
+    c = citation(cells=((SID, 2), (SID, 6)))
+    assert narrow_cells(c, cells, "Gross margin was 75% [1].").cells == ((SID, 2),)
+    assert narrow_cells(c, cells, "Gross margin was 72.7% [1].").cells == ((SID, 6),)
+    assert narrow_cells(c, cells, "Gross margin was 72.7 points [1].").cells == (
+        (SID, 2), (SID, 6),
+    )
+
+
+# --- quotes spanning rows ---
+
+
+def test_each_row_is_narrowed_on_its_own():
+    # Data Center states FY2025; the Compute row states nothing, so it keeps
+    # all its cells rather than losing them (which would drop to a whole-row
+    # highlight in the viewer).
+    compute = _cells((2, "102196", "number"), (6, "38950", "number"), sid=SID + 1)
+    cells = CELLS + compute
+    c = citation(cells=((SID, 2), (SID, 6), (SID, 10), (SID + 1, 2), (SID + 1, 6)))
+    kept = narrow_cells(c, cells, "Data Center revenue was $115.2 billion [1].").cells
+    assert kept == ((SID, 2), (SID + 1, 2), (SID + 1, 6))
