@@ -536,8 +536,9 @@ the production `/ask` path. A run passes only if both turns pass: answered,
 every citation verifies, no unverified notice, each pinned entry's accession and
 gold sids hit and its expected figures stated, `requires_cell` entries cite a
 cell bound to a gold sid, comparisons cite at least two tickers, and no
-verified citation strays: each one must land on a gold sid of one of the
-turn's pinned filings. Where an entry sets `gold_cells`, the column is checked
+verified citation strays: each one's sids must be a subset of the gold sids of
+one of the turn's pinned filings (a quote spanning a gold row and its
+neighbour fails, since the viewer would highlight the neighbour too). Where an entry sets `gold_cells`, the column is checked
 as well as the row: every cell a verified citation marks on a gold sid must be
 one of those cell indexes, and a `requires_cell` entry must cite one of them.
 A multi-year row (NVIDIA's Data Center line carries three fiscal years) would

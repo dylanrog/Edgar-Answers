@@ -71,6 +71,16 @@ def test_stray_verified_citation_to_non_gold_sid_fails():
     assert any("stray" in r for r in reasons)
 
 
+def test_citation_spanning_gold_and_a_neighbouring_row_fails():
+    reasons = judge(citations=[cite(sids=(10, 11))])
+    assert any("stray" in r for r in reasons)
+
+
+def test_citation_on_a_subset_of_gold_sids_passes():
+    gold = entry(sids=(10, 11))
+    assert judge([gold], citations=[cite(sids=(10,)), cite(sids=(10, 11))]) == []
+
+
 def test_duplicate_citation_of_the_same_gold_sentence_passes():
     assert judge(citations=[cite(), cite()]) == []
 

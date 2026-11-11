@@ -50,17 +50,18 @@ def judge_run(
     if any(not c["verified"] for c in citations):
         reasons.append("a citation failed verification")
     verified = [c for c in citations if c["verified"]]
-    # Every verified citation must land on gold: a correct figure from the
-    # right filing plus a stray one from another filing (or another sentence)
+    # Every verified citation must sit wholly on gold: a correct figure from
+    # the right filing plus a stray one from another filing, or a quote that
+    # spans a gold row and its neighbour (the viewer would highlight both),
     # still shows the visitor a source that is not the answer.
     for c in verified:
         if not any(
-            c["accession"] == e.accession and set(c["sids"]) & set(e.gold_sids)
+            c["accession"] == e.accession and set(c["sids"]) <= set(e.gold_sids)
             for e in entries
         ):
             reasons.append(
                 f"stray verified citation {c.get('ticker')} {c['accession']}"
-                f" sids={c['sids']} hits no gold entry"
+                f" sids={c['sids']} is not within one gold entry"
             )
     for e in entries:
         if not any(
