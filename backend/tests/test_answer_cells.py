@@ -98,9 +98,18 @@ def test_a_whole_row_quote_marks_only_the_figure_the_answer_states(seeded):
 
 
 @pytest.mark.db
-def test_a_whole_row_quote_with_no_stated_figure_keeps_every_cell(seeded):
+def test_a_whole_row_quote_beside_a_claim_with_no_figure_marks_no_cells(seeded):
     conn, chunk_id, data_center = seeded
     data = _ask(conn, chunk_id, "Data Center revenue grew [1].", WHOLE_ROW)
+    assert data["verified"] is True
+    assert data["sids"] == [data_center]
+    assert data["cells"] == []
+
+
+@pytest.mark.db
+def test_a_whole_row_quote_beside_an_unmatched_figure_keeps_every_cell(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask(conn, chunk_id, "Data Center revenue grew 142% [1].", WHOLE_ROW)
     assert data["verified"] is True
     assert [c["cell"] for c in data["cells"]] == [2, 6, 10]
 

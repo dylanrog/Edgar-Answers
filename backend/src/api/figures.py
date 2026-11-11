@@ -227,14 +227,19 @@ def narrow_cells(
     marker states, on either side of the marker (the union: a claim that
     reads ambiguously keeps both candidates rather than guessing one).
 
+    A claim that states no figure at all ("[3] The Data Center segment
+    includes both computing and networking products"; a bare year doesn't
+    count) marks no cells: every cited row gets the plain whole-row
+    highlight, since emphasizing its figures would point at numbers the
+    answer never gives.
+
     Fails closed -- the citation is returned unchanged -- when it cites fewer
-    than two cells, when its marker is not in the prose, when no cited figure
-    is stated, or when a stated figure nearly matches a cited cell it did not
-    match. Otherwise only the stated cells are kept: a cited row none of
-    whose figures the claim states loses its cell emphasis, and the viewer
-    falls back to highlighting that row whole -- accurate, since the quote
-    does cover it, where marking its figures would point at years the answer
-    never gives. Never touches `verified`, `sids` or `quote`.
+    than two cells, when its marker is not in the prose, when the claim states
+    figures but none is a cited one, or when a stated figure nearly matches a
+    cited cell it did not match. Otherwise only the stated cells are kept: a
+    cited row none of whose figures the claim states loses its cell emphasis,
+    and the viewer falls back to highlighting that row whole -- accurate,
+    since the quote does cover it. Never touches `verified`, `sids` or `quote`.
     """
     if len(citation.cells) < 2:
         return citation
@@ -242,6 +247,8 @@ def narrow_cells(
     if sides is None:
         return citation
     figures = [f for side in sides for f in stated_figures(_MARKER.sub(" ", side))]
+    if not figures:
+        return dataclasses.replace(citation, cells=())
     by_key = {(cell.sid, cell.cell_index): cell for cell in cells}
     stated = {
         key for key in citation.cells if key in by_key and is_stated(by_key[key], figures)

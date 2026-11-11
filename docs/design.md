@@ -409,8 +409,14 @@ For each citation `{chunk_id, quote}`:
      A quote of the Data Center, Compute and Networking rows beside "Compute
      ($102,196 million) and Networking ($12,990 million)" marks those two
      figures and plain-highlights the Data Center row.
+   - *No figure stated:* a claim with no figure at all on either side of its
+     marker (a bare year doesn't count) marks no cells; every cited row gets
+     the plain highlight. "These are different metrics: [3] NVIDIA's Data
+     Center segment includes both computing and networking products" quoting
+     those three rows marks none of their figures.
    - *Fail closed* — cells left exactly as resolved — when the citation has
-     fewer than two cells, its marker is not in the prose, nothing matches, a
+     fewer than two cells, its marker is not in the prose, the claim states
+     figures but none is a cited one, a
      stated figure is within rounding distance — a whole unit for a figure
      with no decimals, otherwise half a unit — of a cited cell it did not
      match, compared with the cell's own value and, for a unit one up, its
@@ -592,7 +598,8 @@ passes (below). Within that filing any verified quote is fine, whatever its
 sids: it is a further true fact from the right filing (turn 1 sometimes adds
 the Data Center segment's Compute and Networking rows), and narrowing (§6.3)
 leaves a neighbour row's figures marked only when the answer states them
-(unless narrowing fails closed, §6.3, when every resolved cell stays marked).
+(unless narrowing fails closed, §6.3, when every resolved cell stays marked);
+a qualitative extra claim that states no figure marks no cells at all.
 The marks of such an extra citation are not column-checked: `gold_cells`
 covers only cells on gold sids. A citation to any other filing is stray. Where an entry sets `gold_cells`, the column is checked
 as well as the row: every cell a verified citation marks on a gold sid must be

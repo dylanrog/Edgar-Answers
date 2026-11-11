@@ -56,8 +56,16 @@ def test_two_stated_figures_keep_both():
     assert narrowed(prose) == ((SID, 2), (SID, 6))
 
 
-def test_no_stated_figure_leaves_cells_unchanged():
+def test_a_claim_with_no_figure_marks_no_cells():
+    # "fiscal 2025" is a year, not a figure: the claim states none, so no
+    # cell is emphasized and the row is highlighted whole.
     prose = "Data Center revenue grew sharply in fiscal 2025 [1]."
+    assert narrowed(prose) == ()
+
+
+def test_a_claim_with_an_unmatched_figure_leaves_cells_unchanged():
+    # A figure is stated but it is none of the cited ones: fail closed.
+    prose = "Data Center revenue grew 142% [1]."
     assert narrowed(prose) == ((SID, 2), (SID, 6), (SID, 10))
 
 
@@ -332,14 +340,45 @@ def test_a_bare_year_does_not_mark_a_coinciding_cell():
 
 
 def test_a_bare_year_alone_is_not_the_only_mark():
-    # No real figure matches, so the citation stays as resolved rather than
-    # marking (and scrolling to) the 2,025 cell.
+    # The claim states no figure (the year doesn't count), so nothing is
+    # marked -- in particular not (and not scrolled to) the 2,025 cell.
     c = citation(cells=YEAR_CITED)
     prose = "In fiscal 2025 Data Center revenue was over one hundred billion dollars [1]."
-    assert narrow_cells(c, YEAR_CELLS, prose).cells == YEAR_CITED
+    assert narrow_cells(c, YEAR_CELLS, prose).cells == ()
 
 
 def test_a_year_sized_figure_with_a_dollar_sign_or_comma_still_counts():
     c = citation(cells=YEAR_CITED)
     assert narrow_cells(c, YEAR_CELLS, "Other was $2025 [1].").cells == ((SID + 1, 6),)
     assert narrow_cells(c, YEAR_CELLS, "Other was 2,025 [1].").cells == ((SID + 1, 6),)
+
+
+# --- a qualitative claim (live 30-run vetting, turn 1) ---
+
+QUALITATIVE_ANSWER = (
+    "NVIDIA's Data Center revenue was $115.2 billion in fiscal 2025 [1], while"
+    " Microsoft Cloud revenue was $168.9 billion in fiscal 2025 [2]. However, it's"
+    " important to note that these are different metrics: [3] NVIDIA's Data Center"
+    " segment includes both computing and networking products, while [4] Microsoft"
+    " Cloud spans several businesses."
+)
+
+
+def test_a_qualitative_claim_marks_no_cells():
+    c = dataclasses.replace(
+        citation(cells=SEGMENT_CITED, marker=3), sids=[DC, COMPUTE, NETWORKING]
+    )
+    kept = narrow_cells(c, SEGMENT_CELLS, QUALITATIVE_ANSWER)
+    assert kept.cells == ()
+    assert kept.sids == [DC, COMPUTE, NETWORKING]
+    assert (kept.verified, kept.quote) == (c.verified, c.quote)
+
+
+def test_the_figure_claims_beside_it_are_unaffected():
+    assert narrow_cells(citation(), CELLS, QUALITATIVE_ANSWER).cells == ((DC, 2),)
+    c = dataclasses.replace(
+        citation(cells=SEGMENT_CITED, marker=3), sids=[DC, COMPUTE, NETWORKING]
+    )
+    assert narrow_cells(c, SEGMENT_CELLS, TUTORIAL_ANSWER).cells == (
+        (COMPUTE, 1), (NETWORKING, 1),
+    )
