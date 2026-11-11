@@ -37,7 +37,10 @@
 #   reported, $87,464M restated). Hence turn 1 asks about Microsoft Cloud.
 #
 # Vetting result (final, 2026-11-11 at 2c37f52, full local corpus, FRESH planner stats after
-#   ANALYZE): `python -m evals examples --runs 30 --verbose` -> 30/30. Both turns narrowed by
+#   ANALYZE): `python -m evals examples --runs 30 --verbose` -> 30/30, then --runs 50 -> 49/50
+#   (79/80 total; turn 2 80/80; every core figure from its pinned row and cell 80/80; the one
+#   failure was an optional extra claim about Compute/Networking that the model misquoted,
+#   shown to the visitor as "unverified" by design). Both turns narrowed by
 #   per-company period detection (turn 1: NVDA + MSFT FY2025 10-Ks; turn 2: the FY2024 10-Ks);
 #   own pins every run, no alternative needed. History: 55/55 earlier under STALE stats (a
 #   container crash had reset them, so the planner chose different plans); under fresh stats
