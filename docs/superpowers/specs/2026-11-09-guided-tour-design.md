@@ -295,9 +295,13 @@ Dylan revised the tour after a hand check, so this section overrides §2.3,
    same conversation**, so conversation memory is part of what is shown off.
    It is the one deliberate exception to "examples start a fresh
    conversation" (§5.4).
-6. **Watch the follow-up:** the panel ticks as before. When it settles, the
-   coach points at the existing "Searched for: …" line to show how the
-   follow-up was read in context.
+6. **Watch the follow-up:** the panel ticks as before. While the follow-up
+   streams, as soon as its resolved standalone question arrives, the coach
+   points at the existing "Searched for: …" line to show how the follow-up
+   was read in context. When the answer settles, the tutorial moves on to
+   the closing.
+   *(Amended 2026-11-10: the pointer originally appeared on settle; it now
+   appears mid-stream, on `resolved`, and settling goes to the closing.)*
 7. **Closing:** the "works on any document collection" note, the GitHub
    link and **Done**. There are no example buttons.
 
