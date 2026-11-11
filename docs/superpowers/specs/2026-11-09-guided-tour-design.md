@@ -349,3 +349,20 @@ check prints which pin satisfied each entry and each turn's targets, and
 counts alternative passes per entry, so the restatement path stays visible
 rather than silently passing.)* The vetting bar rises from 5 to **10 runs** for the
 tutorial, since this one conversation is the demo.
+
+*(Amended 2026-11-11: root cause of the restated-figure follow-ups.* Period
+targeting never fired on either turn. `resolve_targets` asked the period
+detector the original two-company question while showing it one company's
+filings, and the detector abstained ("I was only provided with Microsoft's
+filings…"). 20 of 20 vetting runs printed "filings: not narrowed". With no
+period pin, each company's retrieval spanned every 10-K, so the FY2025 and
+FY2026 10-Ks' restated $137.7B competed with the FY2024 10-K's $137.4B. In 2 of
+20 follow-ups the answer stated the restated $137.7B while citing the FY2024
+10-K sentence that says $137.4B, a mismatched figure a visitor sees. The fix
+asks the period detector each company's single-company rewrite instead (design
+§14). In a live probe both turns now pin the gold filings: turn 1 the two
+FY2025 10-Ks, turn 2 NVDA `0001045810-24-000029` and MSFT
+`0000950170-24-087843`. With narrowing on, the restated alternatives should
+stop appearing, because the later 10-Ks are no longer retrieved for turn 2. The
+earlier vetting was all run without narrowing, so the tutorial needs
+re-vetting.)*

@@ -301,7 +301,11 @@ cost/latency tradeoff for correctness on multi-company questions. The rewrite
 calls fire only when more than one target is resolved, so a single-company
 question — the common case — is unaffected; note that an explicit two-ticker
 filter also counts as "more than one target" and triggers the rewrite calls
-even when the question names no company.
+even when the question names no company. For each target the rewrite runs
+before period detection, and the period detector is asked that target's
+single-company rewrite rather than the comparison. Shown one company's
+filings and asked about two companies, the detector abstains (§14,
+"The period detector sees the rewritten question").
 
 A follow-up question in an ongoing conversation adds one more sequential
 Haiku call before target resolution — the standalone-question rewrite. It
@@ -732,6 +736,23 @@ zero-regression paths are covered by tests and the eval; it is retained.
 cannot by construction credit the second target in a comparison group, since
 `retrieve_for_targets` concatenates each target's full top-k without
 re-fusing, so the first 10 slots are always the first target's.)
+
+**The period detector sees the rewritten question** (fixed 2026-11-11). Until
+then `resolve_targets` asked the period detector about the *original*
+comparison question while showing it only one company's filings, and the
+detector abstained every time ("I was only provided with Microsoft's filings.
+The question references NVIDIA…"). So a comparison question never got a period
+pin, however explicit its years: 20 of 20 tutorial vetting runs printed
+"filings: not narrowed", and each company's retrieval spanned all its 10-Ks,
+including later ones that restate the year asked about. `resolve_targets` now
+computes each target's rewrite first and passes it to the period detector
+(the rewriter keeps periods: "Microsoft Cloud revenue fiscal 2024"), falling
+back to the original question when the rewrite fails. Single-company
+questions are unchanged, since no rewrite fires and the detector still gets the
+original question. Live probe: the tutorial's FY2024 comparison now pins NVDA
+`0001045810-24-000029` and MSFT `0000950170-24-087843`, and the FY2025 one pins
+the two FY2025 10-Ks. Part of the "abstains on most recent fiscal year" cause
+above may have been this bug for comparison questions, which is untested.
 
 **Stock price chart.** Raised (2026-08-28) as filling the blank space under an
 answer with a customizable price chart, with the cited period highlighted on
