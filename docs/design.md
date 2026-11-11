@@ -379,8 +379,11 @@ For each citation `{chunk_id, quote}`:
    whole-row highlighting. A prose quote, or one covering only a row label,
    resolves no cells. When a verified quote covers more than one figure, the
    emitted cells are then **narrowed to the figures the answer states** in the
-   claim its marker closes (the text back to the previous marker or sentence
-   break): a cell is kept if the prose states its exact digits (`115,186`) or,
+   claim its marker cites. A marker that ends its claim ("…was $115.2 billion
+   [1].") cites the text back to the previous marker or sentence break; one that
+   starts a sentence ("comparison: [1] Revenue was $115.2 billion.") cites the
+   text after it, up to the next marker or sentence end; if the preferred side
+   states no cited figure, the other side is tried. A cell is kept if the prose states its exact digits (`115,186`) or,
    for a plain number, its value divided by 1,000 (millions → billions)
    rounded to the 1–3 decimals the prose used (`115.186`, `115.19`, `115.2` billion).
    So a quote of NVIDIA's whole three-year Data Center row beside a fiscal-2025

@@ -103,3 +103,12 @@ def test_a_whole_row_quote_with_no_stated_figure_keeps_every_cell(seeded):
     data = _ask(conn, chunk_id, "Data Center revenue grew [1].", WHOLE_ROW)
     assert data["verified"] is True
     assert [c["cell"] for c in data["cells"]] == [2, 6, 10]
+
+
+@pytest.mark.db
+def test_a_marker_placed_before_its_claim_marks_the_figure_after_it(seeded):
+    conn, chunk_id, data_center = seeded
+    prose = "Here is the comparison: [1] Data Center revenue was $115,186 million."
+    data = _ask(conn, chunk_id, prose, WHOLE_ROW)
+    assert data["verified"] is True
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
