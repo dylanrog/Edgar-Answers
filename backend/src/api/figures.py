@@ -216,8 +216,11 @@ def narrow_cells(
     Fails closed -- the citation is returned unchanged -- when it cites fewer
     than two cells, when its marker is not in the prose, when no cited figure
     is stated, or when a stated figure nearly matches a cited cell it did not
-    match. Each row (sid) is narrowed on its own; a row none of whose cells
-    is stated keeps all of them. Never touches `verified`, `sids` or `quote`.
+    match. Otherwise only the stated cells are kept: a cited row none of
+    whose figures the claim states loses its cell emphasis, and the viewer
+    falls back to highlighting that row whole -- accurate, since the quote
+    does cover it, where marking its figures would point at years the answer
+    never gives. Never touches `verified`, `sids` or `quote`.
     """
     if len(citation.cells) < 2:
         return citation
@@ -237,8 +240,5 @@ def narrow_cells(
         if key in by_key and key not in stated
     ):
         return citation
-    rows_stated = {sid for sid, _ in stated}
-    kept = tuple(
-        key for key in citation.cells if key in stated or key[0] not in rows_stated
-    )
+    kept = tuple(key for key in citation.cells if key in stated)
     return dataclasses.replace(citation, cells=kept)

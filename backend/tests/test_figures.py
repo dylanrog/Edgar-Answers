@@ -1,3 +1,4 @@
+import dataclasses
 from decimal import Decimal
 
 from api.figures import claim_sides, narrow_cells
@@ -225,15 +226,42 @@ def test_percent_cells_need_a_percent_figure():
 # --- quotes spanning rows ---
 
 
-def test_each_row_is_narrowed_on_its_own():
-    # Data Center states FY2025; the Compute row states nothing, so it keeps
-    # all its cells rather than losing them (which would drop to a whole-row
-    # highlight in the viewer).
+def test_a_row_with_no_stated_figure_loses_its_cells():
+    # Data Center states FY2025; the Compute row states nothing, so it drops
+    # its cell emphasis and the viewer highlights it as a plain row -- marking
+    # its figures would point at numbers the answer never gives.
     compute = _cells((2, "102196", "number"), (6, "38950", "number"), sid=SID + 1)
     cells = CELLS + compute
     c = citation(cells=((SID, 2), (SID, 6), (SID, 10), (SID + 1, 2), (SID + 1, 6)))
-    kept = narrow_cells(c, cells, "Data Center revenue was $115.2 billion [1].").cells
-    assert kept == ((SID, 2), (SID + 1, 2), (SID + 1, 6))
+    narrowed_c = narrow_cells(c, cells, "Data Center revenue was $115.2 billion [1].")
+    assert narrowed_c.cells == ((SID, 2),)
+    assert narrowed_c.sids == c.sids  # both rows stay cited
+
+
+# The live tutorial case: turn 1 adds a true third claim quoting the Data
+# Center, Compute and Networking rows (sids 2768-2770).
+DC, COMPUTE, NETWORKING = 2768, 2769, 2770
+SEGMENT_CELLS = CELLS + _cells((1, "102196", "number"), sid=COMPUTE) + _cells(
+    (1, "12990", "number"), sid=NETWORKING
+)
+SEGMENT_CITED = ((DC, 2), (DC, 6), (DC, 10), (COMPUTE, 1), (NETWORKING, 1))
+TUTORIAL_ANSWER = (
+    "NVIDIA's Data Center revenue was $115.2 billion in fiscal 2025 [1], while"
+    " Microsoft Cloud revenue was $168.9 billion in fiscal 2025 [2]. [3] NVIDIA's"
+    " Data Center segment includes both Compute ($102,196 million) and Networking"
+    " ($12,990 million)."
+)
+
+
+def test_segment_breakdown_marks_only_compute_and_networking():
+    c = dataclasses.replace(citation(cells=SEGMENT_CITED, marker=3), sids=[DC, COMPUTE, NETWORKING])
+    kept = narrow_cells(c, SEGMENT_CELLS, TUTORIAL_ANSWER)
+    assert kept.cells == ((COMPUTE, 1), (NETWORKING, 1))
+    assert kept.sids == [DC, COMPUTE, NETWORKING]
+
+
+def test_tutorial_first_claim_still_marks_fiscal_2025_only():
+    assert narrow_cells(citation(), CELLS, TUTORIAL_ANSWER).cells == ((DC, 2),)
 
 
 # --- rounded or truncated figures near a cell fail closed ---

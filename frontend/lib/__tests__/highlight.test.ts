@@ -87,6 +87,22 @@ test("a cited row without a resolvable figure still highlights the whole row", (
   expect(table.querySelector('tr[data-sid="21"]')?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
 });
 
+test("a two-row citation with cells only on row B: row A whole, row B only its cell", () => {
+  // The server drops cell emphasis on a cited row whose figures the answer
+  // never states (design §6.3 step 4); that row must still read as cited.
+  const table = tableContainer();
+  applyHighlight(table, [20, 21], [{ sid: 21, cell: 1 }]);
+  const rowA = table.querySelector('tr[data-sid="20"]');
+  const rowB = table.querySelector('tr[data-sid="21"]');
+  expect(rowA?.classList.contains(HIGHLIGHT_CLASS)).toBe(true);
+  expect(rowA?.querySelectorAll(`.${FIGURE_CLASS}`)).toHaveLength(0);
+  expect(rowB?.classList.contains(HIGHLIGHT_CLASS)).toBe(false);
+  const marked = Array.from(rowB?.querySelectorAll("td") ?? []).map((td) =>
+    td.classList.contains(FIGURE_CLASS),
+  );
+  expect(marked).toEqual([false, true, false]);
+});
+
 test("a figure index that does not exist falls back to the row highlight", () => {
   const table = tableContainer();
   applyHighlight(table, [21], [{ sid: 21, cell: 9 }]);

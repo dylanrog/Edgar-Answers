@@ -400,8 +400,13 @@ For each citation `{chunk_id, quote}`:
      A bare `115.2` with no unit matches nothing scaled. A percent cell matches
      only a percent figure, and a number cell never does. Signs are ignored, so
      `$(1,234) million` and "a loss of $1.2 billion" match −1,234.
-   - *Per row:* each sid is narrowed on its own; a row whose cells the claim
-     never states keeps all of them.
+   - *Other rows:* once any cited figure is stated, only stated cells are
+     kept. A cited row none of whose figures the claim states loses its cell
+     emphasis and is highlighted as a plain row (its sid stays cited — the
+     quote does cover it), rather than marking years the answer never gives.
+     A quote of the Data Center, Compute and Networking rows beside "Compute
+     ($102,196 million) and Networking ($12,990 million)" marks those two
+     figures and plain-highlights the Data Center row.
    - *Fail closed* — cells left exactly as resolved — when the citation has
      fewer than two cells, its marker is not in the prose, nothing matches, a
      stated figure is within rounding distance — a whole unit for a figure
