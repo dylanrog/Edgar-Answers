@@ -8,7 +8,7 @@ quote from the wrong quarter is exactly the failure this exists to catch.
 from __future__ import annotations
 
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from api.answer import answer_stream
@@ -50,26 +50,33 @@ def judge_run(
     if any(not c["verified"] for c in citations):
         reasons.append("a citation failed verification")
     verified = [c for c in citations if c["verified"]]
+    judged = {e.id: _judge_pins(e, verified, answer) for e in entries}
     # Every verified citation must sit wholly on gold: a correct figure from
     # the right filing plus a stray one from another filing, or a quote that
     # spans a gold row and its neighbour (the viewer would highlight both),
-    # still shows the visitor a source that is not the answer. An entry's
-    # alternatives are gold too.
+    # still shows the visitor a source that is not the answer. An entry's own
+    # pin is always gold; an alternative is gold only when it passes itself --
+    # citing a restated $137.7B beside an answer that states $137.4B shows
+    # the visitor a figure the answer doesn't give.
+    gold = [
+        pin
+        for e in entries
+        for n, (pin, pin_reasons) in enumerate(judged[e.id])
+        if n == 0 or not pin_reasons
+    ]
     for c in verified:
         if not any(
             c["accession"] == pin.accession and set(c["sids"]) <= set(pin.gold_sids)
-            for e in entries
-            for pin in e.pins()
+            for pin in gold
         ):
             reasons.append(
                 f"stray verified citation {c.get('ticker')} {c['accession']}"
                 f" sids={c['sids']} is not within one gold entry"
             )
     for e in entries:
-        pins = e.pins()
         # The column check applies to every pin a citation lands on, satisfied
         # or not: a wrong year marked on a gold row is shown to the visitor.
-        for pin in pins:
+        for pin in e.pins():
             outside = sorted(set(_on_gold(verified, pin)) - set(pin.gold_cells))
             if pin.gold_cells and outside:
                 reasons.append(
@@ -79,18 +86,50 @@ def judge_run(
         # The entry is satisfied by its own pin OR any alternative. If none is,
         # report the first pin that was cited at all (else the entry's own), so
         # the reasons describe the filing the answer actually used.
-        wrong = sorted(
-            {c["accession"] for c in verified if c["ticker"] == e.ticker}
-            - {pin.accession for pin in pins}
-        )
-        hint = f" (cited {', '.join(wrong)} instead)" if wrong else ""
-        judged = [(pin, _pin_reasons(e.ticker, pin, verified, answer, hint)) for pin in pins]
-        if all(pin_reasons for _, pin_reasons in judged):
-            cited = [r for pin, r in judged if _hits(verified, pin)]
-            reasons += cited[0] if cited else judged[0][1]
+        pins = judged[e.id]
+        if all(pin_reasons for _, pin_reasons in pins):
+            cited = [r for pin, r in pins if _hits(verified, pin)]
+            reasons += cited[0] if cited else pins[0][1]
     if len({e.ticker for e in entries}) >= 2 and len({c["ticker"] for c in verified}) < 2:
         reasons.append("comparison cited fewer than 2 tickers")
     return reasons
+
+
+def _judge_pins(
+    e: GoldenQuestion, verified: list[dict], answer: str
+) -> list[tuple[Alternative, list[str]]]:
+    """Each pin of the entry (its own first) with the reasons it fails."""
+    pins = e.pins()
+    wrong = sorted(
+        {c["accession"] for c in verified if c["ticker"] == e.ticker}
+        - {pin.accession for pin in pins}
+    )
+    hint = f" (cited {', '.join(wrong)} instead)" if wrong else ""
+    return [(pin, _pin_reasons(e.ticker, pin, verified, answer, hint)) for pin in pins]
+
+
+def pins_used(entries: list[GoldenQuestion], answer: str, citations: list[dict]) -> dict:
+    """Which pin satisfied each entry: "own", "alt N" (1-based), or "none"."""
+    verified = [c for c in citations if c["verified"]]
+    used = {}
+    for e in entries:
+        passing = [n for n, (_, r) in enumerate(_judge_pins(e, verified, answer)) if not r]
+        if not passing:
+            used[e.id] = "none"
+        else:
+            used[e.id] = "own" if passing[0] == 0 else f"alt {passing[0]}"
+    return used
+
+
+def _describe_targets(targets: dict) -> str:
+    """The progress `targets` event: which companies, and which filings the
+    period narrowed to (none means every filing of those companies)."""
+    tickers = ", ".join(targets.get("tickers") or []) or "none"
+    filings = [
+        f"{f.get('ticker')} {f.get('form_type')} {f.get('filing_date')} {f.get('accession')}"
+        for f in targets.get("filings") or []
+    ]
+    return f"{tickers}; filings: {', '.join(filings) if filings else 'not narrowed'}"
 
 
 def _hits(verified: list[dict], pin: Alternative) -> bool:
@@ -154,6 +193,8 @@ def run_examples(
     for chain in chains():
         label = " -> ".join(chain)
         passed = 0
+        # entry id -> which pin satisfied it, per run (entries with alternatives)
+        pin_use: dict[str, Counter] = defaultdict(Counter)
         for n in range(1, runs + 1):
             conversation_id = str(uuid.uuid4())
             failures: list[str] = []
@@ -163,6 +204,7 @@ def run_examples(
                 parts: list[str] = []
                 citations: list[dict] = []
                 resolved = ""
+                targets: dict | None = None
                 unverified = errored = False
                 # Exactly the arguments /ask passes with empty filters.
                 for event in answer_stream(
@@ -175,6 +217,8 @@ def run_examples(
                         parts.append(event.data["text"])
                     elif event.name == "resolved":
                         resolved = event.data["standalone_question"]
+                    elif event.name == "progress" and event.data.get("stage") == "targets":
+                        targets = event.data
                     elif event.name == "citation":
                         citations.append(event.data)
                     elif event.name == "done":
@@ -189,18 +233,28 @@ def run_examples(
                     for r in judge_run(entries, answer, citations, unverified, errored)
                 ]
                 failures += turn_failures
+                used = pins_used(entries, answer, citations)
+                for e in entries:
+                    if e.alternatives:
+                        pin_use[e.id][used[e.id]] += 1
                 detail.append(
-                    (group, resolved, answer, citations, bool(turn_failures))
+                    (group, resolved, targets, answer, citations, used, bool(turn_failures))
                 )
             print(f"{'PASS' if not failures else 'FAIL'} {label} run {n}"
                   + (f": {'; '.join(failures)}" if failures else ""))
-            for group, resolved, answer, citations, turn_failed in detail:
+            for group, resolved, targets, answer, citations, used, turn_failed in detail:
                 # How a follow-up was read in context; the first turn has none.
                 if resolved:
                     print(f"  [{group}] resolved: {resolved}")
+                # Whether the period narrowed the search: a later filing's
+                # restated figure is fine, but not if targeting missed the year.
+                if targets is not None:
+                    print(f"  [{group}] targets: {_describe_targets(targets)}")
                 for c in citations:
                     print(f"  [{group}] cited {c.get('ticker')} {c.get('accession')}"
                           f" sids={c.get('sids')} cells={c.get('cells')}")
+                print(f"  [{group}] pins: "
+                      + ", ".join(f"{entry_id}={pin}" for entry_id, pin in used.items()))
                 if turn_failed or verbose:
                     text = " ".join(answer.split())
                     if len(text) > 600:
@@ -208,6 +262,11 @@ def run_examples(
                     print(f"  [{group}] answer: {text}")
             passed += not failures
         print(f"{label}: {passed}/{runs}")
+        for entry_id, counts in pin_use.items():
+            alts = sum(v for k, v in counts.items() if k.startswith("alt"))
+            breakdown = ", ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
+            print(f"  {entry_id}: satisfied by an alternative in {alts}/{runs} runs"
+                  f" ({breakdown})")
         all_ok &= passed == runs
     print("ALL PASSED" if all_ok else "FAILURES")
     return all_ok

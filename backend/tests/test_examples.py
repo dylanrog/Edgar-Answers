@@ -413,12 +413,78 @@ def test_neither_primary_nor_alternative_hit_fails():
     assert any("no verified citation hits 0000950170-24-087843" in r for r in reasons)
 
 
-def test_a_citation_in_an_alternative_is_not_stray():
-    # Both the original and the restated filing cited: the original satisfies
-    # the entry, and the restated citation sits on an alternative's gold.
+def test_a_citation_on_a_failing_alternative_is_stray():
+    # The answer states $137.4B through its own pin but also cites the
+    # restated filing, whose row shows $137.7B -- a figure the answer doesn't
+    # give. The alternative itself fails, so its citation is not gold.
     answer = "Microsoft Cloud revenue was $137.4 billion in fiscal 2024."
     both = [msft_cite("0000950170-24-087843", (3161,)), msft_cite()]
+    reasons = judge([msft([()])], answer=answer, citations=both)
+    assert any("stray" in r and RESTATED in r for r in reasons)
+
+
+def test_a_citation_on_a_passing_alternative_is_not_stray():
+    answer = "Originally $137.4 billion, restated to $137.7 billion, in fiscal 2024."
+    both = [msft_cite("0000950170-24-087843", (3161,)), msft_cite()]
     assert judge([msft([()])], answer=answer, citations=both) == []
+
+
+def _alt_yaml(monkeypatch, tmp_path):
+    text = """
+- id: t1-m
+  group: t1
+  question: What about 24?
+  ticker: MSFT
+  accession: "0000950170-24-087843"
+  section: item7
+  gold_sids: [3161]
+  expected_values: [["137.4"]]
+  alternatives:
+    - accession: "0001193125-26-323660"
+      gold_sids: [2907]
+      expected_values: [["137.7"]]
+"""
+    monkeypatch.setattr(ex, "EXAMPLES_PATH", _write(tmp_path, text))
+
+
+def _alt_stream(monkeypatch, narrowed):
+    def fake(conn, embedder, generator, detector, question, **kw):
+        filings = (
+            [{"accession": "0000950170-24-087843", "ticker": "MSFT", "form_type": "10-K",
+              "filing_date": "2024-07-30"}]
+            if narrowed else []
+        )
+        yield _Ev("progress", {"stage": "targets", "tickers": ["MSFT"], "filings": filings})
+        yield _Ev("token", {"text": "Microsoft Cloud revenue was $137.7 billion."})
+        yield _Ev("citation", msft_cite())
+        yield _Ev("done", {"unverified_answer": False})
+
+    monkeypatch.setattr(ex, "answer_stream", fake)
+
+
+def test_run_reports_which_pin_satisfied_and_the_targets(monkeypatch, tmp_path, capsys):
+    _alt_yaml(monkeypatch, tmp_path)
+    _alt_stream(monkeypatch, narrowed=True)
+    assert ex.run_examples(_Conn(), None, None, None, None, None, None, runs=2) is True
+    out = capsys.readouterr().out
+    assert "  [t1] pins: t1-m=alt 1" in out
+    assert "  [t1] targets: MSFT; filings: MSFT 10-K 2024-07-30 0000950170-24-087843" in out
+    assert "t1-m: satisfied by an alternative in 2/2 runs (alt 1: 2)" in out
+
+
+def test_run_reports_targets_that_were_not_narrowed(monkeypatch, tmp_path, capsys):
+    _alt_yaml(monkeypatch, tmp_path)
+    _alt_stream(monkeypatch, narrowed=False)
+    ex.run_examples(_Conn(), None, None, None, None, None, None, runs=1)
+    assert "  [t1] targets: MSFT; filings: not narrowed" in capsys.readouterr().out
+
+
+def test_pins_used_labels_own_alternative_and_none():
+    e = msft([()])
+    own = msft_cite("0000950170-24-087843", (3161,))
+    assert ex.pins_used([e], "It was $137.4 billion.", [own]) == {"e-MSFT": "own"}
+    assert ex.pins_used([e], "It was $137.7 billion.", [msft_cite()]) == {"e-MSFT": "alt 1"}
+    assert ex.pins_used([e], "It was $137.4 billion.", [msft_cite()]) == {"e-MSFT": "none"}
 
 
 def test_the_hit_alternatives_values_are_the_ones_checked():

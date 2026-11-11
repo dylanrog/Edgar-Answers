@@ -580,13 +580,21 @@ otherwise let a quote spanning two columns verify, pass, and highlight the
 wrong year's figure. An entry may also list `alternatives` — other pins
 (`accession`, `gold_sids`, `expected_values`, optional `gold_cells` and
 `requires_cell`) that satisfy it in place of its own pin under the same rules,
-with the hit pin's own figures being the ones checked; a citation within an
-alternative's gold sids is not stray. This is for restatements: a later filing
-reporting the same period's figure as restated (Microsoft's FY2025 and FY2026
-10-Ks give fiscal 2024 Microsoft Cloud revenue as $137.7B, against $137.4B as
-originally reported) is a correct answer for the period asked, not period
-confusion — provided the answer states the restated figure. Each run's citations and each follow-up's resolved standalone question
-are printed (the answer too on FAIL, or always with `--verbose`).
+with the hit pin's own figures being the ones checked. A citation within an
+alternative's gold sids is not stray only when that alternative passes on its
+own: an answer that states $137.4B but also cites a row showing $137.7B shows
+the visitor a figure it doesn't give, and fails. This is for restatements: a
+later filing reporting the same period's figure as restated (Microsoft's
+FY2025 and FY2026 10-Ks give fiscal 2024 Microsoft Cloud revenue as $137.7B,
+against $137.4B as originally reported) is a correct answer for the period
+asked, not period confusion — provided the answer states the restated figure.
+Each run prints its citations, each follow-up's resolved standalone question,
+each turn's targets (the companies, and the filings the period narrowed to, or
+"not narrowed") so a later filing's citation can be checked against whether
+targeting found the year, and which pin satisfied each entry (`own`, `alt N`
+or `none`). The answer is printed too on FAIL, or always with `--verbose`. The
+chain summary counts, per entry with alternatives, how many runs an
+alternative satisfied it.
 `python -m evals verify --examples` checks that the pins, alternatives
 included, exist in the DB.
 
