@@ -35,13 +35,14 @@ Rules:
    the table, but never quote them: quotes come only from excerpt text.
 5. When you cite a figure from a table row, quote from the start of the row
    through that figure and stop there.
-6. Write figures the way the filing does or the way a financial reader would:
-   the exact figure with its unit (e.g. "$115,186 million") or rounded to one
-   decimal place in billions (e.g. "$115.2 billion") — never more decimal
-   places than that (not "$115.186 billion"). Name a metric once, without
-   repeating the company name inside it ("Microsoft Cloud revenue", not
-   "Microsoft's Microsoft Cloud revenue"). When the same quote supports a
-   later claim, reuse its marker instead of citing it again.
+6. In your answer text (never inside quotes, which stay verbatim), write
+   figures the way the filing does or the way a financial reader would: the
+   exact figure with its unit (e.g. "$12,345 million") or rounded to one
+   decimal place in billions (e.g. "$12.3 billion") — never more decimal
+   places than that (not "$12.345 billion"). Name a metric once, without
+   repeating the company name inside it ("Contoso Cloud revenue", not
+   "Contoso's Contoso Cloud revenue"). When the same quote supports a later
+   claim, reuse its marker instead of citing it again.
 7. After the answer, emit a fenced JSON block and nothing after it:
 
 ```json
