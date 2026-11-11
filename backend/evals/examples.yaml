@@ -9,14 +9,21 @@
 # An entry may list `alternatives`: other pins (accession, gold_sids,
 # expected_values, optional gold_cells/requires_cell) that satisfy it instead of
 # its own pin, judged by the same rules; a verified citation is not stray only
-# when it comes from the filing of a pin (own or alternative) that passes. tutorial-2-msft
-# uses this for a restatement: Microsoft's FY2025 and FY2026 10-Ks report fiscal
-# 2024 Microsoft Cloud revenue as $137.7B (restated) against $137.4B as
-# originally reported in the FY2024 10-K. Citing a
-# later filing's restated figure for the same fiscal year is a correct answer for
+# when it comes from the filing of a pin (own or alternative) that passes.
+# tutorial-2-msft uses this for a restatement: Microsoft's FY2025 and FY2026
+# 10-Ks report fiscal 2024 Microsoft Cloud revenue as $137.7B (restated) against
+# $137.4B as originally reported in the FY2024 10-K. Citing a later filing's
+# restated figure for the same fiscal year is a correct answer for
 # the period asked, not period confusion -- but only with the restated figure
 # ($137.7B) stated, so a later filing's FY2025 or FY2026 figure still fails.
 # (Seen 1 in 20 live runs: the follow-up cited the FY2026 10-K, sid 2907.)
+# `wrong_values` lists the asked metric's figures for OTHER periods. Because any
+# verified quote from a passing pin's filing is accepted, the judge relies on
+# those figures appearing only on gold rows, where gold_cells catches a wrong
+# year. `python -m evals verify --examples` checks that assumption: no sentence
+# outside a pin's gold sids, in that pin's filing (alternatives' filings too),
+# states any of the entry's wrong_values as a whole figure. tutorial-2-msft omits
+# 137.7: an alternative accepts it.
 # Vetted with `python -m evals examples` (10 runs); check pins with
 # `python -m evals verify --examples`. Must match frontend/lib/tutorial.json;
 # tests/test_examples.py enforces that.
@@ -43,6 +50,7 @@
   requires_cell: true
   gold_cells: [2]
   expected_values: [["115,186", "115.2 billion", "115.186 billion", "115.2"]]
+  wrong_values: ["47,525", "47.5 billion", "15,005", "15.0 billion"]
 - id: tutorial-1-msft
   group: tutorial-1
   question: Compare NVIDIA's Data Center revenue in fiscal 2025 with Microsoft's Cloud revenue in fiscal 2025.
@@ -51,6 +59,7 @@
   section: item7
   gold_sids: [1138, 2869]
   expected_values: [["168.9 billion", "168.9"]]
+  wrong_values: ["137.7", "111.6"]
 - id: tutorial-2-nvda
   group: tutorial-2
   after: tutorial-1
@@ -62,6 +71,7 @@
   requires_cell: true
   gold_cells: [2]
   expected_values: [["47,525", "47.5 billion", "47.525 billion", "47.5"]]
+  wrong_values: ["15,005", "15.0 billion", "10,613", "10.6 billion"]
 - id: tutorial-2-msft
   group: tutorial-2
   after: tutorial-1
@@ -71,6 +81,7 @@
   section: item7
   gold_sids: [1317, 3161]
   expected_values: [["137.4 billion", "137.4"]]
+  wrong_values: ["111.6"]
   alternatives:
     # FY2026 10-K: "...was $ 214.4 billion, $ 168.9 billion, and $ 137.7 billion
     # in fiscal years 2026, 2025, and 2024, respectively."

@@ -17,7 +17,9 @@ _REQUIRED = ("id", "question", "ticker", "accession", "section", "gold_sids")
 
 
 _CATEGORIES = ("table_tail", "column")
-_ALTERNATIVE_FIELDS = {"accession", "gold_sids", "expected_values", "gold_cells", "requires_cell"}
+_ALTERNATIVE_FIELDS = {
+    "accession", "gold_sids", "expected_values", "gold_cells", "requires_cell", "wrong_values",
+}
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,9 @@ class Alternative:
     expected_values: tuple[tuple[str, ...], ...] = ()
     gold_cells: tuple[int, ...] = ()
     requires_cell: bool = False
+    # The asked metric's figures for other periods. `evals verify --examples`
+    # checks none appears outside the gold sids of the pin's filing.
+    wrong_values: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,12 +61,14 @@ class GoldenQuestion:
     gold_cells: tuple[int, ...] = ()
     # Examples only: other pins that satisfy this entry instead of its own.
     alternatives: tuple[Alternative, ...] = ()
+    # Examples only: the asked metric's other-period figures (see Alternative).
+    wrong_values: tuple[str, ...] = ()
 
     def pins(self) -> list[Alternative]:
         """The entry's own pin first, then its alternatives."""
         own = Alternative(
             self.accession, self.gold_sids, self.expected_values,
-            self.gold_cells, self.requires_cell,
+            self.gold_cells, self.requires_cell, self.wrong_values,
         )
         return [own, *self.alternatives]
 
@@ -86,6 +93,15 @@ def _expected_values(value, where: str) -> tuple[tuple[str, ...], ...]:
             " non-empty lists of quoted strings"
         )
     return tuple(tuple(spellings) for spellings in value)
+
+
+def _wrong_values(value, where: str) -> tuple[str, ...]:
+    # Quoted strings only, for the same reason as expected_values.
+    if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
+        raise ValueError(
+            f"golden entry {where}: wrong_values must be a list of non-empty quoted strings"
+        )
+    return tuple(value)
 
 
 def _gold_cells(value, where: str) -> tuple[int, ...]:
@@ -120,6 +136,7 @@ def _alternatives(value, where: str) -> tuple[Alternative, ...]:
                 _expected_values(alt.get("expected_values", []), label),
                 _gold_cells(alt.get("gold_cells", []), label),
                 requires_cell,
+                _wrong_values(alt.get("wrong_values", []), label),
             )
         )
     return tuple(alternatives)
@@ -148,6 +165,7 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
                 bool(entry.get("requires_cell", False)),
                 _gold_cells(entry.get("gold_cells", []), entry_id),
                 _alternatives(entry.get("alternatives", []), entry_id),
+                _wrong_values(entry.get("wrong_values", []), entry_id),
             )
         )
     by_group: dict[str, str] = {}

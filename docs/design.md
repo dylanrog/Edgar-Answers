@@ -620,7 +620,15 @@ or `none`). The answer is printed too on FAIL, or always with `--verbose`. The
 chain summary counts, per entry with alternatives, how many runs an
 alternative satisfied it.
 `python -m evals verify --examples` checks that the pins, alternatives
-included, exist in the DB.
+included, exist in the DB. It also guards the assumption that lets the stray
+check accept any quote from a passing pin's filing: an entry (or alternative)
+may list `wrong_values`, the asked metric's figures for other periods
+(NVIDIA's FY2024 and FY2023 Data Center revenue beside a fiscal-2025 question),
+and verify fails if any sentence outside a pin's gold sids, in that pin's
+filing, states one as a whole figure (the same normalization and whole-figure
+match as `expected_values`). Wrong periods are then known to appear only on gold
+rows, where `gold_cells` catches them, so a corpus rebuild that moves or splits
+those rows fails verify instead of silently weakening the check.
 
 ## 9. Testing
 

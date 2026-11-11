@@ -638,3 +638,80 @@ def test_verify_examples_checks_alternative_pins(monkeypatch, tmp_path, capsys):
     cli.cmd_verify(argparse.Namespace(examples=True))
     assert ("2",) in queried and (1, 7) in queried
     assert "ok  b alt 1 sid 7" in capsys.readouterr().out
+
+
+# --- wrong_values: other-period figures must sit on gold rows only ---
+
+
+def test_load_golden_reads_wrong_values(tmp_path):
+    text = _BASE.format(after="g1") + '  wrong_values: ["47,525", "47.5 billion"]\n' + _ALT \
+        + '      wrong_values: ["111.6"]\n'
+    qs = load_golden(_write(tmp_path, text))
+    assert qs[0].wrong_values == ()
+    assert qs[1].wrong_values == ("47,525", "47.5 billion")
+    assert [p.wrong_values for p in qs[1].pins()] == [("47,525", "47.5 billion"), ("111.6",)]
+
+
+@pytest.mark.parametrize("bad", ["47525", "[47,525]", '[""]', "[1.5]"])
+def test_load_golden_wrong_values_must_be_quoted_strings(tmp_path, bad):
+    with pytest.raises(ValueError, match="wrong_values"):
+        load_golden(_write(tmp_path, _BASE.format(after="g1") + f"  wrong_values: {bad}\n"))
+
+
+class _SentenceCursor:
+    """Serves each accession's (sid, text) rows to _check_wrong_values."""
+
+    def __init__(self, by_accession):
+        self.by_accession = by_accession
+        self.rows = []
+
+    def execute(self, sql, params):
+        self.rows = self.by_accession.get(params[0], [])
+
+    def fetchall(self):
+        return self.rows
+
+
+def _wrong_entry(alternatives=()):
+    from evals.harness import Alternative
+
+    return GoldenQuestion(
+        id="nvda", question="q?", ticker="NVDA", accession="A", section="item15",
+        gold_sids=[2768], wrong_values=("47,525", "47.5 billion"),
+        alternatives=tuple(Alternative(acc, sids) for acc, sids in alternatives),
+    )
+
+
+def test_wrong_value_on_a_gold_row_is_fine(capsys):
+    from evals.__main__ import _check_wrong_values
+
+    cur = _SentenceCursor({"A": [(2768, "Data Center $ 115,186 $ 47,525 $ 15,005"),
+                                 (2769, "Compute $ 102,196 $ 38,950"),
+                                 (2800, "A total of 147,525 shares.")]})
+    assert _check_wrong_values(cur, _wrong_entry()) == 0
+    assert "ok  nvda: no wrong-period figure" in capsys.readouterr().out
+
+
+def test_wrong_value_outside_the_gold_rows_is_reported(capsys):
+    from evals.__main__ import _check_wrong_values
+
+    cur = _SentenceCursor({
+        "A": [(2768, "Data Center $ 115,186 $ 47,525 $ 15,005"),
+              (3001, "Data Center revenue grew from $47.5 billion.")],
+        "B": [(10, "Fiscal 2024 Data Center $ 47,525.")],
+    })
+    assert _check_wrong_values(cur, _wrong_entry(alternatives=[("B", [99])])) == 2
+    out = capsys.readouterr().out
+    assert "FAIL nvda: wrong-period figure '47.5 billion' at non-gold sid 3001 in A" in out
+    assert "FAIL nvda alt 1: wrong-period figure '47,525' at non-gold sid 10 in B" in out
+
+
+def test_examples_pin_the_wrong_period_figures():
+    by_id = {q.id: q for qs in load_examples().values() for q in qs}
+    assert by_id["tutorial-1-nvda"].wrong_values == (
+        "47,525", "47.5 billion", "15,005", "15.0 billion")
+    assert by_id["tutorial-2-nvda"].wrong_values == (
+        "15,005", "15.0 billion", "10,613", "10.6 billion")
+    assert by_id["tutorial-1-msft"].wrong_values == ("137.7", "111.6")
+    # 137.7 is the restated FY2024 figure an alternative accepts.
+    assert by_id["tutorial-2-msft"].wrong_values == ("111.6",)

@@ -73,6 +73,47 @@ def cmd_examples(args) -> None:
         raise SystemExit(1)
 
 
+def _check_wrong_values(cur, question) -> int:
+    """The judge accepts any verified quote from a passing pin's filing, and
+    relies on gold_cells to catch a wrong year on a gold row. That is only
+    safe while the asked metric's other-period figures appear on gold rows
+    alone. Check it: no sentence outside a pin's gold sids, in that pin's
+    filing, states any of the entry's wrong_values as a whole figure. A corpus
+    rebuild that moves or splits rows shows up here, not as a silent pass."""
+    from api.normalize import normalize
+
+    from .faithfulness import _whole_figure
+
+    wrong = sorted({value for pin in question.pins() for value in pin.wrong_values})
+    if not wrong:
+        return 0
+    needles = {value: normalize(value)[0].strip() for value in wrong}
+    hits = 0
+    for n, pin in enumerate(question.pins()):
+        label = question.id if n == 0 else f"{question.id} alt {n}"
+        cur.execute(
+            "SELECT s.sid, s.text FROM sentences s JOIN filings f ON f.id = s.filing_id"
+            " WHERE f.accession = %s ORDER BY s.sid",
+            (pin.accession,),
+        )
+        rows = cur.fetchall()
+        found = 0
+        for sid, text in rows:
+            if sid in pin.gold_sids:
+                continue
+            haystack = normalize(text)[0]
+            for value, needle in needles.items():
+                if _whole_figure(needle, haystack):
+                    print(f"FAIL {label}: wrong-period figure {value!r} at non-gold sid {sid}"
+                          f" in {pin.accession}: {text[:90]}")
+                    found += 1
+        if not found:
+            print(f"ok  {label}: no wrong-period figure {wrong} outside gold sids"
+                  f" ({len(rows)} sentences)")
+        hits += found
+    return hits
+
+
 def cmd_verify(args) -> None:
     """Check every golden entry against the DB: accession exists, sids exist."""
     if args.examples:
@@ -105,6 +146,7 @@ def cmd_verify(args) -> None:
                         failures += 1
                     else:
                         print(f"ok  {label} sid {sid}: {sentence[0][:90]}")
+            failures += _check_wrong_values(cur, question)
     if failures:
         raise SystemExit(f"{failures} golden-set problems")
     print(f"all {len(questions)} entries verified")
