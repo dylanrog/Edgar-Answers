@@ -21,3 +21,12 @@ export function splitOnMarkers(text: string): Segment[] {
   if (cursor < text.length) segments.push(text.slice(cursor));
   return segments;
 }
+
+/**
+ * Split answer prose into paragraphs at blank lines, dropping empty ones (a
+ * stream mid-way through "\n\n" ends with one). Markers never contain a
+ * newline, so splitting paragraphs first and markers within each is lossless.
+ */
+export function splitParagraphs(text: string): string[] {
+  return text.split(/\n[ \t]*\n\s*/).filter((paragraph) => paragraph.trim() !== "");
+}

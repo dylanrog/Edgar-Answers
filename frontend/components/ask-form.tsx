@@ -13,6 +13,7 @@ export function AskForm({
   disabled,
   onSubmit,
   docked = false,
+  quiet = false,
 }: {
   companies: Company[];
   disabled: boolean;
@@ -21,6 +22,9 @@ export function AskForm({
   // conversation is underway); the default is the raised card shown at the
   // top of an empty conversation.
   docked?: boolean;
+  // A secondary Ask button, while another call to action (the tutorial's
+  // welcome card) is the one primary button on screen. Still fully usable.
+  quiet?: boolean;
 }) {
   const [question, setQuestion] = useState("");
   const [tickers, setTickers] = useState<string[]>([]);
@@ -59,7 +63,7 @@ export function AskForm({
         <input
           aria-label="Question"
           className="rounded-md border border-slate-600 bg-slate-950 px-3.5 py-2.5 text-[15px] text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-          placeholder="What were Apple's total net sales in fiscal 2024?"
+          placeholder="e.g. Apple's net sales in fiscal 2024"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
         />
@@ -111,7 +115,11 @@ export function AskForm({
           <button
             type="submit"
             disabled={disabled}
-            className="rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500"
+            className={
+              quiet
+                ? "rounded-md border border-slate-600 bg-transparent px-5 py-2 text-sm font-medium text-slate-300 hover:border-slate-400 hover:text-white disabled:text-slate-500"
+                : "rounded-md bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500"
+            }
           >
             {disabled ? "Asking…" : "Ask"}
           </button>

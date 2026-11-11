@@ -42,19 +42,27 @@ export default function AskPage() {
   const askAbort = useRef<AbortController | null>(null);
   const [clicked, setClicked] = useState<Citation | null>(null);
   const [tour, setTour] = useState<TourStep>("off");
+  // Until the mount-time check has run, "off" only means "not read yet": the
+  // header's tutorial link waits for it, or a first-time visitor sees it flash
+  // before the welcome card replaces it.
+  const [tourChecked, setTourChecked] = useState(false);
 
   useEffect(() => {
     // Deferred so the first client render matches the prerendered "off".
-    if (!hasSeenTour()) queueMicrotask(() => setTour(reduceTour("off", { type: "start" })));
+    queueMicrotask(() => {
+      if (!hasSeenTour()) setTour(reduceTour("off", { type: "start" }));
+      setTourChecked(true);
+    });
   }, []);
 
-  function dispatch(event: TourEvent) {
+  function dispatch(event: TourEvent): TourStep {
     const next = reduceTour(tour, event);
     setTour(next);
     // A dismissed or finished tour must never come back by itself.
     if (next === "off" && (event.type === "skip" || event.type === "finish")) {
       markTourSeen();
     }
+    return next;
   }
 
   useEffect(() => {
@@ -74,6 +82,16 @@ export default function AskPage() {
 
   const threadRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement>(null);
+
+  // Scrolls the page to the viewer after the click has rendered, not in the
+  // click handler: until then the viewer is a short placeholder at the foot
+  // of the page, so a scroll aimed at it stops at the old page end, short of
+  // the now-taller viewer and its source card. (The highlight scrolls only
+  // the pane, so nothing else would finish the job.)
+  const [revealViewer, setRevealViewer] = useState(0);
+  useEffect(() => {
+    if (revealViewer > 0) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [revealViewer]);
 
   // When a new turn is added, pull its question to the top of the thread so
   // the answer streams into view below it. Keyed on the turn count, so it
@@ -154,22 +172,39 @@ export default function AskPage() {
     setHighlights({});
   }
 
-  function select(citation: Citation) {
-    // Unverified and unattributable citations are inert by design (§6.3):
-    // there is nothing trustworthy to scroll to.
-    if (!citation.verified || citation.accession === "") return;
-    dispatch({ type: "citationClicked" });
+  /** Opens a citation's filing in the viewer with the citation highlighted. */
+  function openCitation(citation: Citation) {
     setClicked(citation);
     setTabs((previous) => openTab(previous, citation.accession));
     setHighlights((previous) => ({
       ...previous,
       [citation.accession]: { sids: citation.sids, cells: citation.cells },
     }));
+  }
+
+  /**
+   * The closing step shows the follow-up's payoff: on a split screen the
+   * viewer opens the latest answer's first verified citation, as if clicked,
+   * so the highlighted 2024 figure sits beside the answer. Not on a phone,
+   * where the viewer is below the thread and opening it would scroll away from
+   * the closing card.
+   */
+  function showPayoff(state: AnswerState) {
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
+    const marker = firstVerifiedMarker(state.citations);
+    const citation = marker === null ? undefined : state.citations.get(marker);
+    if (citation !== undefined) openCitation(citation);
+  }
+
+  function select(citation: Citation) {
+    // Unverified and unattributable citations are inert by design (§6.3):
+    // there is nothing trustworthy to scroll to.
+    if (!citation.verified || citation.accession === "") return;
+    dispatch({ type: "citationClicked" });
+    openCitation(citation);
     // Stacked layout (below md): the viewer is further down the page, so bring
     // it on screen. Its own highlight scroll then positions the sentence.
-    if (window.matchMedia("(max-width: 767px)").matches) {
-      viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    if (window.matchMedia("(max-width: 767px)").matches) setRevealViewer((n) => n + 1);
   }
 
   // The scripted starts (welcome card, Try again) are the only asks that run
@@ -225,7 +260,7 @@ export default function AskPage() {
           </h1>
           <div className="flex items-baseline gap-4">
             {/* Hidden while it runs: the welcome card is the one call to action. */}
-            {tour === "off" && (
+            {tourChecked && tour === "off" && (
               <button
                 type="button"
                 onClick={takeTour}
@@ -264,11 +299,14 @@ export default function AskPage() {
                 state={turn.state}
                 onSelect={select}
                 names={names}
-                expanded={index === turns.length - 1}
+                // At the closing the panel folds to its summary line, so the
+                // answer it would otherwise push off screen stays in view.
+                expanded={latest && tour !== "closing"}
                 onSettled={
                   latest
-                    ? () =>
-                        dispatch(
+                    ? () => {
+                        const before = tour;
+                        const next = dispatch(
                           lastState.status === "error"
                             ? { type: "errored" }
                             : {
@@ -276,7 +314,9 @@ export default function AskPage() {
                                 hasVerified:
                                   firstVerifiedMarker(lastState.citations) !== null,
                               },
-                        )
+                        );
+                        if (next === "closing" && before !== "closing") showPayoff(lastState);
+                      }
                     : noop
                 }
                 emphasizeMarker={emphasized}
@@ -309,7 +349,13 @@ export default function AskPage() {
           />
         )}
 
-        <AskForm companies={companies} disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
+        <AskForm
+          companies={companies}
+          disabled={streaming}
+          onSubmit={ask}
+          docked={turns.length > 0}
+          quiet={tour === "welcome"}
+        />
 
         {turns.length === 0 && tour === "welcome" && <div className="flex-1" />}
 
@@ -320,7 +366,10 @@ export default function AskPage() {
         )}
       </section>
 
-      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[70dvh]" : "h-auto"}`}>
+      {/* On a phone an open viewer is a full screen tall: it is the last thing
+          on the page, so anything shorter could not be scrolled to the top,
+          and its source card would sit mid-screen under the composer. */}
+      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[100dvh]" : "h-auto"}`}>
         {tour === "source" && <div className="shrink-0 px-3 pb-2">{callout("source")}</div>}
         <FilingTabs
           tabs={tabs}

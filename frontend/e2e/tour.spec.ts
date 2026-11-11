@@ -82,13 +82,31 @@ const TURN1_LONG = TURN1.replace(
   "Filler sentence to lengthen the answer. ".repeat(60) + "NVIDIA Data Center revenue",
 );
 
+// Turn 2 cites the fiscal-2024 column, so the figure the viewer marks tells
+// the turns apart.
 const TURN2 =
   sse("resolved", { standalone_question: STANDALONE }) +
   progress(nvdaRef) +
   sse("token", { text: "In fiscal 2024 it was $47,525 million [1]." }) +
   sse("progress", { stage: "verifying", quotes: 1 }) +
-  nvdaCitation(1) +
+  sse("citation", {
+    marker: 1,
+    verified: true,
+    ...nvdaRef,
+    sids: [31],
+    quote: "Data Center $ 47,525",
+    cells: [{ sid: 31, cell: 4 }],
+  }) +
   done(1, 1);
+
+// Two paragraphs, one citation in each.
+const TWO_PARAGRAPHS =
+  progress(nvdaRef, msftRef) +
+  sse("token", { text: "NVIDIA first paragraph [1].\n\nMicrosoft second paragraph [2]." }) +
+  sse("progress", { stage: "verifying", quotes: 2 }) +
+  nvdaCitation(1) +
+  msftCitation(2) +
+  done(2, 2);
 
 const TYPED =
   progress(nvdaRef) +
@@ -159,7 +177,9 @@ const tutorialButton = (page: Page) =>
   welcome(page).getByRole("button", { name: "Ask this question", exact: true });
 const takeTutorial = (page: Page) => page.getByRole("button", { name: "Take the tutorial" });
 const CLICK_STEP = "Click the pulsing [1] to see that figure in the original filing.";
-const VIEWER_EMPTY = "Click a source to open the filing here.";
+const VIEWER_EMPTY = "Sources open here, with the cited sentence or figure highlighted.";
+const askButton = (page: Page) => page.getByRole("button", { name: "Ask", exact: true });
+const PLACEHOLDER = "e.g. Apple's net sales in fiscal 2024";
 const followUpButton = (page: Page) =>
   page.getByRole("button", { name: `Ask "${FOLLOW_UP}"`, exact: true });
 const chip = (page: Page) => page.getByRole("button", { name: "[1]", exact: true });
@@ -215,8 +235,12 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await expect(welcome(page).getByText("Takes under a minute.")).toBeVisible();
   await expect(welcome(page).getByRole("button")).toHaveCount(2);
   await expect(welcome(page).getByRole("button", { name: "Skip tutorial" })).toBeVisible();
-  // While the tutorial runs, the header link to start it is hidden.
+  // While the tutorial runs, the header link to start it is hidden, and the
+  // composer's Ask is secondary so the welcome card has the one primary button.
   await expect(takeTutorial(page)).toHaveCount(0);
+  await expect(askButton(page)).not.toHaveClass(/bg-blue-600/);
+  await expect(askButton(page)).toBeEnabled();
+  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", PLACEHOLDER);
   await tutorialButton(page).click();
 
   // The panel ticks.
@@ -271,9 +295,17 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await expect(followUpButton(page)).toHaveCount(0);
   await expect(tutorialButton(page)).toHaveCount(0);
 
-  // A turn-2 citation opens its own filing and highlight.
-  await chip(page).last().click();
-  await expect(page.locator(".cited-figure")).toHaveText("115,186");
+  // The payoff, without a click: the viewer opens turn 2's first verified
+  // citation, and the panel folds to its summary so the answer stays in view.
+  await expect(page.locator(`[data-accession="${NVDA}"] .cited-figure`)).toHaveText("47,525");
+  await expect(page.locator(`[data-accession="${NVDA}"] .cited-figure`)).toBeInViewport();
+  await expect(
+    page.locator("article").last().getByRole("button", { name: /^Under the hood/ }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator("article").first().getByRole("button", { name: /^Under the hood/ }))
+    .toHaveAttribute("aria-expanded", "false");
+  await expect(callout(page)).toBeInViewport();
+  await expect(page.getByText(/In fiscal 2024 it was/)).toBeInViewport();
 
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(callout(page)).toHaveCount(0);
@@ -289,6 +321,8 @@ test("skipping from the welcome card leaves the regular site, for good", async (
   await welcome(page).getByRole("button", { name: "Skip tutorial" }).click();
 
   await expect(page.getByText(EMPTY)).toBeVisible();
+  // Back on the regular site the composer's Ask is the primary button again.
+  await expect(askButton(page)).toHaveClass(/bg-blue-600/);
   await expect(tutorialButton(page)).toHaveCount(0);
   await expect(welcome(page)).toHaveCount(0);
   await expect(callout(page)).toHaveCount(0);
@@ -487,6 +521,15 @@ test.describe("on a phone", () => {
     await expect(cited).toBeVisible();
     await expect(cited).toBeInViewport();
     expect(await scrollWidth()).toBeLessThanOrEqual(375);
+    // The page scrolls to the viewer, whose first child is the source card;
+    // the highlight scrolls only the pane, so it never drags the page further
+    // and leaves the composer above the card.
+    await expect(callout(page)).toContainText("That's the exact figure");
+    await expect
+      .poll(async () => (await callout(page).boundingBox())?.y ?? -1, { timeout: 4000 })
+      .toBeLessThan(120);
+    expect((await callout(page).boundingBox())!.y).toBeGreaterThanOrEqual(0);
+    await expect(page.getByLabel("Question")).not.toBeInViewport();
 
     // Next swaps the source card (in the viewer) for the more card (in the
     // thread, off screen): it must be scrolled into view.
@@ -499,6 +542,11 @@ test.describe("on a phone", () => {
     await expect(callout(page)).toContainText("works on any document collection");
     await expect(callout(page)).toBeInViewport();
     expect(await scrollWidth()).toBeLessThanOrEqual(375);
+    // No auto-open on a phone: the viewer sits below and would pull the page
+    // away from the closing card.
+    await page.waitForTimeout(500);
+    await expect(page.locator("[data-accession]")).toHaveCount(0);
+    await expect(callout(page)).toBeInViewport();
   });
 });
 
@@ -527,7 +575,8 @@ test("answer prose is single-spaced: chips are compact badges that don't push li
   await stub(page);
   await toClickStep(page);
   const prose = page.locator("p", { hasText: "NVIDIA Data Center revenue was" });
-  await expect(prose).toHaveCSS("line-height", "24px");
+  // 14 px x 1.55.
+  await expect(prose).toHaveCSS("line-height", "21.7px");
   const chipBox = await chip(page).boundingBox();
   expect(chipBox!.height).toBeLessThanOrEqual(16);
   // No touch hit-area on a mouse pointer.
@@ -541,4 +590,45 @@ test("with reduced motion the emphasized chip keeps a still ring", async ({ page
   await expect(page.getByTestId("chip-ping")).toBeVisible();
   await expect(page.getByTestId("chip-ping")).toHaveCSS("animation-name", "none");
   await expect(chip(page)).toHaveClass(/ring-amber-400/);
+});
+
+test("paragraphs render as separate blocks, and a marker in each still opens its source", async ({
+  page,
+}) => {
+  await stub(page, [TWO_PARAGRAPHS]);
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
+  await page.goto("/ask");
+  await page.getByLabel("Question").fill("Compare them");
+  await askButton(page).click();
+
+  const first = page.locator("p", { hasText: "NVIDIA first paragraph" });
+  const second = page.locator("p", { hasText: "Microsoft second paragraph" });
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  // Separate blocks, with a gap far smaller than a blank line (21.7 px).
+  const gap = (await second.boundingBox())!.y - ((await first.boundingBox())!.y + (await first.boundingBox())!.height);
+  expect(gap).toBeGreaterThan(4);
+  expect(gap).toBeLessThan(12);
+  await expect(first.getByRole("button", { name: "[1]", exact: true })).toBeVisible();
+
+  await second.getByRole("button", { name: "[2]", exact: true }).click();
+  await expect(page.locator(`[data-accession="${MSFT}"] .cited-sentence`)).toHaveText(
+    "Microsoft Cloud revenue was $168.9 billion.",
+  );
+  await first.getByRole("button", { name: "[1]", exact: true }).click();
+  await expect(page.locator(`[data-accession="${NVDA}"] .cited-figure`)).toHaveText("115,186");
+});
+
+test("the prerendered page has no tutorial link, so a first visit never flashes it", async ({
+  page,
+  request,
+}) => {
+  const html = await (await request.get("/ask")).text();
+  expect(html).not.toContain("Take the tutorial");
+
+  // A returning visitor gets it once the mount-time check has run.
+  await stub(page);
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
+  await page.goto("/ask");
+  await expect(takeTutorial(page)).toBeVisible();
 });

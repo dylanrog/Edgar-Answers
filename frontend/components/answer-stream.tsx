@@ -2,7 +2,7 @@
 
 import { CitationChip } from "@/components/citation-chip";
 import type { AnswerState } from "@/lib/answer";
-import { splitOnMarkers } from "@/lib/markers";
+import { splitOnMarkers, splitParagraphs } from "@/lib/markers";
 import type { Citation } from "@/lib/types";
 
 function Dot({ delay }: { delay: string }) {
@@ -58,21 +58,28 @@ export function AnswerStream({
           {state.notice}
         </p>
       )}
-      <p className="text-sm leading-6 whitespace-pre-wrap">
-        {splitOnMarkers(state.prose).map((segment, index) =>
-          typeof segment === "string" ? (
-            <span key={index}>{segment}</span>
-          ) : (
-            <CitationChip
-              key={index}
-              marker={segment.marker}
-              citation={state.citations.get(segment.marker)}
-              onSelect={onSelect}
-              emphasized={emphasizeMarker === segment.marker}
-            />
-          ),
-        )}
-      </p>
+      {/* One block per paragraph with a small gap, rather than the blank
+          line that pre-wrap would render between them. pre-wrap stays for
+          single line breaks inside a paragraph (lists). */}
+      <div className="space-y-[0.6em] text-sm leading-[1.55]">
+        {splitParagraphs(state.prose).map((paragraph, p) => (
+          <p key={p} className="whitespace-pre-wrap">
+            {splitOnMarkers(paragraph).map((segment, index) =>
+              typeof segment === "string" ? (
+                <span key={index}>{segment}</span>
+              ) : (
+                <CitationChip
+                  key={index}
+                  marker={segment.marker}
+                  citation={state.citations.get(segment.marker)}
+                  onSelect={onSelect}
+                  emphasized={emphasizeMarker === segment.marker}
+                />
+              ),
+            )}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
