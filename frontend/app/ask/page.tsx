@@ -53,8 +53,12 @@ export default function AskPage() {
   useEffect(() => {
     // Deferred so the first client render matches the prerendered "off".
     queueMicrotask(() => {
-      if (!hasSeenTour()) setTour(reduceTour("off", { type: "start" }));
-      setTourChecked(true);
+      try {
+        if (!hasSeenTour()) setTour(reduceTour("off", { type: "start" }));
+      } finally {
+        // Whatever the check does, never leave the composer hidden.
+        setTourChecked(true);
+      }
     });
   }, []);
 

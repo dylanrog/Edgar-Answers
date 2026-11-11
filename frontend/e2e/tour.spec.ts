@@ -207,8 +207,8 @@ const EMPTY = "Ask a question about a filing.";
 /**
  * Reloads and waits until the client has mounted. Before hydration the welcome
  * card is absent for every visitor, so asserting its absence then would pass
- * vacuously; the /companies fetch fires in the same mount pass as the tour
- * check, after it.
+ * vacuously; the /companies response arrives only after the mount-time tour
+ * check has run.
  */
 async function reloadHydrated(page: Page) {
   expect(await page.evaluate(() => localStorage.getItem("edgar-answers.tour-seen"))).toBe("1");
