@@ -36,9 +36,14 @@
 #   wrong), and FY2024 Intelligent Cloud was restated ($105,362M as originally
 #   reported, $87,464M restated). Hence turn 1 asks about Microsoft Cloud.
 #
-# Vetting result: 2026-11-10, full local corpus, `python -m evals examples --runs 10 --verbose` -> 10/10, identical citations every run
-#   (NVDA FY25 sid 2768 cell 2; MSFT FY25 sid 2869; NVDA FY24 sid 2777 cell 2; MSFT FY24 sid 3161). With the earlier
-#   probe (5/5) and first run (10/10): 25/25 two-turn conversations correct.
+# Vetting result (final, 2026-11-11 at 2c37f52, full local corpus, FRESH planner stats after
+#   ANALYZE): `python -m evals examples --runs 30 --verbose` -> 30/30. Both turns narrowed by
+#   per-company period detection (turn 1: NVDA + MSFT FY2025 10-Ks; turn 2: the FY2024 10-Ks);
+#   own pins every run, no alternative needed. History: 55/55 earlier under STALE stats (a
+#   container crash had reset them, so the planner chose different plans); under fresh stats
+#   before period detection was fixed, 1-2/20 follow-ups cited a later 10-K's restated $137.7B,
+#   and 2/20 first turns highlighted a whole table row. Re-run after any Postgres restart only
+#   once `ANALYZE` has run.
 
 - id: tutorial-1-nvda
   group: tutorial-1
