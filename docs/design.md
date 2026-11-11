@@ -585,9 +585,12 @@ the production `/ask` path. A run passes only if both turns pass: answered,
 every citation verifies, no unverified notice, each pinned entry's accession and
 gold sids hit and its expected figures stated, `requires_cell` entries cite a
 cell bound to a gold sid, comparisons cite at least two tickers, and no
-verified citation strays: each one's sids must be a subset of the gold sids of
-one of the turn's pinned filings (a quote spanning a gold row and its
-neighbour fails, since the viewer would highlight the neighbour too). Where an entry sets `gold_cells`, the column is checked
+verified citation strays: each one must come from the filing of a pin that
+passes (below). Within that filing any verified quote is fine, whatever its
+sids: it is a further true fact from the right filing (turn 1 sometimes adds
+the Data Center segment's Compute and Networking rows), and narrowing (§6.3)
+leaves a neighbour row's figures marked only when the answer states them. A
+citation to any other filing is stray. Where an entry sets `gold_cells`, the column is checked
 as well as the row: every cell a verified citation marks on a gold sid must be
 one of those cell indexes, and a `requires_cell` entry must cite one of them.
 A multi-year row (NVIDIA's Data Center line carries three fiscal years) would
@@ -595,11 +598,12 @@ otherwise let a quote spanning two columns verify, pass, and highlight the
 wrong year's figure. An entry may also list `alternatives` — other pins
 (`accession`, `gold_sids`, `expected_values`, optional `gold_cells` and
 `requires_cell`) that satisfy it in place of its own pin under the same rules,
-with the hit pin's own figures being the ones checked. A citation counts as
-on gold only for a pin that passes on its own (or, when no pin of the entry
-passes, the entry's own pin, so the miss is not also reported as a stray): an
-answer that states $137.4B but also cites a row showing $137.7B, or the
-reverse, shows the visitor a figure it doesn't give, and fails. This is for restatements: a
+with the hit pin's own figures being the ones checked. A pin's filing counts
+for the stray check only when that pin passes on its own: an answer that
+states $137.4B but also cites the restated filing's $137.7B row, or the
+reverse, shows the visitor a figure it doesn't give, and fails. (When no pin
+of an entry passes, citations within its own pin's gold sids are not also
+reported as strays; the miss is the failure.) This is for restatements: a
 later filing reporting the same period's figure as restated (Microsoft's
 FY2025 and FY2026 10-Ks give fiscal 2024 Microsoft Cloud revenue as $137.7B,
 against $137.4B as originally reported) is a correct answer for the period

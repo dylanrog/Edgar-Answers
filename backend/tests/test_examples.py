@@ -66,14 +66,52 @@ def test_stray_verified_citation_to_another_accession_fails():
     assert any("stray" in r and "0001045810-25-000023" in r for r in reasons)
 
 
-def test_stray_verified_citation_to_non_gold_sid_fails():
-    reasons = judge(citations=[cite(), cite(sids=(99,))])
-    assert any("stray" in r for r in reasons)
+def test_extra_verified_citation_from_the_pinned_filing_passes():
+    # A further true fact from the right filing (turn 1's Compute/Networking
+    # rows) is not stray.
+    assert judge(citations=[cite(), cite(sids=(99,))]) == []
 
 
-def test_citation_spanning_gold_and_a_neighbouring_row_fails():
-    reasons = judge(citations=[cite(sids=(10, 11))])
-    assert any("stray" in r for r in reasons)
+def test_neighbour_row_in_the_pinned_filing_passes_when_its_cells_are_stated_or_dropped():
+    # The gold row's cell is the right column; the neighbour row carries a
+    # stated figure's cell, or none at all (narrowing dropped them).
+    e = entry(gold_cells=(2,))
+    stated = cite(sids=(10, 11), cells=[{"sid": 10, "cell": 2}, {"sid": 11, "cell": 1}])
+    dropped = cite(sids=(10, 11), cells=[{"sid": 10, "cell": 2}])
+    assert judge([e], citations=[stated]) == []
+    assert judge([e], citations=[dropped]) == []
+
+
+def test_neighbour_row_still_fails_when_a_wrong_year_is_marked_on_the_gold_row():
+    e = entry(gold_cells=(2,))
+    c = cite(sids=(10, 11), cells=[{"sid": 10, "cell": 6}])
+    assert any("outside gold_cells" in r for r in judge([e], citations=[c]))
+
+
+def test_tutorial_segment_breakdown_citation_passes():
+    # Turn 1's live third claim, after narrowing dropped the Data Center
+    # row's cells: [3] covers 2768-2770 and marks Compute and Networking.
+    acc = "0001045810-25-000023"
+    nvda = entry("NVDA", acc, (2768,), (("115.2 billion",),), True, (2,))
+    first = cite("NVDA", acc, (2768,), cells=[{"sid": 2768, "cell": 2}])
+    third = cite("NVDA", acc, (2768, 2769, 2770),
+                 cells=[{"sid": 2769, "cell": 1}, {"sid": 2770, "cell": 1}])
+    answer = "NVIDIA's Data Center revenue was $115.2 billion [1]. [3] Compute and Networking."
+    assert judge([nvda], answer=answer, citations=[first, third]) == []
+
+
+def test_extra_citation_from_an_unpinned_filing_fails():
+    other = cite(accession="0000320193-25-000001", sids=(10,))
+    reasons = judge(citations=[cite(), other])
+    assert any("stray" in r and "0000320193-25-000001" in r for r in reasons)
+
+
+def test_extra_citation_from_the_pinned_filing_fails_when_the_entry_misses():
+    # No pin passes (figure not stated), so only the own pin's gold sids are
+    # allowed; the neighbour row is stray as well as the entry being a miss.
+    reasons = judge(answer="Net sales rose.", citations=[cite(), cite(sids=(99,))])
+    assert any("stray" in r and "sids=[99]" in r for r in reasons)
+    assert any("expected values missing" in r for r in reasons)
 
 
 def test_citation_on_a_subset_of_gold_sids_passes():

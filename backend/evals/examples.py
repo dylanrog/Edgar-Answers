@@ -51,29 +51,36 @@ def judge_run(
         reasons.append("a citation failed verification")
     verified = [c for c in citations if c["verified"]]
     judged = {e.id: _judge_pins(e, verified, answer) for e in entries}
-    # Every verified citation must sit wholly on gold: a correct figure from
-    # the right filing plus a stray one from another filing, or a quote that
-    # spans a gold row and its neighbour (the viewer would highlight both),
-    # still shows the visitor a source that is not the answer. A pin is gold
-    # only when it passes on its own -- citing a restated $137.7B row beside
-    # an answer that states only $137.4B (or the reverse) shows the visitor a
-    # figure the answer doesn't give. When no pin of an entry passes, its own
-    # pin stays gold so the failure is reported as a miss, not also a stray.
-    gold = [
-        pin
+    # Every verified citation must come from a filing that answers the turn: a
+    # correct figure plus a citation to some other filing still shows the
+    # visitor a source that is not the answer. A pin counts only when it
+    # passes on its own -- citing a restated $137.7B row beside an answer that
+    # states only $137.4B (or the reverse) shows a figure the answer doesn't
+    # give. Within a passing pin's filing any verified quote is fine: it is a
+    # true fact from the right filing (turn 1 sometimes adds the Data Center
+    # segment's Compute and Networking rows), and the gold_cells check below
+    # still catches a wrong year marked on a gold row. When no pin of an entry
+    # passes, its own pin's gold sids stay allowed, so the failure is reported
+    # as a miss rather than also as a stray.
+    passing = {
+        pin.accession
         for e in entries
-        for n, (pin, pin_reasons) in enumerate(judged[e.id])
+        for pin, pin_reasons in judged[e.id]
         if not pin_reasons
-        or (n == 0 and all(reasons_ for _, reasons_ in judged[e.id]))
+    }
+    missed = [
+        judged[e.id][0][0]
+        for e in entries
+        if all(pin_reasons for _, pin_reasons in judged[e.id])
     ]
     for c in verified:
-        if not any(
+        if c["accession"] not in passing and not any(
             c["accession"] == pin.accession and set(c["sids"]) <= set(pin.gold_sids)
-            for pin in gold
+            for pin in missed
         ):
             reasons.append(
                 f"stray verified citation {c.get('ticker')} {c['accession']}"
-                f" sids={c['sids']} is not within one gold entry"
+                f" sids={c['sids']} is not from a passing pinned filing"
             )
     for e in entries:
         # The column check applies to every pin a citation lands on, satisfied

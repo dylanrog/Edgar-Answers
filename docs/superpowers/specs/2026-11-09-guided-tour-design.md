@@ -342,9 +342,12 @@ $137.7B is not accepted.
 2907). A later filing's restatement of the same fiscal year answers the period
 asked; it is not period confusion. `examples.yaml` lists the FY2026 10-K
 `0001193125-26-323660` sid 2907 and the FY2025 10-K `0000950170-25-100235`
-sid 2869 as alternatives, each requiring $137.7B to be stated. A citation counts
-as gold only on a pin that passes on its own, so an answer stating $137.4B
-that also cites a $137.7B row fails, and so does the reverse. The release
+sid 2869 as alternatives, each requiring $137.7B to be stated. A citation is
+not stray only when it comes from the filing of a pin that passes on its own,
+so an answer stating $137.4B that also cites the restated filing's $137.7B row
+fails, and so does the reverse. Within a passing pin's filing any verified
+quote is accepted, whatever its sids (turn 1 sometimes adds a true third claim
+quoting the Data Center, Compute and Networking rows). The release
 check prints which pin satisfied each entry and each turn's targets, and
 counts alternative passes per entry, so the restatement path stays visible
 rather than silently passing.)* The vetting bar rises from 5 to **10 runs** for the
