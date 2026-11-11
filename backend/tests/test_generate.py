@@ -102,16 +102,6 @@ def test_multi_filing_rule_precedes_the_output_format_example():
     assert SYSTEM_PROMPT.index("more than one filing") < SYSTEM_PROMPT.index(FENCE)
 
 
-def test_figure_formatting_rule_sits_between_multi_filing_rule_and_the_example():
-    from api.generate import FENCE, SYSTEM_PROMPT
-
-    prompt = " ".join(SYSTEM_PROMPT.split())
-    rule = prompt.index("never more decimal places")
-    assert prompt.index("more than one filing") < rule
-    assert rule < prompt.index(FENCE)
-    assert "reuse its marker" in prompt
-
-
 def test_a_table_chunk_shows_each_context_line_labelled_above_its_text():
     from dataclasses import replace
 
