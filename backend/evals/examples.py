@@ -54,15 +54,17 @@ def judge_run(
     # Every verified citation must sit wholly on gold: a correct figure from
     # the right filing plus a stray one from another filing, or a quote that
     # spans a gold row and its neighbour (the viewer would highlight both),
-    # still shows the visitor a source that is not the answer. An entry's own
-    # pin is always gold; an alternative is gold only when it passes itself --
-    # citing a restated $137.7B beside an answer that states $137.4B shows
-    # the visitor a figure the answer doesn't give.
+    # still shows the visitor a source that is not the answer. A pin is gold
+    # only when it passes on its own -- citing a restated $137.7B row beside
+    # an answer that states only $137.4B (or the reverse) shows the visitor a
+    # figure the answer doesn't give. When no pin of an entry passes, its own
+    # pin stays gold so the failure is reported as a miss, not also a stray.
     gold = [
         pin
         for e in entries
         for n, (pin, pin_reasons) in enumerate(judged[e.id])
-        if n == 0 or not pin_reasons
+        if not pin_reasons
+        or (n == 0 and all(reasons_ for _, reasons_ in judged[e.id]))
     ]
     for c in verified:
         if not any(

@@ -8,8 +8,8 @@
 # are the prior years.
 # An entry may list `alternatives`: other pins (accession, gold_sids,
 # expected_values, optional gold_cells/requires_cell) that satisfy it instead of
-# its own pin, judged by the same rules; a citation inside an alternative's gold
-# sids is not stray when that alternative passes on its own. tutorial-2-msft
+# its own pin, judged by the same rules; a citation counts as on gold only for
+# a pin (own or alternative) that passes on its own. tutorial-2-msft
 # uses this for a restatement: Microsoft's FY2025 and FY2026 10-Ks report fiscal
 # 2024 Microsoft Cloud revenue as $137.7B (restated) against $137.4B as
 # originally reported in the FY2024 10-K. Citing a

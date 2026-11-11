@@ -429,6 +429,15 @@ def test_a_citation_on_a_passing_alternative_is_not_stray():
     assert judge([msft([()])], answer=answer, citations=both) == []
 
 
+def test_a_citation_on_a_failing_own_pin_is_stray_when_an_alternative_passes():
+    # The answer states only the restated $137.7B (the alternative passes) but
+    # also cites the original row showing $137.4B -- a figure it doesn't give.
+    answer = "Microsoft Cloud revenue was $137.7 billion in fiscal 2024."
+    both = [msft_cite("0000950170-24-087843", (3161,)), msft_cite()]
+    reasons = judge([msft([()])], answer=answer, citations=both)
+    assert any("stray" in r and "0000950170-24-087843" in r for r in reasons)
+
+
 def _alt_yaml(monkeypatch, tmp_path):
     text = """
 - id: t1-m

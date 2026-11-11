@@ -388,9 +388,11 @@ For each citation `{chunk_id, quote}`:
      candidates rather than guessing one. Words a sentence-opening marker
      claimed are not re-read as the next marker's before side.
    - *What matches:* a number cell matches its exact digits (`115,186`,
-     `$115,186 million`) or the value one unit up — `billion`/`bn`/`B` for a
-     millions table, `million` for a thousands table — rounded to the 0–3
-     decimals the prose used (`$115 billion`, `$115.2B`, `115.186 billion`).
+     `$115,186 million`) or the value one unit up — `billion`/`bn`/`B`/`b` or
+     `trillion` for a millions table, `million` for a thousands table —
+     rounded to the decimals the prose used (`$115 billion`, `$115.2B`,
+     `$115.2-billion`, `115.186 billion`). A range's first end takes the
+     second's unit (`$115-116 billion`).
      A bare `115.2` with no unit matches nothing scaled. A percent cell matches
      only a percent figure, and a number cell never does. Signs are ignored, so
      `$(1,234) million` and "a loss of $1.2 billion" match −1,234.
@@ -398,9 +400,13 @@ For each citation `{chunk_id, quote}`:
      never states keeps all of them.
    - *Fail closed* — cells left exactly as resolved — when the citation has
      fewer than two cells, its marker is not in the prose, nothing matches, a
-     unit-bearing figure is within half a unit of a cited cell it did not match
-     (`$115.0 billion` beside 115,186), or the citation block came from the
-     retry (§6.2), whose markers belong to prose the client never saw.
+     stated figure is within rounding distance — a whole unit for a figure
+     with no decimals, otherwise half a unit — of a cited cell it did not
+     match, compared with the cell's own value and, for a unit one up, its
+     scaled value (`about $22 billion` beside 22.1 in a billions table,
+     `about $6.1` beside 6.08, `$47 billion` beside 47,525), or the citation
+     block came from the retry (§6.2), whose markers belong to prose the
+     client never saw.
 
    So a quote of NVIDIA's whole three-year Data Center row beside a fiscal-2025
    answer marks only the FY2025 figure. This is display emphasis only: it never
@@ -580,10 +586,11 @@ otherwise let a quote spanning two columns verify, pass, and highlight the
 wrong year's figure. An entry may also list `alternatives` — other pins
 (`accession`, `gold_sids`, `expected_values`, optional `gold_cells` and
 `requires_cell`) that satisfy it in place of its own pin under the same rules,
-with the hit pin's own figures being the ones checked. A citation within an
-alternative's gold sids is not stray only when that alternative passes on its
-own: an answer that states $137.4B but also cites a row showing $137.7B shows
-the visitor a figure it doesn't give, and fails. This is for restatements: a
+with the hit pin's own figures being the ones checked. A citation counts as
+on gold only for a pin that passes on its own (or, when no pin of the entry
+passes, the entry's own pin, so the miss is not also reported as a stray): an
+answer that states $137.4B but also cites a row showing $137.7B, or the
+reverse, shows the visitor a figure it doesn't give, and fails. This is for restatements: a
 later filing reporting the same period's figure as restated (Microsoft's
 FY2025 and FY2026 10-Ks give fiscal 2024 Microsoft Cloud revenue as $137.7B,
 against $137.4B as originally reported) is a correct answer for the period
