@@ -172,6 +172,30 @@ test("the next highlight clears the previous pulse", () => {
   expect(container.querySelector('[data-sid="11"]')?.classList.contains(PULSE_CLASS)).toBe(true);
 });
 
+test("a target wider than the pane is aligned by its left edge, a little inset", () => {
+  const pane = fakePane(); // 400 x 300 at (100, 50), scrolled to (40, 1000)
+  const row = document.createElement("tr");
+  row.getBoundingClientRect = () => rect(150, 900, 900, 20);
+  centreInPane(pane, row);
+  expect(pane.scrollTo).toHaveBeenCalledWith({
+    top: 1000 + (900 - 50) - (300 - 20) / 2,
+    left: 40 + (150 - 100) - 20,
+    behavior: "auto",
+  });
+});
+
+test("a target taller than the pane is aligned by its top edge, a little inset", () => {
+  const pane = fakePane();
+  const sentence = document.createElement("span");
+  sentence.getBoundingClientRect = () => rect(200, 900, 100, 500);
+  centreInPane(pane, sentence);
+  expect(pane.scrollTo).toHaveBeenCalledWith({
+    top: 1000 + (900 - 50) - 20,
+    left: 40 + (200 - 100) - (400 - 100) / 2,
+    behavior: "auto",
+  });
+});
+
 describe("keepCentred", () => {
   type Callback = (entries: { target: Element; contentRect: { width: number; height: number } }[]) => void;
   let observers: { callback: Callback; observed: Element[]; disconnected: boolean }[];

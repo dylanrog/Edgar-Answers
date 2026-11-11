@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -58,6 +61,27 @@ const WIDE_HTML =
    </tbody></table>` +
   filler(100, 30);
 const WIDE_ANSWER = answer(41, 3, "Data Center compute and networking $ 15,005");
+
+// The real revenue table from NVIDIA's FY2024 10-K (0001045810-24-000029), as
+// the viewer receives it: inline percentage widths, a "$" column per figure,
+// right-aligned figures with a trailing no-break space. Tutorial turn 2 cites
+// its Data Center row (sid 2777), cell 2: "47,525".
+const NVDA_TABLE = readFileSync(
+  path.join(__dirname, "fixtures", "nvda-fy2024-revenue-table.html"),
+  "utf-8",
+);
+const NVDA_HTML = filler(1, 30) + NVDA_TABLE + filler(3000, 30);
+const NVDA_ANSWER = answer(2777, 2, "Data Center $ 47,525");
+
+// A table whose text cell is a whole paragraph, as some filings have (cells of
+// 120-1,500 characters), next to ordinary prose.
+const LONG_TEXT_HTML =
+  filler(1, 10) +
+  `<table style="width:100%"><tbody>
+     <tr data-sid="50"><td>${"The Company may, from time to time, repurchase shares of its common stock in the open market or in privately negotiated transactions, subject to market conditions and other factors. ".repeat(4)}</td><td>1,234</td></tr>
+   </tbody></table>` +
+  `<p><span data-sid="51">A long ordinary paragraph of filing prose that must wrap at the width of the pane rather than run off to the right.</span></p>` +
+  filler(100, 10);
 
 async function stub(page: Page, html = VIEWER_HTML, body = ANSWER) {
   await page.route(`${API}/companies`, (route) =>
@@ -231,18 +255,43 @@ test("on a wide screen the highlight never scrolls the window", async ({ page })
 test.describe("a wide table on a phone", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
-  test("keeps its natural width, scrolls inside the pane, and the cited cell is fully in view", async ({
+  test("the real NVIDIA revenue table: the cited figure's digits clear its outline, and the cell is inside the pane", async ({
+    page,
+  }) => {
+    await stub(page, NVDA_HTML, NVDA_ANSWER);
+    const figure = await openCitation(page, "47,525");
+
+    // The digits themselves against the cell box. The highlight's 2 px
+    // outline is drawn inside the box, and the filing sets this cell's
+    // horizontal padding to 0: if the digits reach the box edge, the outline
+    // is drawn over them. They must clear it with room to spare.
+    const inset = await figure.evaluate((td) => {
+      const range = document.createRange();
+      range.selectNodeContents(td);
+      const text = range.getBoundingClientRect();
+      const box = td.getBoundingClientRect();
+      return { left: text.left - box.left, right: box.right - text.right };
+    });
+    expect(inset.left).toBeGreaterThanOrEqual(3);
+    expect(inset.right).toBeGreaterThanOrEqual(3);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+    await expect.poll(() => figureInsidePane(page)).toBe(true);
+  });
+
+  test("text cells and prose still wrap: the pane does not scroll sideways", async ({ page }) => {
+    await stub(page, LONG_TEXT_HTML, answer(50, 1, "1,234"));
+    await openCitation(page, "1,234");
+    const overflow = await pane(page).evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test("a table too wide for its figures scrolls inside the pane, with the cited cell in view", async ({
     page,
   }) => {
     await stub(page, WIDE_HTML, WIDE_ANSWER);
-    const figure = await openCitation(page, "$ 15,005");
-
-    // The figure's text fits its cell: nothing overflows the highlight box.
-    expect(await figure.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-    // The table scrolls inside the pane, never the page.
+    await openCitation(page, "$ 15,005");
     expect(await pane(page).evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-    // Centred on both axes: the cell is wholly inside the pane.
     await expect.poll(() => figureInsidePane(page)).toBe(true);
     expect(await pane(page).evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
   });

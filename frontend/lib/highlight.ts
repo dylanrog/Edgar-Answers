@@ -81,10 +81,20 @@ export function centreInPane(
   const box = pane.getBoundingClientRect();
   const rect = target.getBoundingClientRect();
   pane.scrollTo({
-    top: pane.scrollTop + rect.top - box.top - (pane.clientHeight - rect.height) / 2,
-    left: pane.scrollLeft + rect.left - box.left - (pane.clientWidth - rect.width) / 2,
+    top: pane.scrollTop + rect.top - box.top - offset(pane.clientHeight, rect.height),
+    left: pane.scrollLeft + rect.left - box.left - offset(pane.clientWidth, rect.width),
     behavior,
   });
+}
+
+/** Where the target's start should sit from the pane's start: centred when it
+ *  fits; when it does not, its start a little inside the pane, so that a wide
+ *  row shows its label rather than the middle of its numbers, and a long
+ *  sentence shows its first line. */
+const EDGE_INSET = 20;
+
+function offset(pane: number, target: number): number {
+  return target > pane ? EDGE_INSET : (pane - target) / 2;
 }
 
 const USER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const;

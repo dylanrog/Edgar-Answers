@@ -3,7 +3,7 @@
  */
 import { expect, test } from "vitest";
 
-import { parseViewerHtml } from "../viewer-html";
+import { FIGURE_CELL_CLASS, isFigureText, parseViewerHtml } from "../viewer-html";
 
 function srcs(fragment: DocumentFragment): (string | null)[] {
   return [...fragment.querySelectorAll("img")].map((img) => img.getAttribute("src"));
@@ -33,8 +33,36 @@ test("keeps absolute http(s) and data images", () => {
 });
 
 test("leaves the sentence markup untouched", () => {
-  const html = `<p><span data-sid="7">Revenue grew.</span></p><table><tbody><tr data-sid="8"><td>Total</td><td>1</td></tr></tbody></table>`;
+  const html = `<p><span data-sid="7">Revenue grew.</span></p><table><tbody><tr data-sid="8"><td>Total</td><td>Net</td></tr></tbody></table>`;
   const host = document.createElement("div");
   host.append(parseViewerHtml(`<img src="x.jpg">${html}`));
   expect(host.innerHTML).toBe(html);
+});
+
+test.each([
+  "115,186", "$ 47,525", "$47,525", "47,525 ", "(1,234)", "$ (1,234)", "1,234)",
+  "12.5%", "142 %", "(12.5)%", "—12", "-3.4", "2024",
+])("%j is a figure", (text) => {
+  expect(isFigureText(text)).toBe(true);
+});
+
+test.each([
+  "$", "Data Center", "Jan 28, 2024", "Fiscal 2025", "—", "", "Item 7A", "10-K",
+  "Revenue from the sale of products and services, net of returns, was 1,234",
+])("%j is not a figure", (text) => {
+  expect(isFigureText(text)).toBe(false);
+});
+
+test("tags figure cells only, keeping every cell in place (citation cell indexes)", () => {
+  const host = document.createElement("div");
+  host.append(
+    parseViewerHtml(
+      `<table><tbody><tr data-sid="9"><td>Data Center</td><td>$</td><td><span>47,525 </span></td><th>(12.5)%</th><td></td></tr></tbody></table>`,
+    ),
+  );
+  const cells = [...host.querySelectorAll("tr")[0].cells];
+  expect(cells.map((c) => c.classList.contains(FIGURE_CELL_CLASS))).toEqual([
+    false, false, true, true, false,
+  ]);
+  expect(cells.map((c) => c.textContent)).toEqual(["Data Center", "$", "47,525 ", "(12.5)%", ""]);
 });
