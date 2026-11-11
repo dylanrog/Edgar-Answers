@@ -14,7 +14,7 @@ from pathlib import Path
 from api.answer import answer_stream
 
 from .faithfulness import _REFUSALS, values_present
-from .harness import GoldenQuestion, load_golden
+from .harness import Alternative, GoldenQuestion, load_golden
 
 EXAMPLES_PATH = Path(__file__).parent / "examples.yaml"
 TUTORIAL_PATH = (
@@ -53,57 +53,81 @@ def judge_run(
     # Every verified citation must sit wholly on gold: a correct figure from
     # the right filing plus a stray one from another filing, or a quote that
     # spans a gold row and its neighbour (the viewer would highlight both),
-    # still shows the visitor a source that is not the answer.
+    # still shows the visitor a source that is not the answer. An entry's
+    # alternatives are gold too.
     for c in verified:
         if not any(
-            c["accession"] == e.accession and set(c["sids"]) <= set(e.gold_sids)
+            c["accession"] == pin.accession and set(c["sids"]) <= set(pin.gold_sids)
             for e in entries
+            for pin in e.pins()
         ):
             reasons.append(
                 f"stray verified citation {c.get('ticker')} {c['accession']}"
                 f" sids={c['sids']} is not within one gold entry"
             )
     for e in entries:
-        if not any(
-            c["accession"] == e.accession and set(c["sids"]) & set(e.gold_sids)
-            for c in verified
-        ):
-            wrong = sorted(
-                {c["accession"] for c in verified if c["ticker"] == e.ticker}
-                - {e.accession}
-            )
-            hint = f" (cited {', '.join(wrong)} instead)" if wrong else ""
-            reasons.append(
-                f"{e.ticker}: no verified citation hits {e.accession} gold sids{hint}"
-            )
-        if e.expected_values and not values_present(answer, e.expected_values):
-            reasons.append(f"{e.ticker}: expected values missing from answer")
-    for e in entries:
-        # Figures the verified citations mark on this entry's gold rows. A gold
-        # row can hold several years: a quote spanning two columns verifies and
-        # highlights the wrong year too, so the column is checked, not just the row.
-        on_gold = [
-            cell["cell"]
-            for c in verified
-            if c["accession"] == e.accession
-            for cell in c.get("cells") or []
-            if cell["sid"] in e.gold_sids
-        ]
-        if e.gold_cells:
-            outside = sorted(set(on_gold) - set(e.gold_cells))
-            if outside:
+        pins = e.pins()
+        # The column check applies to every pin a citation lands on, satisfied
+        # or not: a wrong year marked on a gold row is shown to the visitor.
+        for pin in pins:
+            outside = sorted(set(_on_gold(verified, pin)) - set(pin.gold_cells))
+            if pin.gold_cells and outside:
                 reasons.append(
-                    f"{e.ticker}: verified citation on {e.accession} marks cell(s)"
-                    f" {outside} on a gold sid, outside gold_cells {list(e.gold_cells)}"
+                    f"{e.ticker}: verified citation on {pin.accession} marks cell(s)"
+                    f" {outside} on a gold sid, outside gold_cells {list(pin.gold_cells)}"
                 )
-        if e.requires_cell and not any(
-            not e.gold_cells or cell in e.gold_cells for cell in on_gold
-        ):
-            reasons.append(
-                f"{e.ticker}: no verified citation on {e.accession} has a gold cell on a gold sid"
-            )
+        # The entry is satisfied by its own pin OR any alternative. If none is,
+        # report the first pin that was cited at all (else the entry's own), so
+        # the reasons describe the filing the answer actually used.
+        wrong = sorted(
+            {c["accession"] for c in verified if c["ticker"] == e.ticker}
+            - {pin.accession for pin in pins}
+        )
+        hint = f" (cited {', '.join(wrong)} instead)" if wrong else ""
+        judged = [(pin, _pin_reasons(e.ticker, pin, verified, answer, hint)) for pin in pins]
+        if all(pin_reasons for _, pin_reasons in judged):
+            cited = [r for pin, r in judged if _hits(verified, pin)]
+            reasons += cited[0] if cited else judged[0][1]
     if len({e.ticker for e in entries}) >= 2 and len({c["ticker"] for c in verified}) < 2:
         reasons.append("comparison cited fewer than 2 tickers")
+    return reasons
+
+
+def _hits(verified: list[dict], pin: Alternative) -> bool:
+    return any(
+        c["accession"] == pin.accession and set(c["sids"]) & set(pin.gold_sids)
+        for c in verified
+    )
+
+
+def _on_gold(verified: list[dict], pin: Alternative) -> list[int]:
+    """Figures the verified citations mark on this pin's gold rows. A gold row
+    can hold several years: a quote spanning two columns verifies and
+    highlights the wrong year too, so the column is checked, not just the row."""
+    return [
+        cell["cell"]
+        for c in verified
+        if c["accession"] == pin.accession
+        for cell in c.get("cells") or []
+        if cell["sid"] in pin.gold_sids
+    ]
+
+
+def _pin_reasons(
+    ticker: str, pin: Alternative, verified: list[dict], answer: str, hint: str = ""
+) -> list[str]:
+    """Why this one pin is not satisfied: hit, figures stated, cell cited."""
+    reasons: list[str] = []
+    if not _hits(verified, pin):
+        reasons.append(f"{ticker}: no verified citation hits {pin.accession} gold sids{hint}")
+    if pin.expected_values and not values_present(answer, pin.expected_values):
+        reasons.append(f"{ticker}: expected values missing from answer")
+    if pin.requires_cell and not any(
+        not pin.gold_cells or cell in pin.gold_cells for cell in _on_gold(verified, pin)
+    ):
+        reasons.append(
+            f"{ticker}: no verified citation on {pin.accession} has a gold cell on a gold sid"
+        )
     return reasons
 
 

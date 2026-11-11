@@ -84,26 +84,27 @@ def cmd_verify(args) -> None:
     failures = 0
     with db.connect() as conn, conn.cursor() as cur:
         for question in questions:
-            cur.execute(
-                "SELECT id FROM filings WHERE accession = %s", (question.accession,)
-            )
-            row = cur.fetchone()
-            if row is None:
-                print(f"FAIL {question.id}: accession {question.accession} not in DB")
-                failures += 1
-                continue
-            filing_id = row[0]
-            for sid in question.gold_sids:
-                cur.execute(
-                    "SELECT text FROM sentences WHERE filing_id = %s AND sid = %s",
-                    (filing_id, sid),
-                )
-                sentence = cur.fetchone()
-                if sentence is None:
-                    print(f"FAIL {question.id}: sid {sid} not in {question.accession}")
+            for n, pin in enumerate(question.pins()):
+                # An alternative is a pin like the entry's own, so it is checked too.
+                label = question.id if n == 0 else f"{question.id} alt {n}"
+                cur.execute("SELECT id FROM filings WHERE accession = %s", (pin.accession,))
+                row = cur.fetchone()
+                if row is None:
+                    print(f"FAIL {label}: accession {pin.accession} not in DB")
                     failures += 1
-                else:
-                    print(f"ok  {question.id} sid {sid}: {sentence[0][:90]}")
+                    continue
+                filing_id = row[0]
+                for sid in pin.gold_sids:
+                    cur.execute(
+                        "SELECT text FROM sentences WHERE filing_id = %s AND sid = %s",
+                        (filing_id, sid),
+                    )
+                    sentence = cur.fetchone()
+                    if sentence is None:
+                        print(f"FAIL {label}: sid {sid} not in {pin.accession}")
+                        failures += 1
+                    else:
+                        print(f"ok  {label} sid {sid}: {sentence[0][:90]}")
     if failures:
         raise SystemExit(f"{failures} golden-set problems")
     print(f"all {len(questions)} entries verified")

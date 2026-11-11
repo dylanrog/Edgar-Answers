@@ -6,6 +6,16 @@
 # `gold_cells` pins its column: cell 2 is the year-of-interest figure on both
 # gold rows (FY25 sid 2768: 115,186; FY24 sid 2777: 47,525), cells 6 and 10
 # are the prior years.
+# An entry may list `alternatives`: other pins (accession, gold_sids,
+# expected_values, optional gold_cells/requires_cell) that satisfy it instead of
+# its own pin, judged by the same rules; a citation inside an alternative's gold
+# sids is not stray. tutorial-2-msft uses this for a restatement: Microsoft's
+# FY2025 and FY2026 10-Ks report fiscal 2024 Microsoft Cloud revenue as $137.7B
+# (restated) against $137.4B as originally reported in the FY2024 10-K. Citing a
+# later filing's restated figure for the same fiscal year is a correct answer for
+# the period asked, not period confusion -- but only with the restated figure
+# ($137.7B) stated, so a later filing's FY2025 or FY2026 figure still fails.
+# (Seen 1 in 20 live runs: the follow-up cited the FY2026 10-K, sid 2907.)
 # Vetted with `python -m evals examples` (10 runs); check pins with
 # `python -m evals verify --examples`. Must match frontend/lib/tutorial.json;
 # tests/test_examples.py enforces that.
@@ -60,3 +70,14 @@
   section: item7
   gold_sids: [1317, 3161]
   expected_values: [["137.4 billion", "137.4"]]
+  alternatives:
+    # FY2026 10-K: "...was $ 214.4 billion, $ 168.9 billion, and $ 137.7 billion
+    # in fiscal years 2026, 2025, and 2024, respectively."
+    - accession: "0001193125-26-323660"
+      gold_sids: [2907]
+      expected_values: [["137.7 billion", "137.7"]]
+    # FY2025 10-K: "...was $ 168.9 billion, $ 137.7 billion, and $ 111.6 billion
+    # in fiscal years 2025, 2024, and 2023, respectively."
+    - accession: "0000950170-25-100235"
+      gold_sids: [2869]
+      expected_values: [["137.7 billion", "137.7"]]

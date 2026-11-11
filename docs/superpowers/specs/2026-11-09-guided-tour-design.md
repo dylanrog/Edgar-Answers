@@ -336,5 +336,11 @@ Cloud.
 
 FY2024 Microsoft Cloud uses the figure as originally reported in the FY2024
 10-K ($137.4B), which is what the system cites. The FY2025 10-K's restated
-$137.7B is not accepted. The vetting bar rises from 5 to **10 runs** for the
+$137.7B is not accepted.
+*(Amended 2026-11-10: it is now accepted as an explicit alternative. In 1 of
+20 live runs the follow-up cited the FY2026 10-K's restated $137.7B (sid
+2907). A later filing's restatement of the same fiscal year answers the period
+asked; it is not period confusion. `examples.yaml` lists the FY2026 10-K
+`0001193125-26-323660` sid 2907 and the FY2025 10-K `0000950170-25-100235`
+sid 2869 as alternatives, each requiring $137.7B to be stated.)* The vetting bar rises from 5 to **10 runs** for the
 tutorial, since this one conversation is the demo.

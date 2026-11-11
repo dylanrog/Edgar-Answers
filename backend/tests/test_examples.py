@@ -369,3 +369,157 @@ def test_tutorial_json_matches_examples_yaml():
     assert groups["tutorial-2"][0].after == "tutorial-1"
     assert all(e.expected_values for g in groups.values() for e in g)
     assert {e.ticker for e in groups["tutorial-1"]} == {"NVDA", "MSFT"}
+
+
+# --- alternatives: a later filing's restated figure for the same period ---
+
+RESTATED = "0001193125-26-323660"
+
+
+def msft(alternatives=()):
+    from evals.harness import Alternative
+
+    return GoldenQuestion(
+        id="e-MSFT", question="q?", ticker="MSFT", accession="0000950170-24-087843",
+        section="item7", gold_sids=[3161], group="g",
+        expected_values=(("137.4 billion", "137.4"),),
+        alternatives=tuple(
+            Alternative(RESTATED, [2907], (("137.7 billion", "137.7"),), *rest)
+            for rest in alternatives
+        ),
+    )
+
+
+def msft_cite(accession=RESTATED, sids=(2907,), cells=()):
+    return cite("MSFT", accession, sids, cells=cells)
+
+
+def test_alternative_hit_with_its_figure_passes():
+    answer = "Microsoft Cloud revenue was $137.7 billion in fiscal 2024."
+    assert judge([msft([()])], answer=answer, citations=[msft_cite()]) == []
+
+
+def test_alternative_hit_without_an_alternative_is_a_stray_and_a_miss():
+    answer = "Microsoft Cloud revenue was $137.7 billion in fiscal 2024."
+    reasons = judge([msft()], answer=answer, citations=[msft_cite()])
+    assert any("stray" in r for r in reasons)
+    assert any("no verified citation hits 0000950170-24-087843" in r for r in reasons)
+
+
+def test_neither_primary_nor_alternative_hit_fails():
+    other = msft_cite("0000950170-25-100235", (2869,))
+    answer = "Microsoft Cloud revenue was $137.7 billion in fiscal 2024."
+    reasons = judge([msft([()])], answer=answer, citations=[other])
+    assert any("no verified citation hits 0000950170-24-087843" in r for r in reasons)
+
+
+def test_a_citation_in_an_alternative_is_not_stray():
+    # Both the original and the restated filing cited: the original satisfies
+    # the entry, and the restated citation sits on an alternative's gold.
+    answer = "Microsoft Cloud revenue was $137.4 billion in fiscal 2024."
+    both = [msft_cite("0000950170-24-087843", (3161,)), msft_cite()]
+    assert judge([msft([()])], answer=answer, citations=both) == []
+
+
+def test_the_hit_alternatives_values_are_the_ones_checked():
+    # The restated filing is cited but the answer states the original figure:
+    # the alternative's own expected value (137.7) is missing, so it fails.
+    answer = "Microsoft Cloud revenue was $137.4 billion in fiscal 2024."
+    reasons = judge([msft([()])], answer=answer, citations=[msft_cite()])
+    assert any("expected values missing" in r for r in reasons)
+    assert not any("no verified citation hits" in r for r in reasons)
+
+
+def test_alternative_cell_rules_apply():
+    answer = "Microsoft Cloud revenue was $137.7 billion in fiscal 2024."
+    alt = msft([((2,), True)])  # gold_cells (2,), requires_cell
+    assert judge([alt], answer=answer, citations=[msft_cite()])
+    wrong = msft_cite(cells=[{"sid": 2907, "cell": 6}])
+    assert any("outside gold_cells" in r for r in judge([alt], answer=answer, citations=[wrong]))
+    right = msft_cite(cells=[{"sid": 2907, "cell": 2}])
+    assert judge([alt], answer=answer, citations=[right]) == []
+
+
+_ALT = """  alternatives:
+    - accession: "2"
+      gold_sids: [7]
+      expected_values: [["1.5"]]
+"""
+
+
+def test_load_golden_reads_alternatives(tmp_path):
+    qs = load_golden(_write(tmp_path, _BASE.format(after="g1") + _ALT))
+    assert qs[0].alternatives == ()
+    (alt,) = qs[1].alternatives
+    assert (alt.accession, alt.gold_sids, alt.expected_values) == ("2", [7], (("1.5",),))
+    assert (alt.gold_cells, alt.requires_cell) == ((), False)
+    assert [p.accession for p in qs[1].pins()] == ["1", "2"]
+
+
+_ALT_HEAD = '  alternatives:\n    - accession: "2"\n      gold_sids: [7]\n'
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "  alternatives: {}\n",
+        '  alternatives: ["2"]\n',
+        "  alternatives:\n    - gold_sids: [7]\n",
+        '  alternatives:\n    - accession: "2"\n',
+        "  alternatives:\n    - accession: 2\n      gold_sids: [7]\n",
+        _ALT_HEAD + "      expected_values: [[1.5]]\n",
+        _ALT_HEAD + '      gold_cells: ["2"]\n',
+        _ALT_HEAD + "      requires_cell: 1\n",
+        _ALT_HEAD + "      ticker: MSFT\n",
+    ],
+)
+def test_load_golden_rejects_malformed_alternatives(tmp_path, bad):
+    with pytest.raises(ValueError, match="alternative"):
+        load_golden(_write(tmp_path, _BASE.format(after="g1") + bad))
+
+
+def test_examples_accept_msft_fiscal_2024_restated_in_later_filings():
+    (msft_fy24,) = [q for q in load_examples()["tutorial-2"] if q.ticker == "MSFT"]
+    assert {(a.accession, tuple(a.gold_sids)) for a in msft_fy24.alternatives} == {
+        ("0001193125-26-323660", (2907,)),
+        ("0000950170-25-100235", (2869,)),
+    }
+    assert all(a.expected_values == (("137.7 billion", "137.7"),)
+               for a in msft_fy24.alternatives)
+
+
+def test_verify_examples_checks_alternative_pins(monkeypatch, tmp_path, capsys):
+    import argparse
+
+    from evals import __main__ as cli
+
+    queried = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def execute(self, sql, params):
+            queried.append(params)
+
+        def fetchone(self):
+            return (1,) if len(queried[-1]) == 1 else ("a sentence",)
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setattr(ex, "EXAMPLES_PATH", _write(tmp_path, _BASE.format(after="g1") + _ALT))
+    monkeypatch.setattr(cli.db, "connect", Conn)
+    cli.cmd_verify(argparse.Namespace(examples=True))
+    assert ("2",) in queried and (1, 7) in queried
+    assert "ok  b alt 1 sid 7" in capsys.readouterr().out
