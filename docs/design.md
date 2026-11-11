@@ -447,10 +447,17 @@ One page: `/ask`, split-pane.
   absolute http(s) or `data:` (EDGAR-relative sources, which 404 against this
   origin) is removed before it goes live (`lib/viewer-html.ts`). Hiding them
   after they failed was too late: the highlight had already scrolled, and the
-  content above the figure collapsed and carried it out of the pane. For 2 s
-  after a highlight a `ResizeObserver` re-centres the target on any layout
-  change, and a fresh highlight pulses twice (not under reduced motion). Below
-  640 px, inline-justified filing text is left-aligned.
+  content above the figure collapsed and carried it out of the pane. The
+  highlight is centred by setting the pane's own `scrollTop`/`scrollLeft`
+  (`centreInPane`), never `scrollIntoView`, which would also scroll the window.
+  For 2 s after a highlight a `ResizeObserver` on the HTML and the pane
+  re-centres the target on any layout change (a card mounting above the viewer
+  shrinks the pane); the visitor's first wheel, touch, pointer press or key
+  ends that early. A fresh highlight pulses twice (not under reduced motion).
+  Below 640 px, inline-justified filing text is left-aligned, and filing tables
+  keep their natural width (cells don't wrap) and scroll sideways inside the
+  pane, whose right edge fades while there is more to the right (a CSS
+  scroll-driven animation; no fade where unsupported).
 
 - **Guided tour** (spec 2026-11-09): each answer carries an "under the hood"
   panel (`components/under-the-hood.tsx`, logic in `lib/pipeline-steps.ts`)
@@ -463,15 +470,22 @@ One page: `/ask`, split-pane.
   asked in the same conversation. Steps: welcome, watch, click, source, more
   (an `Ask "What about 24?"` button or "Skip tutorial"), followup, closing.
   Asking the follow-up closes turn 1's filing tabs, so the viewer is empty until
-  a turn-2 citation is clicked. Skip, Done, or a question typed into the form
+  a turn-2 citation is clicked. At the closing the latest turn's panel folds to
+  its summary line and, on md+ only, the viewer opens that turn's first verified
+  citation as if clicked (on a phone it would scroll away from the closing
+  card). While the welcome card shows, the composer's Ask is a secondary
+  button. Skip, Done, or a question typed into the form
   at any step lands on the regular site, which has no example chips: only the
   scripted asks run the script, so the vetted follow-up is never offered on top
   of an unvetted question. The header's "Take the tutorial" (hidden while the
-  tutorial runs) restarts it. The script lives in `frontend/lib/tutorial.json` and
+  tutorial runs, and until the mount-time check of the seen flag has run, so it
+  never flashes before the welcome card) restarts it. The script lives in `frontend/lib/tutorial.json` and
   `backend/evals/examples.yaml`; `tests/test_examples.py` fails CI if they
   drift, and `python -m evals examples` is the release check (§8).
 - **Mobile:** below `md` (768 px) the page stacks vertically instead of
-  splitting, and a citation click scrolls the viewer into view.
+  splitting. An open viewer is a full screen tall (it is the last thing on the
+  page, so a shorter one could not be scrolled to the top), and a citation tap
+  scrolls the page to it after the tap has rendered.
 
 Components: `app/ask/page.tsx`, `components/answer-stream.tsx`,
 `components/citation-chip.tsx`, `components/filing-viewer.tsx`,
