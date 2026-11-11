@@ -234,3 +234,56 @@ def test_each_row_is_narrowed_on_its_own():
     c = citation(cells=((SID, 2), (SID, 6), (SID, 10), (SID + 1, 2), (SID + 1, 6)))
     kept = narrow_cells(c, cells, "Data Center revenue was $115.2 billion [1].").cells
     assert kept == ((SID, 2), (SID + 1, 2), (SID + 1, 6))
+
+
+# --- rounded or truncated figures near a cell fail closed ---
+
+
+def test_billions_table_rounded_figure_fails_closed():
+    # A billions-scale table (JPM): "about $22 billion" is 22.1 rounded, not a
+    # miss, so marking only 23.4 would hide the figure the answer gives first.
+    cells = _cells((2, "22.1", "number"), (6, "23.4", "number"))
+    c = citation(cells=((SID, 2), (SID, 6)))
+    prose = "Cash was about $22 billion, down from $23.4 billion [1]."
+    assert narrow_cells(c, cells, prose).cells == ((SID, 2), (SID, 6))
+
+
+def test_unitless_per_share_rounded_figure_fails_closed():
+    cells = _cells((2, "6.08", "number"), (6, "6.13", "number"), (10, "5.67", "number"))
+    c = citation(cells=((SID, 2), (SID, 6), (SID, 10)))
+    prose = "Diluted EPS was about $6.1, versus $6.13 a year earlier [1]."
+    assert narrow_cells(c, cells, prose).cells == ((SID, 2), (SID, 6), (SID, 10))
+
+
+def test_truncated_billions_figure_fails_closed():
+    # "$47 billion" truncates 47,525 (47.5 would round); a whole unit of slack.
+    prose = "Revenue was $115,186 million, up from about $47 billion [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6), (SID, 10))
+
+
+# --- unit spellings ---
+
+
+def test_lowercase_b_is_billion():
+    prose = "Data Center was $115.2b, up from $47,525 million [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6))
+
+
+def test_hyphenated_unit():
+    prose = "The $115.2-billion Data Center haul beat $47.5 billion [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6))
+
+
+def test_range_ends_share_the_unit():
+    prose = "Revenue of $115-116 billion, up from $47.5 billion [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6))
+
+
+def test_trillion_is_read_and_never_hides_the_stated_cell():
+    from api.figures import is_stated, stated_figures
+
+    assert is_stated(CELLS[0], stated_figures("$0.1152 trillion"))
+    # At this scale every cell is within half a unit, so it fails closed
+    # rather than marking FY2024 alone.
+    prose = "Data Center was $0.1152 trillion, up from $47.5 billion [1]."
+    assert narrowed(prose) == ((SID, 2), (SID, 6), (SID, 10))

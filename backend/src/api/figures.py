@@ -97,10 +97,19 @@ def claim_sides(prose: str, marker: int) -> tuple[str, str] | None:
     return " ".join(befores), " ".join(afters)
 
 
+# The unit written right after a figure: "$115.2 billion", "$115.2B",
+# "115.2bn", "$115.2-billion", "$(1,234) million", "47.5%".
 _UNIT = re.compile(
-    r"\)?\s*(?:(?P<billion>(?i:billions?|bn)|B)|(?P<million>(?i:millions?|mn)|M)"
+    r"\)?[ \t]*-?[ \t]*(?:(?P<trillion>(?i:trillions?)|T)"
+    r"|(?P<billion>(?i:billions?|bn)|B|b)|(?P<million>(?i:millions?|mn)|M)"
     r"|(?P<percent>%|(?i:percent|per cent)))(?![A-Za-z])"
 )
+# Between the ends of a range: "$115-116 billion", "$115 to $116 billion".
+_RANGE = re.compile(r"[ \t]*(?:-|–|to)[ \t]*\$?[ \t]*$")
+# How many of a table's units make one of the prose unit: a millions table's
+# 115,186 is 115.186 billion or 0.115186 trillion; a thousands table's 115,186
+# is 115.186 million. The table's own scale is not consulted.
+_STEP = {"billion": Decimal(1000), "million": Decimal(1000), "trillion": Decimal(1000000)}
 
 
 @dataclass(frozen=True)
@@ -109,17 +118,31 @@ class Figure:
 
     value: Decimal  # absolute: "(1,234)" and "-1,234" both read 1234
     places: int  # decimals as written: "115.2" -> 1
-    unit: str  # "billion" | "million" | "percent" | ""
+    unit: str  # "trillion" | "billion" | "million" | "percent" | ""
+
+    @property
+    def tolerance(self) -> Decimal:
+        """How far a value can sit from this figure and still be what it
+        rounds or truncates: a whole unit for "$22 billion" (22.1, 22.9),
+        half a unit beyond that."""
+        return max(Decimal("0.5"), Decimal(1).scaleb(-self.places))
 
 
 def stated_figures(text: str) -> list[Figure]:
-    figures = []
+    found = []
     for match in _FIGURE.finditer(text):
         value = Decimal(match.group().replace(",", ""))
         unit_match = _UNIT.match(text, match.end())
-        unit = unit_match.lastgroup if unit_match else ""
-        figures.append(Figure(value, max(0, -value.as_tuple().exponent), unit or ""))
-    return figures
+        unit = (unit_match.lastgroup or "") if unit_match else ""
+        found.append([match.start(), match.end(), value, unit])
+    # A range's first end takes the unit of its second: "$115-116 billion".
+    for first, second in zip(found, found[1:], strict=False):
+        if not first[3] and second[3] and _RANGE.match(text[first[1] : second[0]]):
+            first[3] = second[3]
+    return [
+        Figure(value, max(0, -value.as_tuple().exponent), unit)
+        for _, _, value, unit in found
+    ]
 
 
 def _rounded(value: Decimal, places: int) -> Decimal:
@@ -127,25 +150,24 @@ def _rounded(value: Decimal, places: int) -> Decimal:
 
 
 def _scaled(cell: Cell, figure: Figure) -> Decimal | None:
-    """The cell's value in the prose figure's unit, when the figure names the
-    next unit up from the table's (millions -> billion, thousands -> million);
-    None when it doesn't. The table's own scale isn't consulted: a figure one
-    unit up is read as the cell divided by 1,000."""
-    if cell.kind != "number" or cell.value is None or figure.unit not in ("billion", "million"):
+    """The cell's value in the prose figure's unit, when the figure names a
+    unit above the table's (see _STEP); None when it doesn't."""
+    if cell.kind != "number" or cell.value is None or figure.unit not in _STEP:
         return None
-    return abs(cell.value) / 1000
+    return abs(cell.value) / _STEP[figure.unit]
 
 
 def is_stated(cell: Cell, figures: list[Figure]) -> bool:
     """The cell's figure is among `figures`.
 
     A number cell matches a non-percent figure stated with its exact digits
-    ("115,186", "$115,186 million"), or one unit up -- "billion"/"bn"/"B"
-    for a millions table, "million" for a thousands table -- rounded to the
-    decimals the prose used, none to three ("$115 billion", "$115.2B",
-    "115.186 billion"). A bare "115.2" with no unit matches nothing scaled. A
-    percent cell matches only a figure written as a percent, rounded to the
-    prose's decimals. A number never matches a percent, nor a percent a number.
+    ("115,186", "$115,186 million"), or one unit up -- billion/bn/B/b or
+    trillion for a millions table, million for a thousands table -- rounded
+    to the decimals the prose used ("$115 billion", "$115.2B", "115.186
+    billion", "$0.1152 trillion"). A bare "115.2" with no unit matches
+    nothing scaled. A percent cell matches only a figure written as a
+    percent, rounded to the prose's decimals. A number never matches a
+    percent, nor a percent a number.
     """
     if cell.value is None:
         return False
@@ -158,26 +180,28 @@ def is_stated(cell: Cell, figures: list[Figure]) -> bool:
         if cell.kind == "percent" and figure.value == _rounded(value, figure.places):
             return True
         scaled = _scaled(cell, figure)
-        if scaled is not None and figure.places <= 3 and figure.value == _rounded(
-            scaled, figure.places
-        ):
+        if scaled is not None and figure.value == _rounded(scaled, figure.places):
             return True
     return False
 
 
 def _near_miss(cell: Cell, figures: list[Figure]) -> bool:
-    """A unit-bearing figure within rounding distance (half a unit) of the
-    cell that still didn't match it -- "$115.0 billion" beside 115,186, or
-    "47%" beside 47.5% -- so the claim may well be about this cell."""
+    """A figure within rounding distance (`Figure.tolerance`) of the cell that
+    still didn't match it, so the claim may well be about this cell: "about
+    $22 billion" beside 22.1 in a billions table, "about $6.1" beside a 6.08
+    per-share figure, "$47 billion" beside 47,525, "47%" beside 47.5%.
+    Compared with the cell's own value whatever the figure's unit, and with
+    its scaled value when the unit is one up."""
     if cell.value is None:
         return False
     value = abs(cell.value)
     for figure in figures:
-        percent = cell.kind == "percent" and figure.unit == "percent"
-        if percent and abs(figure.value - value) <= Decimal("0.5"):
+        if (cell.kind == "percent") != (figure.unit == "percent"):
+            continue
+        if abs(figure.value - value) <= figure.tolerance:
             return True
         scaled = _scaled(cell, figure)
-        if scaled is not None and abs(figure.value - scaled) <= Decimal("0.5"):
+        if scaled is not None and abs(figure.value - scaled) <= figure.tolerance:
             return True
     return False
 
