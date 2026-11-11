@@ -99,6 +99,25 @@ const TURN2 =
   }) +
   done(1, 1);
 
+// A follow-up answer citing two filings, revealed slowly enough (3 quotes,
+// ~400 ms apart) for the visitor to open one before the closing.
+const TURN2_TWO_FILINGS =
+  sse("resolved", { standalone_question: STANDALONE }) +
+  progress(nvdaRef, msftRef) +
+  sse("token", { text: "NVIDIA was $47,525 million [1]; Microsoft Cloud was $137.4 billion [2] [3]." }) +
+  sse("progress", { stage: "verifying", quotes: 3 }) +
+  sse("citation", {
+    marker: 1,
+    verified: true,
+    ...nvdaRef,
+    sids: [31],
+    quote: "Data Center $ 47,525",
+    cells: [{ sid: 31, cell: 4 }],
+  }) +
+  msftCitation(2) +
+  msftCitation(3) +
+  done(3, 3);
+
 // Two paragraphs, one citation in each.
 const TWO_PARAGRAPHS =
   progress(nvdaRef, msftRef) +
@@ -310,6 +329,12 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await expect(callout(page)).toHaveCount(0);
   await expect(takeTutorial(page)).toBeVisible();
+  // Done removes the closing card; the folded panel stays folded, so the
+  // answer does not get pushed away as the card goes.
+  await expect(
+    page.locator("article").last().getByRole("button", { name: /^Under the hood/ }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByText(/In fiscal 2024 it was/)).toBeInViewport();
   await reloadHydrated(page);
   await expect(welcome(page)).toHaveCount(0);
   await expect(callout(page)).toHaveCount(0);
@@ -631,4 +656,61 @@ test("the prerendered page has no tutorial link, so a first visit never flashes 
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
   await page.goto("/ask");
   await expect(takeTutorial(page)).toBeVisible();
+});
+
+test("a source the visitor opens during the follow-up is not switched by the closing", async ({
+  page,
+}) => {
+  await stub(page, [TURN1, TURN2_TWO_FILINGS]);
+  await toMoreStep(page);
+  await followUpButton(page).click();
+
+  // During the follow-up's reveal, open its Microsoft source.
+  const article = page.locator("article").last();
+  await article.getByRole("button", { name: "[2]", exact: true }).click();
+  await expect(page.locator(`[data-accession="${MSFT}"] .cited-sentence`)).toBeVisible();
+  await expect(page.getByText(/Follow-ups keep context/)).toBeVisible(); // still the followup step
+
+  await expect(page.getByText(/works on any document collection/)).toBeVisible();
+  await page.waitForTimeout(300);
+  // Their Microsoft source is still the one showing; the payoff did not open
+  // NVIDIA's figure over it.
+  await expect(page.locator(`[data-accession="${MSFT}"] .cited-sentence`)).toBeVisible();
+  await expect(page.locator(`[data-accession="${NVDA}"]`)).toHaveCount(0);
+});
+
+test.describe("back to the answer on a phone", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("a citation tap fills the screen with the filing; Back to answer returns to it", async ({
+    page,
+  }) => {
+    await stub(page, [TURN1_LONG]);
+    await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
+    await page.goto("/ask");
+    await page.getByLabel("Question").fill("Compare them");
+    await askButton(page).click();
+    await chip(page).click();
+    await expect(page.locator(".cited-figure")).toBeInViewport();
+
+    const back = page.getByRole("button", { name: "Back to answer" });
+    await expect(back).toBeInViewport();
+    expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    const question = page.locator("article").last().getByText("Compare them", { exact: true });
+    await expect(question).not.toBeInViewport();
+
+    await back.click();
+    await expect(question).toBeInViewport();
+  });
+});
+
+test("there is no Back to answer button beside the answer on a wide screen", async ({ page }) => {
+  await stub(page, [TYPED]);
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
+  await page.goto("/ask");
+  await page.getByLabel("Question").fill("q");
+  await askButton(page).click();
+  await chip(page).click();
+  await expect(page.locator(".cited-figure")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to answer" })).toBeHidden();
 });

@@ -46,6 +46,8 @@ export default function AskPage() {
   // header's tutorial link waits for it, or a first-time visitor sees it flash
   // before the welcome card replaces it.
   const [tourChecked, setTourChecked] = useState(false);
+  // The turn whose panel the closing folded (see `expanded` below).
+  const [foldedTurn, setFoldedTurn] = useState<number | null>(null);
 
   useEffect(() => {
     // Deferred so the first client render matches the prerendered "off".
@@ -133,6 +135,7 @@ export default function AskPage() {
     options?: { tourEvent?: TourEvent },
   ) {
     dispatch(options?.tourEvent ?? askEvent(tour));
+    openedLatest.current = false;
     askAbort.current?.abort();
     const controller = new AbortController();
     askAbort.current = controller;
@@ -189,8 +192,15 @@ export default function AskPage() {
    * where the viewer is below the thread and opening it would scroll away from
    * the closing card.
    */
+  // Whether the visitor has opened a citation of the latest answer since it
+  // was asked; reset by every ask.
+  const openedLatest = useRef(false);
+
   function showPayoff(state: AnswerState) {
     if (!window.matchMedia("(min-width: 768px)").matches) return;
+    // The visitor already opened one of this answer's sources themselves:
+    // switching their tab would undo their choice.
+    if (openedLatest.current) return;
     const marker = firstVerifiedMarker(state.citations);
     const citation = marker === null ? undefined : state.citations.get(marker);
     if (citation !== undefined) openCitation(citation);
@@ -201,6 +211,10 @@ export default function AskPage() {
     // there is nothing trustworthy to scroll to.
     if (!citation.verified || citation.accession === "") return;
     dispatch({ type: "citationClicked" });
+    const latest = turns.at(-1)?.state.citations.get(citation.marker);
+    if (latest?.accession === citation.accession && latest.quote === citation.quote) {
+      openedLatest.current = true;
+    }
     openCitation(citation);
     // Stacked layout (below md): the viewer is further down the page, so bring
     // it on screen. Its own highlight scroll then positions the sentence.
@@ -224,6 +238,12 @@ export default function AskPage() {
     setHighlights({});
     // Same conversation: the follow-up only makes sense with its context.
     ask(TUTORIAL.followUp, {}, { tourEvent: { type: "followUp" } });
+  }
+
+  function backToAnswer() {
+    threadRef.current
+      ?.querySelector("article:last-of-type")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function takeTour() {
@@ -299,9 +319,11 @@ export default function AskPage() {
                 state={turn.state}
                 onSelect={select}
                 names={names}
-                // At the closing the panel folds to its summary line, so the
-                // answer it would otherwise push off screen stays in view.
-                expanded={latest && tour !== "closing"}
+                // From the closing on, this turn's panel stays folded to its
+                // summary line -- also after Done, when the closing card goes
+                // and a re-expanding panel would push the answer away. A new
+                // turn has a new id, so it starts expanded.
+                expanded={latest && turn.id !== foldedTurn}
                 onSettled={
                   latest
                     ? () => {
@@ -315,7 +337,10 @@ export default function AskPage() {
                                   firstVerifiedMarker(lastState.citations) !== null,
                               },
                         );
-                        if (next === "closing" && before !== "closing") showPayoff(lastState);
+                        if (next === "closing" && before !== "closing") {
+                          setFoldedTurn(turn.id);
+                          showPayoff(lastState);
+                        }
                       }
                     : noop
                 }
@@ -366,11 +391,23 @@ export default function AskPage() {
         )}
       </section>
 
-      {/* On a phone an open viewer is a full screen tall: it is the last thing
-          on the page, so anything shorter could not be scrolled to the top,
-          and its source card would sit mid-screen under the composer. */}
-      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[100dvh]" : "h-auto"}`}>
+      {/* On a phone an open viewer is nearly a full screen tall: it is the
+          last thing on the page, so a much shorter one could not be scrolled
+          to the top, and its source card would sit mid-screen under the
+          composer. 3rem short of full, so the thread still peeks above it. */}
+      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[calc(100dvh-3rem)]" : "h-auto"}`}>
         {tour === "source" && <div className="shrink-0 px-3 pb-2">{callout("source")}</div>}
+        {tabs.open.length > 0 && (
+          // Phones only: with the filing filling the screen, a plain way back
+          // to the answer rather than the tab strip's small close buttons.
+          <button
+            type="button"
+            onClick={backToAnswer}
+            className="flex min-h-10 shrink-0 items-center gap-1 px-3 text-left text-sm text-blue-300 hover:text-blue-200 md:hidden"
+          >
+            <span aria-hidden>↑</span> Back to answer
+          </button>
+        )}
         <FilingTabs
           tabs={tabs}
           labels={labels}
