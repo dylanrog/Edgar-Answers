@@ -2,7 +2,7 @@
 
 import { CitationChip } from "@/components/citation-chip";
 import type { AnswerState } from "@/lib/answer";
-import { splitOnMarkers, splitParagraphs } from "@/lib/markers";
+import { parseProse } from "@/lib/prose";
 import type { Citation } from "@/lib/types";
 
 function Dot({ delay }: { delay: string }) {
@@ -62,23 +62,41 @@ export function AnswerStream({
           line that pre-wrap would render between them. pre-wrap stays for
           single line breaks inside a paragraph (lists). */}
       <div className="space-y-[0.6em] text-sm leading-[1.55]">
-        {splitParagraphs(state.prose).map((paragraph, p) => (
-          <p key={p} className="whitespace-pre-wrap">
-            {splitOnMarkers(paragraph).map((segment, index) =>
-              typeof segment === "string" ? (
-                <span key={index}>{segment}</span>
-              ) : (
+        {parseProse(state.prose).map((block, p) => {
+          const inlines = block.inlines.map((inline, index) => {
+            if ("marker" in inline) {
+              const chip = (
                 <CitationChip
                   key={index}
-                  marker={segment.marker}
-                  citation={state.citations.get(segment.marker)}
+                  marker={inline.marker}
+                  citation={state.citations.get(inline.marker)}
                   onSelect={onSelect}
-                  emphasized={emphasizeMarker === segment.marker}
+                  emphasized={emphasizeMarker === inline.marker}
                 />
-              ),
-            )}
-          </p>
-        ))}
+              );
+              return chip;
+            }
+            return inline.bold ? (
+              <strong key={index}>{inline.text}</strong>
+            ) : (
+              <span key={index}>{inline.text}</span>
+            );
+          });
+          return block.kind === "heading" ? (
+            <p
+              key={p}
+              role="heading"
+              aria-level={block.level}
+              className="whitespace-pre-wrap text-base font-semibold"
+            >
+              {inlines}
+            </p>
+          ) : (
+            <p key={p} className="whitespace-pre-wrap">
+              {inlines}
+            </p>
+          );
+        })}
       </div>
     </div>
   );
