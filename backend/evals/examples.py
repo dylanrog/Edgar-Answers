@@ -202,7 +202,7 @@ def run_examples(
     # Citations the repair step re-quoted into verification (design §6.3 step
     # 5): a pass that leans on repair is still a pass, but the bracket should
     # see how often it fires.
-    repaired_citations = 0
+    repaired_citations = verified_citations = total_citations = 0
     for chain in chains():
         label = " -> ".join(chain)
         passed = 0
@@ -243,6 +243,8 @@ def run_examples(
                 conn.commit()
                 answer = "".join(parts)
                 repaired_citations += sum(bool(c.get("repaired")) for c in citations)
+                verified_citations += sum(bool(c.get("verified")) for c in citations)
+                total_citations += len(citations)
                 turn_failures = [
                     f"{group}: {r}"
                     for r in judge_run(entries, answer, citations, unverified, errored)
@@ -284,6 +286,9 @@ def run_examples(
             print(f"  {entry_id}: satisfied by an alternative in {alts}/{runs} runs"
                   f" ({breakdown})")
         all_ok &= passed == runs
+    first_pass = verified_citations - repaired_citations
+    rate = first_pass / total_citations if total_citations else 0.0
+    print(f"first_pass_verified_rate: {rate:.4f} ({first_pass}/{total_citations})")
     print(f"repaired_citations: {repaired_citations}")
     print("ALL PASSED" if all_ok else "FAILURES")
     return all_ok

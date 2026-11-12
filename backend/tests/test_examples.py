@@ -747,4 +747,5 @@ def test_run_examples_counts_and_marks_repaired_citations(monkeypatch, capsys):
     assert ok
     assert seen["quote_repairer"] is repairer
     assert "repaired_citations: 2" in out
+    assert "first_pass_verified_rate: 0.0000 (0/2)" in out
     assert "(repaired)" in out

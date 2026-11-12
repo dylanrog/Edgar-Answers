@@ -382,3 +382,33 @@ def test_the_figure_claims_beside_it_are_unaffected():
     assert narrow_cells(c, SEGMENT_CELLS, TUTORIAL_ANSWER).cells == (
         (COMPUTE, 1), (NETWORKING, 1),
     )
+
+
+def test_significant_figures_skip_bare_small_integers_years_and_markers():
+    from api.figures import significant_figures
+
+    text = "In Q2 fiscal 2024, Item 7 [3] shows $391.0 billion, 46.6%, 1,234"
+    figures = significant_figures(text)
+    assert [(str(f.value), f.unit) for f in figures] == [
+        ("391.0", "billion"), ("46.6", "percent"), ("1234", ""),
+    ]
+
+
+def test_quote_states_matches_text_figures_by_kind_and_rounding():
+    from api.figures import quote_states, significant_figures
+
+    quote = "Total net sales were 391.0 billion dollars"
+    assert quote_states(quote, [], significant_figures("sales were $391.0 billion"))
+    assert quote_states(quote, [], significant_figures("sales were $391 billion"))
+    assert not quote_states(quote, [], significant_figures("sales were $412.7 billion"))
+    margin = "Total gross margin percentage 46.6 % 45.2 %"
+    assert quote_states(margin, [], significant_figures("margin was 46.6%"))
+    assert not quote_states(margin, [], significant_figures("margin was 46.3%"))
+    assert not quote_states(margin, [], significant_figures("margin was $46.6 billion"))
+
+
+def test_quote_states_matches_a_covered_cell_scaled_one_unit_up():
+    from api.figures import quote_states, significant_figures
+
+    assert quote_states(ROW, CELLS, significant_figures("revenue was $115.2 billion"))
+    assert not quote_states(ROW, CELLS, significant_figures("revenue was $120.4 billion"))

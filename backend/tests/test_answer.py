@@ -557,7 +557,7 @@ def test_a_citation_naming_an_unretrieved_chunk_is_not_repaired(seeded_conn):
 @pytest.mark.db
 def test_repair_calls_per_answer_are_capped(seeded_conn):
     chunk_id = chunk_id_of(seeded_conn)
-    prose = " ".join(f"Claim {n} is true [{n}]." for n in range(1, 6))
+    prose = " ".join(f"Segment {n} sales were $391.0 billion [{n}]." for n in range(1, 6))
     block = ", ".join(
         f'{{"marker": {n}, "chunk_id": {chunk_id}, "quote": "misquote {n}"}}'
         for n in range(1, 6)
@@ -577,3 +577,118 @@ def test_without_a_repairer_a_misquote_stays_unverified(seeded_conn):
     [citation] = citation_events(events)
     assert citation["verified"] is False
     assert citation["repaired"] is False
+
+
+def ask_prose_with_repairer(conn, prose, quote, repairer, *, responses=()):
+    response = (
+        f"{prose}\n\n```json\n"
+        f'{{"citations": [{{"marker": 1, "chunk_id": {chunk_id_of(conn)}, "quote": "{quote}"}}]}}'
+        "\n```"
+    )
+    return list(
+        answer_stream(
+            conn,
+            FakeEmbedder(),
+            StubGenerator(*responses, response) if responses else StubGenerator(response),
+            StubCompanyDetector(),
+            "What were total net sales?",
+            quote_repairer=repairer,
+        )
+    )
+
+
+@pytest.mark.db
+def test_a_repair_cannot_launder_a_figure_the_source_does_not_give(seeded_conn):
+    # The claim invents $412.7 billion; the repairer finds the real sentence,
+    # which verifies -- but it states 391.0, not the claim's figure, so the
+    # badge that caught the invented figure must stay.
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_prose_with_repairer(
+        seeded_conn,
+        "Total net sales were $412.7 billion [1].",
+        "Total net sales were $412.7 billion",
+        repairer,
+    )
+    [citation] = citation_events(events)
+    assert len(repairer.calls) == 1
+    assert citation["verified"] is False
+    assert citation["repaired"] is False
+    assert citation["quote"] == "Total net sales were $412.7 billion"
+    assert citation["sids"] == []
+
+
+@pytest.mark.db
+def test_a_rounded_claim_figure_accepts_the_precise_quote(seeded_conn):
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_prose_with_repairer(
+        seeded_conn, "Total net sales were $391 billion [1].", MISQUOTE, repairer
+    )
+    [citation] = citation_events(events)
+    assert citation["verified"] is True
+    assert citation["repaired"] is True
+
+
+@pytest.mark.db
+def test_a_claim_with_no_figure_is_never_repaired(seeded_conn):
+    repairer = StubQuoteRepairer("Services revenue reached an all-time record.")
+    events = ask_prose_with_repairer(
+        seeded_conn,
+        "In Q2 services revenue reached a record [1].",
+        "Services revenue hit a record",
+        repairer,
+    )
+    [citation] = citation_events(events)
+    assert repairer.calls == []
+    assert citation["verified"] is False
+    assert citation["quote"] == "Services revenue hit a record"
+
+
+@pytest.mark.db
+def test_a_marker_missing_from_the_prose_is_not_repaired(seeded_conn):
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_prose_with_repairer(
+        seeded_conn, "Total net sales were $391.0 billion.", MISQUOTE, repairer
+    )
+    [citation] = citation_events(events)
+    assert repairer.calls == []
+    assert citation["verified"] is False
+
+
+@pytest.mark.db
+def test_citations_from_the_retry_are_not_repaired(seeded_conn):
+    # Attempt 1 streams prose but no parseable block; the retry's citations
+    # belong to prose the visitor never saw, so nothing there is repaired.
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_prose_with_repairer(
+        seeded_conn,
+        "Total net sales were $391.0 billion [1].",
+        MISQUOTE,
+        repairer,
+        responses=("Total net sales were $391.0 billion [1].\n\n```json\nnot json\n```",),
+    )
+    [citation] = citation_events(events)
+    assert repairer.calls == []
+    assert citation["verified"] is False
+    assert citation["quote"] == MISQUOTE
+
+
+@pytest.mark.db
+def test_no_new_repair_starts_after_the_per_answer_budget(seeded_conn, monkeypatch):
+    clock = [100.0]
+    monkeypatch.setattr("api.answer._clock", lambda: clock[0])
+
+    def slow(quote):
+        clock[0] += 11.0  # each repair takes longer than the whole budget
+        return GOOD_QUOTE
+
+    chunk_id = chunk_id_of(seeded_conn)
+    prose = " ".join(f"Segment {n} sales were $391.0 billion [{n}]." for n in range(1, 4))
+    block = ", ".join(
+        f'{{"marker": {n}, "chunk_id": {chunk_id}, "quote": "misquote {n}"}}'
+        for n in range(1, 4)
+    )
+    response = f'{prose}\n\n```json\n{{"citations": [{block}]}}\n```'
+    repairer = StubQuoteRepairer(slow)
+    citations = citation_events(ask_with_repairer(seeded_conn, response, repairer))
+    assert len(repairer.calls) == 1
+    assert [c["verified"] for c in citations] == [True, False, False]

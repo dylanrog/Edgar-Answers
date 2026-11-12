@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from .generate import MODEL
@@ -22,9 +22,16 @@ MAX_QUOTE_CHARS = 300
 MAX_REPAIRS = 3
 # Seconds before a repair call gives up and the original stays unverified.
 TIMEOUT_SECONDS = 10.0
+# Per answer: no new repair call starts once this long has passed since the
+# first one started. With TIMEOUT_SECONDS that bounds the added latency at just
+# under BUDGET + TIMEOUT (20 s) however many citations misquote.
+REPAIR_BUDGET_SECONDS = 10.0
 
 _FENCE = re.compile(r"^```[a-z]*\s*|\s*```$")
-_NONE = re.compile(r"^none\W*$", re.IGNORECASE)
+# "NONE", "none.", or any reply that opens with the upper-case sentinel
+# ("NONE - the excerpt gives 391.0"). A quote that starts "None of our ..."
+# is still a quote.
+_NONE = re.compile(r"^(?:(?i:none)\W*$|NONE\b)")
 _WRAPPING = {'"': '"', "“": "”", "'": "'"}
 
 
@@ -43,10 +50,13 @@ and the excerpt the quote was meant to come from.
 
 Reply with ONLY one contiguous passage copied character-for-character from the
 excerpt that supports the claim: 300 characters or fewer, no quotation marks,
-no ellipsis, no commentary. When the claim cites a figure from a table row,
-copy from the start of that row through the figure and stop there. If no
-single contiguous passage of the excerpt supports the claim, reply with
-exactly: NONE"""
+no ellipsis, no commentary. A passage supports the claim only if it states the
+claim's facts and figures itself. When the claim cites a figure from a table
+row, copy from the start of that row through the figure and stop there.
+
+If the excerpt only discusses the same topic, or gives a different figure than
+the claim, the claim is not supported: reply with exactly NONE. Never pick a
+nearby passage just because it is close."""
 
 
 def build_repair_prompt(claim: str, quote: str, excerpt: str) -> str:
@@ -75,16 +85,21 @@ class AnthropicQuoteRepairer:
     max_tokens: int = 256
     timeout: float = TIMEOUT_SECONDS
     api_key: str | None = None
+    _client: object = field(default=None, init=False, repr=False)
+
+    def _anthropic(self):
+        if self._client is None:
+            import anthropic
+
+            self._client = anthropic.Anthropic(
+                api_key=self.api_key or os.environ["ANTHROPIC_API_KEY"],
+                timeout=self.timeout,
+                max_retries=0,
+            )
+        return self._client
 
     def repair(self, claim: str, quote: str, excerpt: str) -> str | None:
-        import anthropic
-
-        client = anthropic.Anthropic(
-            api_key=self.api_key or os.environ["ANTHROPIC_API_KEY"],
-            timeout=self.timeout,
-            max_retries=0,
-        )
-        message = client.messages.create(
+        message = self._anthropic().messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             temperature=0,

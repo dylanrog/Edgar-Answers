@@ -44,7 +44,8 @@ def run_faithfulness_eval(
     eval exercise the same accession-pinning path production /ask uses.
     `quote_repairer` likewise turns on the citation-repair step /ask runs
     (design §6.3 step 5); `repaired_citations` counts how often it rescued a
-    citation, so a bracket can see whether verified_rate leans on it.
+    citation, and `first_pass_verified_rate` leaves those out -- the
+    like-for-like comparison with rows recorded before repair existed.
     """
     answered = 0
     unverified_answers = 0
@@ -102,6 +103,7 @@ def run_faithfulness_eval(
         "answered_rate": round(answered / n, 4),
         "citations_total": total,
         "verified_rate": round(verified / total, 4) if total else 0.0,
+        "first_pass_verified_rate": round((verified - repaired) / total, 4) if total else 0.0,
         "repaired_citations": repaired,
         "gold_sid_hit_rate": round(gold_hits / n, 4),
         "unverified_answers": unverified_answers,

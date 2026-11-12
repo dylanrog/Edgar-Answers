@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import re
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -14,16 +15,15 @@ from pipeline.tables import Cell
 from . import queries
 from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
-from .figures import claim_sides, narrow_cells
+from .figures import Figure, claim_sides, narrow_cells, quote_states, significant_figures
 from .generate import (
-    FENCE,
     SYSTEM_PROMPT,
     AnswerSplitter,
     Generator,
     build_user_message,
     parse_citations,
 )
-from .repair import MAX_QUOTE_CHARS, MAX_REPAIRS, QuoteRepairer
+from .repair import MAX_QUOTE_CHARS, MAX_REPAIRS, REPAIR_BUDGET_SECONDS, QuoteRepairer
 from .retrieval import RetrievedChunk
 from .rewrite import QueryRewriter
 from .targets import resolve_targets, retrieve_for_targets
@@ -31,6 +31,8 @@ from .verify import Citation, VerifiedCitation, verify_citation
 
 logger = logging.getLogger(__name__)
 
+# Patched in tests to simulate slow repairs without sleeping.
+_clock = time.monotonic
 _MARKER = re.compile(r"\[\d+\]")
 
 
@@ -139,10 +141,8 @@ def answer_stream(
 
         by_id = {chunk.chunk_id: chunk for chunk in chunks}
         prose = "".join(answer_parts)
-        # The prose the citation block belongs to: what streamed on the first
-        # attempt, the retry's own (unshown) prose after a retry.
-        cited_prose = splitter.raw.split(FENCE, 1)[0]
         repairs = 0
+        repair_deadline: float | None = None
         verified: list[VerifiedCitation] = []
         for citation in citations or []:
             chunk = by_id.get(citation.chunk_id)
@@ -167,12 +167,26 @@ def answer_stream(
                 conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
             )
             result = verify_citation(citation, chunk, sentences, cells)
-            if not result.verified and quote_repairer is not None and repairs < MAX_REPAIRS:
-                claim = _claim(cited_prose, citation.marker)
-                if claim:
+            # Repair (design §6.3 step 5): only a first-attempt citation, whose
+            # marker sits in prose the visitor saw, and only for a claim that
+            # states a figure the repaired quote must then state too.
+            claim = (
+                _claim(prose, citation.marker)
+                if not result.verified
+                and quote_repairer is not None
+                and attempt == 0
+                and repairs < MAX_REPAIRS
+                else None
+            )
+            if claim is not None:
+                text, figures = claim
+                now = _clock()
+                if repair_deadline is None:
+                    repair_deadline = now + REPAIR_BUDGET_SECONDS
+                if now < repair_deadline:
                     repairs += 1
                     result = _repair(
-                        quote_repairer, claim, citation, chunk, sentences, cells
+                        quote_repairer, text, figures, citation, chunk, sentences, cells
                     ) or result
             # Emphasis only: a whole multi-year row verifies, but the viewer
             # should mark just the figures the answer states (design §6.3).
@@ -228,18 +242,26 @@ def answer_stream(
         yield AnswerEvent("error", {"message": f"{type(exc).__name__}: {exc}"})
 
 
-def _claim(prose: str, marker: int) -> str:
-    """The words the answer says around `[marker]`, markers removed; "" when
-    the marker is not in the prose (nothing to re-quote against)."""
+def _claim(prose: str, marker: int) -> tuple[str, list[Figure]] | None:
+    """The words the answer says around `[marker]` (both sides, as narrowing
+    reads them, markers removed) and the significant figures they state.
+    None when the marker is not in the prose, or the claim states no
+    significant figure: then nothing could confirm that a repaired quote
+    supports the claim rather than merely sharing its topic."""
     sides = claim_sides(prose, marker)
     if sides is None:
-        return ""
-    return " ".join(" ".join(_MARKER.sub(" ", side).split()) for side in sides).strip()
+        return None
+    text = " ".join(_MARKER.sub(" ", " ".join(sides)).split())
+    figures = significant_figures(text)
+    if not figures:
+        return None
+    return text, figures
 
 
 def _repair(
     repairer: QuoteRepairer,
     claim: str,
+    figures: list[Figure],
     citation: Citation,
     chunk: RetrievedChunk,
     sentences: list[Sentence],
@@ -248,7 +270,9 @@ def _repair(
     """One re-quote of a failed citation against the same chunk (design §6.3
     step 5), checked by the same verify_citation. None -- keep the original
     unverified citation -- on any failure: an exception, no quote, an
-    over-long quote, or a quote that still does not match."""
+    over-long quote, a quote that still does not match, or one that does not
+    state any of the claim's figures (which would launder an invented figure
+    into a verified citation)."""
     try:
         quote = repairer.repair(claim, citation.quote, chunk.text)
     except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
@@ -264,6 +288,14 @@ def _repair(
     )
     if not repaired.verified:
         logger.info("quote repair for marker %s did not verify", citation.marker)
+        return None
+    by_key = {(cell.sid, cell.cell_index): cell for cell in cells}
+    quote_cells = [by_key[key] for key in repaired.cells if key in by_key]
+    if not quote_states(repaired.quote, quote_cells, figures):
+        logger.info(
+            "quote repair for marker %s verified but states none of the claim's figures",
+            citation.marker,
+        )
         return None
     logger.info("quote repair verified marker %s", citation.marker)
     return dataclasses.replace(repaired, repaired=True)

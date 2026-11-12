@@ -428,30 +428,56 @@ For each citation `{chunk_id, quote}`:
    So a quote of NVIDIA's whole three-year Data Center row beside a fiscal-2025
    answer marks only the FY2025 figure. This is display emphasis only: it never
    changes `verified`, the sids or the quote, and never hides a citation.
-5. **Repair, once.** A citation that fails step 2 *and* names a chunk the model
-   was shown gets one more model call (`api/repair.py`, `QuoteRepairer`, same
-   model, temperature 0, its own short prompt — `SYSTEM_PROMPT` is unchanged).
-   The call sees only three things: the claim around the citation's marker
-   (the words on both sides of it, as in step 4, markers removed), the failed
-   quote, and **that one chunk's text** — no other excerpt, no table-context
-   line. It must answer with a passage copied verbatim from that chunk (≤300
-   characters) or `NONE`. The reply then goes through **the same check**,
-   steps 1–4 unchanged: exact normalized substring match, sids and cells
-   resolved from the *new* quote, then figure narrowing. If it verifies, the
-   citation is emitted with the repaired quote and `repaired: true`. In every
-   other case — `NONE`, an empty or over-long reply, a reply that still does
-   not match, an exception or a timeout (10 s, no SDK retries) — the original
-   citation is emitted exactly as it would have been without repair:
-   `verified: false`, the model's own quote, no sids, no cells. Guarantees:
+5. **Repair, once.** A citation that fails step 2, names a chunk the model
+   was shown, and belongs to a claim stating a figure gets one more model call
+   (`api/repair.py`, `QuoteRepairer`, same model, temperature 0, its own short
+   prompt — `SYSTEM_PROMPT` is unchanged). The call sees only three things:
+   the claim around the citation's marker (the words on both sides of it, as
+   in step 4, markers removed), the failed quote, and **that one chunk's
+   text** — no other excerpt, no table-context line. It must answer with a
+   passage copied verbatim from that chunk (≤300 characters) that itself
+   states the claim's facts and figures, or `NONE` (a same-topic passage or a
+   different figure is `NONE`). The reply then goes through **the same
+   check**, steps 1–4 unchanged: exact normalized substring match, sids and
+   cells resolved from the *new* quote. It is accepted only if it also
+   **states one of the claim's figures** (`figures.quote_states`): a table
+   cell the new quote covers matches a claim figure under the step-4 rules
+   (115,186 for "$115.2 billion"), or a figure written in the quote equals a
+   claim figure of the same kind (percent vs. number), exactly or after
+   rounding the quote's figure to the claim figure's decimals ("391.0
+   billion" for "$391 billion"). Accepted, it is narrowed as in step 4 and
+   emitted with the repaired quote and `repaired: true`. In every other case —
+   `NONE` (or a reply opening with it), an empty or over-long reply, a reply
+   that still does not match, one that matches but states none of the
+   claim's figures, an exception or a timeout — the original citation is
+   emitted exactly as it would have been without repair: `verified: false`,
+   the model's own quote, no sids, no cells. Guarantees:
    - Matching stays exact; repair only supplies a second candidate quote,
      and never decides `verified` itself.
+   - **A repair is accepted only if it states a figure the claim states.**
+     Without this, "Total net sales were $412.7 billion [1]" (an invented
+     figure) plus a misquote would be "repaired" to the real "Total net sales
+     were 391.0 billion dollars" and shown verified — laundering exactly the
+     error the badge exists to show.
+   - **Figure-free claims are never repaired** (no call is made). A claim's
+     figures are its *significant* ones (`figures.significant_figures`):
+     written with a unit, with decimals, or ≥1,000 — bare years and small
+     integers ("Q2", "Item 7") don't count. With no figure there is nothing
+     to check a re-quote against, and a same-topic passage would verify.
    - A citation that verified on the first pass is never sent to repair.
    - A citation naming a chunk the model was never shown is never repaired —
      there is no excerpt to re-quote from.
-   - A citation whose marker is not in its prose is not repaired (there is no
-     claim to re-quote for).
+   - A citation whose marker is not in the shown prose is not repaired, and
+     neither is any citation from the §6.2 retry: its markers belong to prose
+     the visitor never saw.
    - At most one attempt per citation and at most 3 repair calls per answer
      (`MAX_REPAIRS`); later failures stay unverified without a call.
+   - **Latency bound.** Each call times out at 10 s with no SDK retries, and no
+     new call starts once 10 s have passed since the answer's first repair
+     started (`REPAIR_BUDGET_SECONDS`). Repairs run after the prose has
+     streamed and before the `citation` events, so the worst case adds just
+     under 20 s before the citations appear; the common case (no failed
+     quote) adds nothing.
    - A failed repair is never worse than no repair: the visitor sees the
      original unverified badge.
 
@@ -618,7 +644,13 @@ reading real filings):
    any gold sid? Report recall@5 and recall@10. No LLM cost; run constantly.
 2. **Faithfulness — end-to-end:** run the full `/ask` path; report % citations
    verified and % questions answered (vs. refused). Costs pennies; run before/after
-   meaningful changes.
+   meaningful changes. Since the repair step (§6.3 step 5) the eval runs with
+   the production repairer, so `verified_rate` includes repaired citations.
+   `repaired_citations` counts them and `first_pass_verified_rate` =
+   (verified − repaired) / total leaves them out: **compare
+   `first_pass_verified_rate` with `verified_rate` rows recorded before
+   repair existed**, and read `verified_rate` as what visitors see. The
+   examples check prints both counts too.
 
 Each run appends `{git_sha, timestamp, metrics}` to `evals/results.jsonl` —
 regressions become visible instead of vibes.
@@ -695,7 +727,7 @@ typecheck/lint job when the frontend lands.
 | EDGAR 429/5xx | Backoff + retry; resume from disk cache |
 | Unrecognized filing structure | Ingest as single `"other"` section; log warning |
 | LLM output unparseable | One retry; then answer renders with "unverified answer" notice |
-| Citation fails verification | One repair call against the same chunk (§6.3 step 5); its quote must pass the same exact match. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
+| Citation fails verification | If its claim states a figure, one repair call against the same chunk (§6.3 step 5); the new quote must pass the same exact match and state one of the claim's figures. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
 | Quote repair call fails or times out | Logged as a warning; the citation stays `verified: false` exactly as without repair — never an `error` event |
 | Retrieval returns nothing relevant | Model instructed to say the corpus doesn't cover it (and the eval set includes such questions) |
 | LLM API down | `error` SSE event with a human-readable message |

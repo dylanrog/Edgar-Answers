@@ -263,3 +263,33 @@ def narrow_cells(
         return citation
     kept = tuple(key for key in citation.cells if key in stated)
     return dataclasses.replace(citation, cells=kept)
+
+
+def significant_figures(text: str) -> list[Figure]:
+    """The figures `text` states that can pin a claim to a value: written with
+    a unit, with decimals, or at least 1,000. A bare small integer ("Q2",
+    "Item 7", "3 segments") is not one, and stated_figures already drops
+    bare years. Markers are removed first so "[1]" is never a figure."""
+    return [
+        f
+        for f in stated_figures(_MARKER.sub(" ", text))
+        if f.unit or f.places or f.value >= 1000
+    ]
+
+
+def quote_states(quote: str, quote_cells: list[Cell], figures: list[Figure]) -> bool:
+    """The quote itself states one of `figures` (a claim's figures): a table
+    cell the quote covers matches one (is_stated: exact digits, or scaled one
+    unit up -- 115,186 for "$115.2 billion"), or a figure written in the quote
+    text equals one of the same kind (percent vs. number), exactly or after
+    rounding the quote's figure to the claim figure's decimals ("391.0" for
+    "$391 billion"). Used to keep the repair step (design §6.3 step 5) from
+    attaching a real passage to a figure the source does not give."""
+    if any(is_stated(cell, figures) for cell in quote_cells):
+        return True
+    return any(
+        (q.unit == "percent") == (f.unit == "percent")
+        and (q.value == f.value or _rounded(q.value, f.places) == f.value)
+        for q in stated_figures(quote)
+        for f in figures
+    )

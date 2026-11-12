@@ -546,4 +546,6 @@ def test_faithfulness_counts_repaired_citations_and_forwards_the_repairer(monkey
     metrics = run_faithfulness_eval(None, None, None, None, [question], quote_repairer=repairer)
     assert metrics["repaired_citations"] == 1
     assert metrics["verified_rate"] == 1.0
+    # Without the repaired one: comparable to rows from before repair existed.
+    assert metrics["first_pass_verified_rate"] == 0.5
     assert seen["quote_repairer"] is repairer
