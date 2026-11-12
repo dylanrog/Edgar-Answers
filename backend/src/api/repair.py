@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from functools import lru_cache
 from typing import Protocol
 
 from .generate import MODEL
@@ -21,7 +23,10 @@ MAX_QUOTE_CHARS = 300
 # after the prose has streamed, so a badly misquoting answer can't stall.
 MAX_REPAIRS = 3
 # Seconds before a repair call gives up and the original stays unverified.
+# A wall-clock bound on the whole call (see AnthropicQuoteRepairer.repair),
+# not just on each socket read.
 TIMEOUT_SECONDS = 10.0
+CONNECT_TIMEOUT_SECONDS = 3.0
 # Per answer: no new repair call starts once this long has passed since the
 # first one started. With TIMEOUT_SECONDS that bounds the added latency at just
 # under BUDGET + TIMEOUT (20 s) however many citations misquote.
@@ -79,26 +84,47 @@ def parse_repaired_quote(raw: str) -> str | None:
     return text
 
 
+# Repair calls run here so the answer path can stop waiting at a wall-clock
+# deadline. A call abandoned at the deadline finishes (or hits its httpx
+# timeouts) in the background; its result is discarded.
+_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="quote-repair")
+
+
+@lru_cache(maxsize=4)
+def _client(api_key: str, timeout: float):
+    """One Anthropic client per process (per key and timeout): built on the
+    first repair, then reused by every request's repairer."""
+    import anthropic
+    import httpx
+
+    return anthropic.Anthropic(
+        api_key=api_key,
+        timeout=httpx.Timeout(timeout, connect=CONNECT_TIMEOUT_SECONDS),
+        max_retries=0,
+    )
+
+
 @dataclass
 class AnthropicQuoteRepairer:
     model: str = MODEL
     max_tokens: int = 256
     timeout: float = TIMEOUT_SECONDS
     api_key: str | None = None
-    _client: object = field(default=None, init=False, repr=False)
 
     def _anthropic(self):
-        if self._client is None:
-            import anthropic
-
-            self._client = anthropic.Anthropic(
-                api_key=self.api_key or os.environ["ANTHROPIC_API_KEY"],
-                timeout=self.timeout,
-                max_retries=0,
-            )
-        return self._client
+        return _client(self.api_key or os.environ["ANTHROPIC_API_KEY"], self.timeout)
 
     def repair(self, claim: str, quote: str, excerpt: str) -> str | None:
+        # httpx's timeouts bound each phase (connect 3 s; each read, write and
+        # pool wait 10 s), not the call as a whole. future.result bounds the
+        # whole call at `timeout` seconds of wall clock: past it, this raises
+        # TimeoutError and the answer path keeps the unverified original. With
+        # REPAIR_BUDGET_SECONDS that bounds repair's added latency per answer
+        # at under BUDGET + TIMEOUT (20 s).
+        future = _EXECUTOR.submit(self._call, claim, quote, excerpt)
+        return future.result(timeout=self.timeout)
+
+    def _call(self, claim: str, quote: str, excerpt: str) -> str | None:
         message = self._anthropic().messages.create(
             model=self.model,
             max_tokens=self.max_tokens,

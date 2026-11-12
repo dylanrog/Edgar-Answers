@@ -204,7 +204,7 @@ def test_a_repair_stating_only_one_of_two_claim_figures_is_rejected(seeded):
         conn, chunk_id, "Revenue was $115.2 billion and $999.9 billion [1].", WHOLE_ROW
     )
     assert data["verified"] is False
-    assert data["repaired"] is False
+    assert "repaired" not in data
     assert data["quote"] == "Data Center revenue $ 115,186"
 
 
@@ -232,3 +232,26 @@ def test_two_spellings_of_the_same_figure_are_satisfied_by_one_cell(seeded):
     assert data["verified"] is True
     assert data["repaired"] is True
     assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_the_demo_claim_with_its_fiscal_year_is_repaired(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "NVIDIA's Data Center revenue in fiscal 2025 was $115.2 billion [1].",
+        WHOLE_ROW,
+    )
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_a_repair_onto_another_years_column_is_rejected(seeded):
+    conn, chunk_id, _ = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "In fiscal 2024 Data Center revenue was $115.2 billion [1].", WHOLE_ROW
+    )
+    assert data["verified"] is False
+    assert "repaired" not in data
+    assert data["quote"] == "Data Center revenue $ 115,186"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import psycopg
 
 from pipeline.canonicalize import Sentence
@@ -12,6 +14,15 @@ def load_chunk_cells(
 ) -> list[Cell]:
     """The table cells a chunk's rows hold, in (sid, col) order."""
     return load_cells(conn, filing_id, sid_start, sid_end)
+
+
+def load_table_scales(conn: psycopg.Connection, filing_id: int) -> dict[int, Decimal | None]:
+    """table_id -> scale (1000, 1e6, 1e9; None when the table states none)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT table_id, scale FROM filing_tables WHERE filing_id = %s", (filing_id,)
+        )
+        return dict(cur.fetchall())
 
 
 def load_chunk_sentences(

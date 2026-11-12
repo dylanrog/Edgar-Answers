@@ -129,6 +129,11 @@ class Figure:
 
 
 def stated_figures(text: str) -> list[Figure]:
+    return [figure for _, figure in _located_figures(text)]
+
+
+def _located_figures(text: str) -> list[tuple[int, Figure]]:
+    """stated_figures, each with where its digits start in `text`."""
     found = []
     for match in _FIGURE.finditer(text):
         value = Decimal(match.group().replace(",", ""))
@@ -140,7 +145,7 @@ def stated_figures(text: str) -> list[Figure]:
         if not first[3] and second[3] and _RANGE.match(text[first[1] : second[0]]):
             first[3] = second[3]
     return [
-        Figure(value, max(0, -value.as_tuple().exponent), unit)
+        (start, Figure(value, max(0, -value.as_tuple().exponent), unit))
         for start, end, value, unit in found
         if not _is_year(text, start, end, unit)
     ]
@@ -265,39 +270,146 @@ def narrow_cells(
     return dataclasses.replace(citation, cells=kept)
 
 
+# --- The repair gate (design §6.3 step 5) -----------------------------------
+#
+# Stricter than narrowing on purpose. Narrowing only chooses which already
+# verified figures to emphasize; this decides whether a *second* quote may turn
+# a failed citation green, so every doubt fails closed: unit, table scale,
+# period and sign must all agree, and rounding may only drop decimals.
+
+_UNIT_VALUE = {
+    "million": Decimal(10) ** 6,
+    "billion": Decimal(10) ** 9,
+    "trillion": Decimal(10) ** 12,
+}
+# What a negative figure is written after: "(1,234)", "-1,234", "$(1,234)", "−1,234".
+_NEGATIVE_LEAD = re.compile(r"[(\-−–]\s*\$?\s*$")
+_FULL_YEAR = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
+# "FY24", "FY'24", "fiscal 24", "fiscal year 24".
+_SHORT_YEAR = re.compile(r"\b(?:FY|fiscal(?:\s+year)?)\s*'?(\d{2})\b", re.IGNORECASE)
+
+
+def _significant(figure: Figure) -> bool:
+    return bool(figure.unit or figure.places or figure.value >= 1000)
+
+
 def significant_figures(text: str) -> list[Figure]:
     """The figures `text` states that can pin a claim to a value: written with
     a unit, with decimals, or at least 1,000. A bare small integer ("Q2",
-    "Item 7", "3 segments") is not one, and stated_figures already drops
-    bare years. Markers are removed first so "[1]" is never a figure."""
+    "Item 7", "Note 4", "3 segments") is not one, and stated_figures already
+    drops bare years. Markers are removed first so "[1]" is never a figure."""
+    return [f for f in stated_figures(_MARKER.sub(" ", text)) if _significant(f)]
+
+
+def _positive_significant_figures(text: str) -> list[Figure]:
+    """significant_figures minus any written as a negative (after "(", "-" or
+    "−"): a repair never rests on a negative figure."""
+    text = _MARKER.sub(" ", text)
     return [
-        f
-        for f in stated_figures(_MARKER.sub(" ", text))
-        if f.unit or f.places or f.value >= 1000
+        figure
+        for start, figure in _located_figures(text)
+        if _significant(figure) and not _NEGATIVE_LEAD.search(text[:start])
     ]
 
 
-def quote_states(quote: str, quote_cells: list[Cell], figures: list[Figure]) -> bool:
-    """The quote itself states *every* one of `figures` (a claim's figures).
+def claim_years(text: str) -> set[str]:
+    """The fiscal years a claim names: "2025", and "FY24" / "fiscal 24" as 2024."""
+    years = set(_FULL_YEAR.findall(text))
+    years |= {f"20{yy}" for yy in _SHORT_YEAR.findall(text)}
+    return years
 
-    A figure is stated when a table cell the quote covers matches it
-    (is_stated: exact digits, or scaled one unit up -- 115,186 for "$115.2
-    billion"), or a figure written in the quote text equals it, of the same
-    kind (percent vs. number), exactly or after rounding the quote's figure to
-    the claim figure's decimals ("391.0" for "$391 billion"). Each figure is
-    checked on its own, so two spellings of one value ("$115,186 million
-    ($115.2 billion)") are both satisfied by the one cell. Used to keep the
-    repair step (design §6.3 step 5) from attaching a real passage to a claim
-    whose figures -- any of them -- the source does not give."""
-    texts = stated_figures(quote)
+
+def _agrees(value: Decimal, figure: Figure) -> bool:
+    """`value` (from the source) is `figure` (from the claim): equal, or
+    written with more decimals and rounding to it without changing the whole
+    number -- 391.0 for 391, 115.186 or 115.19 for 115.2; never 3.5 for 4,
+    never 115.2 for 115.19."""
+    if value == figure.value:
+        return True
+    places = max(0, -value.as_tuple().exponent)
+    return (
+        places > figure.places
+        and int(value) == int(figure.value)
+        and _rounded(value, figure.places) == figure.value
+    )
+
+
+def _negative_cell(cell: Cell) -> bool:
+    raw = cell.raw.strip()
+    return (
+        (cell.value is not None and cell.value < 0)
+        or "(" in raw
+        or raw[:1] in ("-", "−", "–")
+    )
+
+
+def _in_period(cell: Cell, years: set[str]) -> bool:
+    if not years:
+        return True
+    label = cell.column_label or ""
+    return any(re.search(rf"(?<!\d){year}(?!\d)", label) for year in years)
+
+
+def _cell_supports(
+    cell: Cell, figure: Figure, scales: dict[int, Decimal | None], years: set[str]
+) -> bool:
+    """A quoted table cell states this claim figure, for the repair gate.
+
+    Sign: a negative cell never counts. Period: when the claim names years,
+    the cell's column label must contain one of them (no label: no). Kind:
+    percent only for percent. Scale: a figure with a unit needs a cell the
+    table's scale applies to, in a table scaled in that unit (exact) or one
+    unit below (115,186 in millions for "$115.2 billion", 115,186 in thousands
+    for "$115.2 million"); an unknown scale never counts. A figure with no
+    unit ("$6.08") only matches a cell the scale does not apply to (per share).
+    """
+    if cell.value is None or _negative_cell(cell) or not _in_period(cell, years):
+        return False
+    if cell.kind == "percent":
+        return figure.unit == "percent" and _agrees(cell.value, figure)
+    if cell.kind != "number" or figure.unit == "percent":
+        return False
+    if not figure.unit:
+        return not cell.scale_applies and _agrees(cell.value, figure)
+    unit = _UNIT_VALUE[figure.unit]
+    scale = scales.get(cell.table_id)
+    if not cell.scale_applies or scale is None:
+        return False
+    if scale == unit:
+        return _agrees(cell.value, figure)
+    if scale * 1000 == unit:
+        return _agrees(cell.value / 1000, figure)
+    return False
+
+
+def quote_states(
+    quote: str,
+    quote_cells: list[Cell],
+    claim: str,
+    scales: dict[int, Decimal | None],
+) -> bool:
+    """The repaired quote states *every* significant figure the claim states
+    (design §6.3 step 5), each checked on its own -- so two spellings of one
+    value ("$115,186 million ($115.2 billion)") are both met by its one cell,
+    and figures spread over quoted rows are each met by their own row.
+
+    A figure is met by a cell the quote covers (`_cell_supports`: sign,
+    period, kind and table scale) or by a figure written in the quote text
+    with exactly the same unit (million / billion / trillion / percent /
+    none), not written as a negative and not one of the quoted cells' own
+    values, that `_agrees` with it. A claim with no
+    significant figure is never supported. `scales` maps the chunk's table ids
+    to their scale (None when unknown)."""
+    figures = significant_figures(claim)
+    years = claim_years(claim)
+    # A figure that is one of the quoted cells is judged as that cell only, so
+    # the text path can't bypass the cell's scale and period checks.
+    cell_values = {abs(c.value) for c in quote_cells if c.value is not None}
+    texts = [q for q in _positive_significant_figures(quote) if q.value not in cell_values]
 
     def stated(figure: Figure) -> bool:
-        if any(is_stated(cell, [figure]) for cell in quote_cells):
+        if any(_cell_supports(cell, figure, scales, years) for cell in quote_cells):
             return True
-        return any(
-            (q.unit == "percent") == (figure.unit == "percent")
-            and (q.value == figure.value or _rounded(q.value, figure.places) == figure.value)
-            for q in texts
-        )
+        return any(q.unit == figure.unit and _agrees(q.value, figure) for q in texts)
 
     return bool(figures) and all(stated(figure) for figure in figures)

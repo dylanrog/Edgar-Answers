@@ -440,12 +440,34 @@ For each citation `{chunk_id, quote}`:
    different figure is `NONE`). The reply then goes through **the same
    check**, steps 1–4 unchanged: exact normalized substring match, sids and
    cells resolved from the *new* quote. It is accepted only if it also
-   **states every figure the claim states** (`figures.quote_states`). Each
-   claim figure is checked on its own: it is stated when a table cell the new
-   quote covers matches it under the step-4 rules (115,186 for "$115.2
-   billion"), or a figure written in the quote equals it, of the same kind
-   (percent vs. number), exactly or after rounding the quote's figure to the
-   claim figure's decimals ("391.0 billion" for "$391 billion"). Two
+   **states every figure the claim states** (`figures.quote_states`) —
+   under rules stricter than step 4's narrowing, which they don't change.
+   Each significant claim figure is checked on its own, and is stated by:
+   - *a table cell the new quote covers*, when all of these agree:
+     **scale** — a figure with a unit needs a cell the table's scale applies
+     to, in a table scaled in that unit (exact) or one unit below (115,186 in
+     a millions table for "$115.2 billion"; in a thousands table for "$115.2
+     million", never for "$115.2 billion"); an unknown scale never counts,
+     and a figure with no unit ("$6.08") only matches a cell the scale does
+     not apply to (per share), so per-share 6.08 never states "$6.08
+     billion". **Period** — when the claim names a fiscal year ("2025",
+     "FY24", "fiscal 24"), the cell's column label must contain one of the
+     claim's years; no label, or one with no year, fails. So "In fiscal 2024
+     … $115.2 billion" is not stated by the FY2025 cell of a three-year row.
+     **Kind** — percent only for percent. **Sign** — a negative or
+     parenthesized cell never counts;
+   - *or a figure written in the quote text*, when its **unit** is exactly the
+     claim figure's (million, billion, trillion, percent or none: "391
+     million" never states "$391 billion"), it is itself significant (unit,
+     decimals or ≥1,000 — "Note 4" and "Item 1A" state nothing), it is not
+     written as a negative, and it is not one of the quoted cells' own values
+     (a table figure is judged as its cell, so the text path can't skip the
+     scale and period checks).
+
+   Either way the **value** must be equal, or written with more decimals and
+   round to the claim's figure without changing its whole number: 391.0 for
+   "$391 billion", 115.186 or 115.19 for "$115.2 billion" — never 3.5 for
+   "4%" or "$4 billion", and never 115.2 for "$115.19 billion". Two
    spellings of one value ("$115,186 million ($115.2 billion)") are two
    requirements one cell satisfies; figures spread over several quoted rows
    ("Compute ($102,196 million) and Networking ($12,990 million)") are each
@@ -478,9 +500,14 @@ For each citation `{chunk_id, quote}`:
      the visitor never saw.
    - At most one attempt per citation and at most 3 repair calls per answer
      (`MAX_REPAIRS`); later failures stay unverified without a call.
-   - **Latency bound.** Each call times out at 10 s with no SDK retries, and no
-     new call starts once 10 s have passed since the answer's first repair
-     started (`REPAIR_BUDGET_SECONDS`). Repairs run after the prose has
+   - **The gate fails closed on unit, scale, period and sign**, as listed
+     above: any doubt leaves the original unverified citation.
+   - **Latency bound.** Each call is bounded at 10 s of wall clock (the answer
+     path stops waiting on the call's future; httpx also bounds connect at
+     3 s and each read at 10 s, with no SDK retries), and no new call starts
+     once 10 s have passed since the answer's first repair started
+     (`REPAIR_BUDGET_SECONDS`). The Anthropic client is built once per
+     process. Repairs run after the prose has
      streamed and before the `citation` events, so the worst case adds just
      under 20 s before the citations appear; the common case (no failed
      quote) adds nothing.
@@ -530,10 +557,12 @@ citation: {"marker": 1, "verified": true,
                                                      closed to all of them
                                                      (§6.3 step 4); [] for
                                                      prose
-           "repaired": false}                     -- additive; true only when
-                                                     the quote is the repair
-                                                     step's and verified
-                                                     (§6.3 step 5). The
+           "repaired": true}                      -- additive and present
+                                                     only on a citation the
+                                                     repair step verified
+                                                     (§6.3 step 5); omitted
+                                                     otherwise, so a first-pass
+                                                     citation is unchanged. The
                                                      frontend ignores it; evals
                                                      count it
 done:     {"chunks_retrieved": 8, "citations_total": 3,

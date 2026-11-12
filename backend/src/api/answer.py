@@ -6,6 +6,7 @@ import re
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 
 import psycopg
 
@@ -15,7 +16,7 @@ from pipeline.tables import Cell
 from . import queries
 from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
-from .figures import Figure, claim_sides, narrow_cells, quote_states, significant_figures
+from .figures import claim_sides, narrow_cells, quote_states, significant_figures
 from .generate import (
     SYSTEM_PROMPT,
     AnswerSplitter,
@@ -179,14 +180,14 @@ def answer_stream(
                 else None
             )
             if claim is not None:
-                text, figures = claim
                 now = _clock()
                 if repair_deadline is None:
                     repair_deadline = now + REPAIR_BUDGET_SECONDS
                 if now < repair_deadline:
                     repairs += 1
+                    scales = queries.load_table_scales(conn, chunk.filing_id)
                     result = _repair(
-                        quote_repairer, text, figures, citation, chunk, sentences, cells
+                        quote_repairer, claim, citation, chunk, sentences, cells, scales
                     ) or result
             # Emphasis only: a whole multi-year row verifies, but the viewer
             # should mark just the figures the answer states (design §6.3).
@@ -197,21 +198,22 @@ def answer_stream(
             verified.append(result)
 
         for citation in verified:
-            yield AnswerEvent(
-                "citation",
-                {
-                    "marker": citation.marker,
-                    "verified": citation.verified,
-                    "accession": citation.accession,
-                    "ticker": citation.ticker,
-                    "form_type": citation.form_type,
-                    "filing_date": citation.filing_date,
-                    "sids": citation.sids,
-                    "quote": citation.quote,
-                    "cells": [{"sid": sid, "cell": cell} for sid, cell in citation.cells],
-                    "repaired": citation.repaired,
-                },
-            )
+            payload = {
+                "marker": citation.marker,
+                "verified": citation.verified,
+                "accession": citation.accession,
+                "ticker": citation.ticker,
+                "form_type": citation.form_type,
+                "filing_date": citation.filing_date,
+                "sids": citation.sids,
+                "quote": citation.quote,
+                "cells": [{"sid": sid, "cell": cell} for sid, cell in citation.cells],
+            }
+            # Present only when true, so a first-pass citation's payload is
+            # exactly what it was before repair existed (design §6.4).
+            if citation.repaired:
+                payload["repaired"] = True
+            yield AnswerEvent("citation", payload)
 
         if conversation_id is not None:
             save_turn(
@@ -242,37 +244,35 @@ def answer_stream(
         yield AnswerEvent("error", {"message": f"{type(exc).__name__}: {exc}"})
 
 
-def _claim(prose: str, marker: int) -> tuple[str, list[Figure]] | None:
+def _claim(prose: str, marker: int) -> str | None:
     """The words the answer says around `[marker]` (both sides, as narrowing
-    reads them, markers removed) and the significant figures they state.
-    None when the marker is not in the prose, or the claim states no
-    significant figure: then nothing could confirm that a repaired quote
-    supports the claim rather than merely sharing its topic."""
+    reads them, markers removed). None when the marker is not in the prose,
+    or the claim states no significant figure: then nothing could confirm
+    that a repaired quote supports the claim rather than merely sharing its
+    topic."""
     sides = claim_sides(prose, marker)
     if sides is None:
         return None
     text = " ".join(_MARKER.sub(" ", " ".join(sides)).split())
-    figures = significant_figures(text)
-    if not figures:
-        return None
-    return text, figures
+    return text if significant_figures(text) else None
 
 
 def _repair(
     repairer: QuoteRepairer,
     claim: str,
-    figures: list[Figure],
     citation: Citation,
     chunk: RetrievedChunk,
     sentences: list[Sentence],
     cells: list[Cell],
+    scales: dict[int, Decimal | None],
 ) -> VerifiedCitation | None:
     """One re-quote of a failed citation against the same chunk (design §6.3
     step 5), checked by the same verify_citation. None -- keep the original
     unverified citation -- on any failure: an exception, no quote, an
     over-long quote, a quote that still does not match, or one that does not
-    state every one of the claim's figures (which would launder an invented
-    figure into a verified citation)."""
+    state every one of the claim's figures in its unit, table scale, period
+    and sign (figures.quote_states) -- anything less could launder an
+    invented figure into a verified citation."""
     try:
         quote = repairer.repair(claim, citation.quote, chunk.text)
     except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
@@ -291,7 +291,7 @@ def _repair(
         return None
     by_key = {(cell.sid, cell.cell_index): cell for cell in cells}
     quote_cells = [by_key[key] for key in repaired.cells if key in by_key]
-    if not quote_states(repaired.quote, quote_cells, figures):
+    if not quote_states(repaired.quote, quote_cells, claim, scales):
         logger.info(
             "quote repair for marker %s verified but does not state every claim figure",
             citation.marker,

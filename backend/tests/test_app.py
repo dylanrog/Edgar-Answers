@@ -109,9 +109,7 @@ def test_ask_citation_event_matches_the_design_shape(stubbed_client):
         "sids",
         "quote",
         "cells",
-        "repaired",
     }
-    assert citation["repaired"] is False
     assert citation["verified"] is True
     assert citation["accession"] == ACCESSION
     assert citation["ticker"] == "TSTE"
