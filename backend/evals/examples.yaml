@@ -36,8 +36,14 @@
 #   wrong), and FY2024 Intelligent Cloud was restated ($105,362M as originally
 #   reported, $87,464M restated). Hence turn 1 asks about Microsoft Cloud.
 #
-# Vetting result (final, 2026-11-11 at 2c37f52, full local corpus, FRESH planner stats after
-#   ANALYZE): `python -m evals examples --runs 30 --verbose` -> 30/30, then --runs 50 -> 49/50
+# Vetting result with citation repair (design §6.3 step 5), 2026-11-12, full local corpus,
+#   fresh planner stats: 115/115 chained runs across the repair commits -- 38/38 at 21d594a,
+#   17/17 at ab47666, 50/50 at 4302e7c (299/300 citations verified first pass, 1 repaired),
+#   and 10/10 at e7f4717, the final gate (57/60 first pass, 3 repaired, 60/60 verified).
+#   All 9 repairs were the optional Compute/Networking claim, citing the FY2025 cells of
+#   sids 2769-2770. Own pins every run; no alternative needed.
+# Before repair (2026-11-11 at 2c37f52, same conditions):
+#   `python -m evals examples --runs 30 --verbose` -> 30/30, then --runs 50 -> 49/50
 #   (79/80 total; turn 2 80/80; every core figure from its pinned row and cell 80/80; the one
 #   failure was an optional extra claim about Compute/Networking that the model misquoted,
 #   shown to the visitor as "unverified" by design). Both turns narrowed by
