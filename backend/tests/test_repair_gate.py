@@ -166,3 +166,83 @@ def test_a_negative_quote_figure_never_supports_a_repair():
 def test_a_table_figure_cannot_skip_the_period_check_through_the_quote_text():
     claim = "In fiscal 2024 Data Center revenue was 115,186"
     assert not states(DATA_CENTER_ROW, DATA_CENTER, claim)
+
+
+# --- Period in prose (the quote-text path) -----------------------------------
+
+def test_a_prose_quote_about_another_year_does_not_state_the_claim():
+    quote = "Data Center revenue for fiscal year 2025 was $115.2 billion, up 142%"
+    assert not states(quote, [], "Data Center revenue for fiscal 2024 was $115.2 billion")
+
+
+def test_a_prose_quote_naming_any_year_outside_the_claim_fails_closed():
+    quote = "Gross margin was 46.6% in 2025 and 45.2% in 2024"
+    assert not states(quote, [], "Gross margin in 2024 was 46.6%")
+
+
+def test_a_prose_quote_in_the_claims_year_or_naming_no_year_still_counts():
+    quote = "Data Center revenue for fiscal year 2025 was $115.2 billion"
+    assert states(quote, [], "Data Center revenue for fiscal 2025 was $115.2 billion")
+    assert states(quote, [], "FY25 Data Center revenue was $115.2 billion")
+    assert states("revenue was $115.2 billion", [], "In fiscal 2025 revenue was $115.2 billion")
+
+
+# --- Direction words ---------------------------------------------------------
+
+def test_a_loss_in_the_quote_does_not_state_income_in_the_claim():
+    assert not states("a net loss of $1.2 billion", [], "net income was $1.2 billion")
+
+
+def test_an_increase_claim_is_not_stated_by_a_decrease_quote():
+    assert not states("revenue decreased 2% year over year", [], "revenue increased 2%")
+
+
+def test_a_decrease_claim_needs_a_decrease_in_the_quote():
+    assert not states("revenue grew 2% year over year", [], "revenue declined 2%")
+    assert states("revenue decreased 2% year over year", [], "revenue fell 2%")
+
+
+def test_a_decrease_claim_is_not_stated_by_a_plain_table_row():
+    assert not states(DATA_CENTER_ROW, DATA_CENTER, "Data Center revenue fell to $115.2 billion")
+
+
+def test_a_loss_row_does_not_state_an_income_claim():
+    cells = [cell(9, 1, 1234)]
+    assert not states("Net loss $ 1,234", cells, "net income was $1.234 billion")
+    assert states("Net loss $ 1,234", cells, "a net loss of $1.234 billion")
+
+
+# --- Period type: quarter vs year --------------------------------------------
+
+Q2_SIX = "Six Months Ended › June 28, 2025"
+Q2_THREE = "Three Months Ended › June 28, 2025"
+
+
+def test_a_quarter_claim_is_not_stated_by_a_six_months_cell():
+    cells = [cell(40, 1, 61000, label=Q2_SIX)]
+    claim = "Revenue in Q2 fiscal 2025 was $61.0 billion"
+    assert not states("Revenue $ 61,000", cells, claim)
+    assert not states("Revenue $ 61,000", [cell(40, 1, 61000, label=FY25)], claim)
+
+
+def test_a_quarter_claim_is_stated_by_a_three_months_cell():
+    cells = [cell(40, 1, 61000, label=Q2_THREE)]
+    assert states("Revenue $ 61,000", cells, "Revenue in Q2 fiscal 2025 was $61.0 billion")
+    assert states("Revenue $ 61,000", cells,
+                  "Second quarter fiscal 2025 revenue was $61.0 billion")
+
+
+def test_a_full_year_claim_is_not_stated_by_a_months_cell():
+    claim = "Full-year fiscal 2025 revenue was $61.0 billion"
+    for label in (Q2_THREE, Q2_SIX, "Nine Months Ended › Sep 27, 2025"):
+        assert not states("Revenue $ 61,000", [cell(40, 1, 61000, label=label)], claim)
+    assert states("Revenue $ 61,000", [cell(40, 1, 61000, label="Year Ended › June 28, 2025")],
+                  claim)
+
+
+def test_a_quarter_claim_is_not_stated_by_full_year_prose():
+    quote = "revenue for the year ended June 28, 2025 was $61.0 billion"
+    assert not states(quote, [], "Revenue in Q2 fiscal 2025 was $61.0 billion")
+    quarter = "revenue for the three months ended June 28, 2025 was $61.0 billion"
+    assert not states(quarter, [], "Full-year fiscal 2025 revenue was $61.0 billion")
+    assert states(quarter, [], "Revenue in Q2 fiscal 2025 was $61.0 billion")
