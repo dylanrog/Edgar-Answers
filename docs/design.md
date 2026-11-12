@@ -470,22 +470,30 @@ For each citation `{chunk_id, quote}`:
      written as a negative, and it is not one of the quoted cells' own values
      (a table figure is judged as its cell, so the text path can't skip the
      scale and period checks). **Period in prose** — when the claim names a
-     year, every year the quote names must be one of the claim's (same
-     extraction: "2025", "FY24", "fiscal 24"), so "…for fiscal year 2025 was
-     $115.2 billion" never states a fiscal-2024 claim, and "46.6% in 2025 and
-     45.2% in 2024" never states "46.6% in 2024". The quote's span must also
+     year, the quote must name at least one of the claim's years and no
+     other (same extraction: "2025", "FY24", "fiscal 24"). So "…for fiscal
+     year 2025 was $115.2 billion" never states a fiscal-2024 claim, "46.6% in
+     2025 and 45.2% in 2024" never states "46.6% in 2024", and a quote naming
+     no year ("Data Center revenue was $115.2 billion, up 142% from a year
+     ago", from the FY2025 10-K) never states a dated claim, since it can't
+     say which year its figure is for (the cell path likewise needs the year
+     in the column label). The quote's span must also
      fit the claim's period type, by the same words as the cell labels (a
      quarter claim rejects "year ended" or "six months" prose; a year claim
      rejects "three months" or "quarter" prose).
 
    **Direction**, on both paths: a direction word (loss, decrease(d),
-   decline(d), fell, falling, lower, negative, down) within five words of the
-   claim's figure must be matched by one within five words of the quote's
-   figure — for a cell, anywhere in the quote, such as a "Net loss" row label
-   — and the reverse. So "net income was $1.2 billion" is never stated by "a
-   net loss of $1.2 billion", nor "increased 2%" by "decreased 2%". It is
-   deliberately blunt: "revenue was $47.5 billion, lower than last year"
-   against a plain table row is rejected, a false rejection the gate accepts.
+   decline(d), fell, falling, lower, negative, down, "used in", expense(s))
+   anywhere in the claim must be matched by one anywhere in the quote — a
+   "Net loss" row label counts — and the reverse. So "net income was $1.2
+   billion" is never stated by "Net loss for fiscal year 2025 was $1.2
+   billion" (however far the word sits from the figure), "increased 2%" by
+   "decreased 2%", cash "provided by" by cash "used in", or "other income" by
+   "Other income (expense), net". It is deliberately blunt: "revenue was $47.5
+   billion, lower than last year" against a plain table row is rejected, and
+   so is "R&D spending" against an "expense" row — false rejections the gate
+   accepts. Words outside the list (gain vs. charge, inflow vs. outflow
+   written otherwise) are not checked: a residual.
 
    Either way the **value** must be equal, or written with more decimals and
    round to the claim's figure without changing its whole number: 391.0 for

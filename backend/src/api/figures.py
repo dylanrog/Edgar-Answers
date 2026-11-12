@@ -301,34 +301,26 @@ def significant_figures(text: str) -> list[Figure]:
     return [f for f in stated_figures(_MARKER.sub(" ", text)) if _significant(f)]
 
 
-# Direction words. A figure near one reads as a loss or a fall; the claim and
-# the source must agree on that, so "net income was $1.2 billion" is never
-# stated by "a net loss of $1.2 billion".
+# Direction words: a loss, a fall, an outflow or a cost. The claim and the
+# quote must agree on whether they use one *anywhere* (not just near the
+# figure), so "net income was $1.2 billion" is never stated by "Net loss for
+# fiscal year 2025 was $1.2 billion", nor cash "provided by" by cash "used in",
+# nor "other income" by "Other income (expense), net".
 _DOWN = re.compile(
     r"\b(?:loss(?:es)?|decreas(?:e|ed|es|ing)|declin(?:e|ed|es|ing)|fell"
-    r"|fall(?:s|ing)?|lower|negative|down)\b",
+    r"|fall(?:s|ing)?|lower|negative|down|used\s+in|expens(?:e|es))\b",
     re.IGNORECASE,
 )
-_NEAR_WORDS = 5
 
 
-def _down_near(text: str, start: int, end: int) -> bool:
-    """A direction word within a few words either side of text[start:end]."""
-    before = " ".join(text[:start].split()[-_NEAR_WORDS:])
-    after = " ".join(text[end:].split()[:_NEAR_WORDS])
-    return bool(_DOWN.search(before) or _DOWN.search(after))
-
-
-def _directed_figures(text: str, *, positive_only: bool) -> list[tuple[Figure, bool]]:
-    """significant figures with whether each sits near a direction word. With
-    `positive_only`, figures written as a negative (after "(", "-" or "−") are
-    dropped: a repair never rests on a negative figure."""
+def _positive_significant_figures(text: str) -> list[Figure]:
+    """significant_figures minus any written as a negative (after "(", "-" or
+    "−"): a repair never rests on a negative figure."""
     text = _MARKER.sub(" ", text)
     return [
-        (figure, _down_near(text, start, end))
-        for start, end, figure in _located_figures(text)
-        if _significant(figure)
-        and not (positive_only and _NEGATIVE_LEAD.search(text[:start]))
+        figure
+        for start, _, figure in _located_figures(text)
+        if _significant(figure) and not _NEGATIVE_LEAD.search(text[:start])
     ]
 
 
@@ -474,37 +466,36 @@ def quote_states(
     A figure is met by a cell the quote covers (`_cell_supports`: sign,
     period, period type, kind and table scale) or by a figure written in the
     quote text (exactly the same unit, not written as a negative, not one of
-    the quoted cells' own values, `_agrees`). Either way the claim figure and
-    the source must agree on direction: a direction word ("loss",
-    "decreased", "fell", ...) near the claim's figure needs one near the
-    quote's figure (for a cell: anywhere in the quote), and the reverse. A
-    prose figure also needs the quote's period to fit the claim's: every
-    year the quote names must be one of the claim's years (when the claim
-    names any), and its span must fit a quarter or year claim. A claim with
-    no significant figure is never supported. `scales` maps the chunk's table
-    ids to their scale (None when unknown)."""
-    figures = _directed_figures(claim, positive_only=False)
+    the quoted cells' own values, `_agrees`). The claim and the quote must
+    agree on direction: a direction word ("loss", "decreased", "used in",
+    "expense", ...) anywhere in one needs one anywhere in the other. A prose
+    figure also needs the quote's period to fit the claim's: when the claim
+    names years, the quote must name at least one of them and no other (a
+    quote naming no year can't say which year its figure is for), and its
+    span must fit a quarter or year claim. A claim with no significant
+    figure is never supported. `scales` maps the chunk's table ids to their
+    scale (None when unknown)."""
+    figures = significant_figures(claim)
+    if not figures or bool(_DOWN.search(claim)) != bool(_DOWN.search(quote)):
+        return False
     years = claim_years(claim)
     kind = period_kind(claim)
-    quote_down = bool(_DOWN.search(quote))
     # A figure that is one of the quoted cells is judged as that cell only, so
     # the text path can't bypass the cell's scale and period checks.
     cell_values = {abs(c.value) for c in quote_cells if c.value is not None}
-    prose_fits = (not years or claim_years(quote) <= years) and _span_fits(quote, kind)
-    texts = [
-        (q, down)
-        for q, down in _directed_figures(quote, positive_only=True)
-        if q.value not in cell_values
-    ] if prose_fits else []
+    quote_years = claim_years(quote)
+    prose_fits = (
+        not years or (bool(quote_years) and quote_years <= years)
+    ) and _span_fits(quote, kind)
+    texts = (
+        [q for q in _positive_significant_figures(quote) if q.value not in cell_values]
+        if prose_fits
+        else []
+    )
 
-    def stated(figure: Figure, down: bool) -> bool:
-        if down == quote_down and any(
-            _cell_supports(cell, figure, scales, years, kind) for cell in quote_cells
-        ):
+    def stated(figure: Figure) -> bool:
+        if any(_cell_supports(cell, figure, scales, years, kind) for cell in quote_cells):
             return True
-        return any(
-            q_down == down and q.unit == figure.unit and _agrees(q.value, figure)
-            for q, q_down in texts
-        )
+        return any(q.unit == figure.unit and _agrees(q.value, figure) for q in texts)
 
-    return bool(figures) and all(stated(figure, down) for figure, down in figures)
+    return all(stated(figure) for figure in figures)

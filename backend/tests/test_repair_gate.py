@@ -180,11 +180,11 @@ def test_a_prose_quote_naming_any_year_outside_the_claim_fails_closed():
     assert not states(quote, [], "Gross margin in 2024 was 46.6%")
 
 
-def test_a_prose_quote_in_the_claims_year_or_naming_no_year_still_counts():
+def test_a_prose_quote_in_the_claims_year_still_counts():
     quote = "Data Center revenue for fiscal year 2025 was $115.2 billion"
     assert states(quote, [], "Data Center revenue for fiscal 2025 was $115.2 billion")
     assert states(quote, [], "FY25 Data Center revenue was $115.2 billion")
-    assert states("revenue was $115.2 billion", [], "In fiscal 2025 revenue was $115.2 billion")
+    assert states("revenue was $115.2 billion", [], "revenue was $115.2 billion")
 
 
 # --- Direction words ---------------------------------------------------------
@@ -246,3 +246,32 @@ def test_a_quarter_claim_is_not_stated_by_full_year_prose():
     quarter = "revenue for the three months ended June 28, 2025 was $61.0 billion"
     assert not states(quarter, [], "Full-year fiscal 2025 revenue was $61.0 billion")
     assert states(quarter, [], "Revenue in Q2 fiscal 2025 was $61.0 billion")
+
+
+def test_a_prose_quote_naming_no_year_does_not_state_a_dated_claim():
+    # From the FY2025 10-K: true for fiscal 2025, silent about which year.
+    quote = "Data Center revenue was $115.2 billion, up 142% from a year ago"
+    assert not states(quote, [], "fiscal 2024 Data Center revenue was $115.2 billion")
+    assert not states(quote, [], "In fiscal 2025 revenue was $115.2 billion")
+
+
+def test_a_loss_word_anywhere_in_the_quote_counts():
+    quote = "Net loss for fiscal year 2025 was $1.2 billion"
+    assert not states(quote, [], "Net income for fiscal 2025 was $1.2 billion")
+    assert not states("Net income for fiscal 2025 was $1.2 billion", [],
+                      "Net loss for fiscal year 2025 was $1.2 billion")
+
+
+def test_cash_used_in_is_not_cash_provided_by():
+    assert not states("Net cash used in investing activities was $4.2 billion", [],
+                      "Net cash provided by investing activities was $4.2 billion")
+    assert states("Net cash used in investing activities was $4.2 billion", [],
+                  "Investing activities used $4.2 billion of cash, net cash used in investing")
+
+
+def test_an_expense_is_not_income():
+    cells = [cell(9, 1, 1234)]
+    assert not states("Other income (expense), net $ 1,234", cells,
+                      "other income was $1.234 billion")
+    assert states("Research and development expense $ 1,234", cells,
+                  "R&D expense was $1.234 billion")
