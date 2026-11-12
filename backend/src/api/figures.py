@@ -129,11 +129,11 @@ class Figure:
 
 
 def stated_figures(text: str) -> list[Figure]:
-    return [figure for _, figure in _located_figures(text)]
+    return [figure for _, _, figure in _located_figures(text)]
 
 
-def _located_figures(text: str) -> list[tuple[int, Figure]]:
-    """stated_figures, each with where its digits start in `text`."""
+def _located_figures(text: str) -> list[tuple[int, int, Figure]]:
+    """stated_figures, each with where its digits start and end in `text`."""
     found = []
     for match in _FIGURE.finditer(text):
         value = Decimal(match.group().replace(",", ""))
@@ -145,7 +145,7 @@ def _located_figures(text: str) -> list[tuple[int, Figure]]:
         if not first[3] and second[3] and _RANGE.match(text[first[1] : second[0]]):
             first[3] = second[3]
     return [
-        (start, Figure(value, max(0, -value.as_tuple().exponent), unit))
+        (start, end, Figure(value, max(0, -value.as_tuple().exponent), unit))
         for start, end, value, unit in found
         if not _is_year(text, start, end, unit)
     ]
@@ -301,15 +301,85 @@ def significant_figures(text: str) -> list[Figure]:
     return [f for f in stated_figures(_MARKER.sub(" ", text)) if _significant(f)]
 
 
-def _positive_significant_figures(text: str) -> list[Figure]:
-    """significant_figures minus any written as a negative (after "(", "-" or
-    "−"): a repair never rests on a negative figure."""
+# Direction words. A figure near one reads as a loss or a fall; the claim and
+# the source must agree on that, so "net income was $1.2 billion" is never
+# stated by "a net loss of $1.2 billion".
+_DOWN = re.compile(
+    r"\b(?:loss(?:es)?|decreas(?:e|ed|es|ing)|declin(?:e|ed|es|ing)|fell"
+    r"|fall(?:s|ing)?|lower|negative|down)\b",
+    re.IGNORECASE,
+)
+_NEAR_WORDS = 5
+
+
+def _down_near(text: str, start: int, end: int) -> bool:
+    """A direction word within a few words either side of text[start:end]."""
+    before = " ".join(text[:start].split()[-_NEAR_WORDS:])
+    after = " ".join(text[end:].split()[:_NEAR_WORDS])
+    return bool(_DOWN.search(before) or _DOWN.search(after))
+
+
+def _directed_figures(text: str, *, positive_only: bool) -> list[tuple[Figure, bool]]:
+    """significant figures with whether each sits near a direction word. With
+    `positive_only`, figures written as a negative (after "(", "-" or "−") are
+    dropped: a repair never rests on a negative figure."""
     text = _MARKER.sub(" ", text)
     return [
-        figure
-        for start, figure in _located_figures(text)
-        if _significant(figure) and not _NEGATIVE_LEAD.search(text[:start])
+        (figure, _down_near(text, start, end))
+        for start, end, figure in _located_figures(text)
+        if _significant(figure)
+        and not (positive_only and _NEGATIVE_LEAD.search(text[:start]))
     ]
+
+
+# Period type. A quarter claim needs a quarter's figure, a year claim a year's.
+_QUARTER_CLAIM = re.compile(
+    r"\bQ[1-4]\b|\b(?:first|second|third|fourth)\s+quarter\b|\bthree\s+months\b"
+    r"|\bquarter(?:ly)?\b|\b13\s+weeks\b",
+    re.IGNORECASE,
+)
+_YEAR_CLAIM = re.compile(
+    r"\bfiscal\s+(?:year\s+)?(?:19|20)?\d{2}\b|\bFY\s*'?\d{2,4}\b|\bfiscal\s+year\b"
+    r"|\bfull[\s-]year\b|\bannual(?:ly)?\b|\byear\s+ended\b|\btwelve\s+months\b",
+    re.IGNORECASE,
+)
+# A span shorter than a year, in a column label or a quote.
+_PART_YEAR = re.compile(
+    r"\b(?:three|six|nine|3|6|9)\s+months\b|\bquarter(?:ly)?\b|\bQ[1-4]\b"
+    r"|\b(?:13|26|39)\s+weeks\b",
+    re.IGNORECASE,
+)
+_THREE_MONTHS = re.compile(
+    r"\b(?:three|3)\s+months\b|\bquarter\b|\bQ[1-4]\b|\b13\s+weeks\b", re.IGNORECASE
+)
+# A span other than a quarter: in a label it rules a quarter claim out.
+_NOT_QUARTER = re.compile(
+    r"\b(?:six|nine|twelve|6|9|12)\s+months\b|\byear\b|\bannual\b"
+    r"|\b(?:26|39|52|53)\s+weeks\b",
+    re.IGNORECASE,
+)
+
+
+def period_kind(text: str) -> str | None:
+    """"quarter" when the claim names a quarter (Q2, second quarter, three
+    months), else "year" when it names a fiscal or full year ("fiscal 2025",
+    "FY24", "full-year", "annual"), else None."""
+    if _QUARTER_CLAIM.search(text):
+        return "quarter"
+    if _YEAR_CLAIM.search(text):
+        return "year"
+    return None
+
+
+def _span_fits(label: str, kind: str | None) -> bool:
+    """A column label or a prose quote covers the claim's kind of period. A
+    quarter needs three months / a quarter and nothing longer; a year needs no
+    shorter span ("Three/Six/Nine Months Ended" fail a full-year claim)."""
+    if kind == "quarter":
+        return bool(_THREE_MONTHS.search(label)) and not _NOT_QUARTER.search(label)
+    if kind == "year":
+        return not _PART_YEAR.search(label)
+    return True
 
 
 def claim_years(text: str) -> set[str]:
@@ -351,12 +421,18 @@ def _in_period(cell: Cell, years: set[str]) -> bool:
 
 
 def _cell_supports(
-    cell: Cell, figure: Figure, scales: dict[int, Decimal | None], years: set[str]
+    cell: Cell,
+    figure: Figure,
+    scales: dict[int, Decimal | None],
+    years: set[str],
+    kind: str | None,
 ) -> bool:
     """A quoted table cell states this claim figure, for the repair gate.
 
     Sign: a negative cell never counts. Period: when the claim names years,
-    the cell's column label must contain one of them (no label: no). Kind:
+    the cell's column label must contain one of them (no label: no), and
+    when it names a quarter or a year, the label must cover that span
+    (`_span_fits`). Kind:
     percent only for percent. Scale: a figure with a unit needs a cell the
     table's scale applies to, in a table scaled in that unit (exact) or one
     unit below (115,186 in millions for "$115.2 billion", 115,186 in thousands
@@ -364,6 +440,8 @@ def _cell_supports(
     unit ("$6.08") only matches a cell the scale does not apply to (per share).
     """
     if cell.value is None or _negative_cell(cell) or not _in_period(cell, years):
+        return False
+    if kind is not None and not _span_fits(cell.column_label or "", kind):
         return False
     if cell.kind == "percent":
         return figure.unit == "percent" and _agrees(cell.value, figure)
@@ -394,22 +472,39 @@ def quote_states(
     and figures spread over quoted rows are each met by their own row.
 
     A figure is met by a cell the quote covers (`_cell_supports`: sign,
-    period, kind and table scale) or by a figure written in the quote text
-    with exactly the same unit (million / billion / trillion / percent /
-    none), not written as a negative and not one of the quoted cells' own
-    values, that `_agrees` with it. A claim with no
-    significant figure is never supported. `scales` maps the chunk's table ids
-    to their scale (None when unknown)."""
-    figures = significant_figures(claim)
+    period, period type, kind and table scale) or by a figure written in the
+    quote text (exactly the same unit, not written as a negative, not one of
+    the quoted cells' own values, `_agrees`). Either way the claim figure and
+    the source must agree on direction: a direction word ("loss",
+    "decreased", "fell", ...) near the claim's figure needs one near the
+    quote's figure (for a cell: anywhere in the quote), and the reverse. A
+    prose figure also needs the quote's period to fit the claim's: every
+    year the quote names must be one of the claim's years (when the claim
+    names any), and its span must fit a quarter or year claim. A claim with
+    no significant figure is never supported. `scales` maps the chunk's table
+    ids to their scale (None when unknown)."""
+    figures = _directed_figures(claim, positive_only=False)
     years = claim_years(claim)
+    kind = period_kind(claim)
+    quote_down = bool(_DOWN.search(quote))
     # A figure that is one of the quoted cells is judged as that cell only, so
     # the text path can't bypass the cell's scale and period checks.
     cell_values = {abs(c.value) for c in quote_cells if c.value is not None}
-    texts = [q for q in _positive_significant_figures(quote) if q.value not in cell_values]
+    prose_fits = (not years or claim_years(quote) <= years) and _span_fits(quote, kind)
+    texts = [
+        (q, down)
+        for q, down in _directed_figures(quote, positive_only=True)
+        if q.value not in cell_values
+    ] if prose_fits else []
 
-    def stated(figure: Figure) -> bool:
-        if any(_cell_supports(cell, figure, scales, years) for cell in quote_cells):
+    def stated(figure: Figure, down: bool) -> bool:
+        if down == quote_down and any(
+            _cell_supports(cell, figure, scales, years, kind) for cell in quote_cells
+        ):
             return True
-        return any(q.unit == figure.unit and _agrees(q.value, figure) for q in texts)
+        return any(
+            q_down == down and q.unit == figure.unit and _agrees(q.value, figure)
+            for q, q_down in texts
+        )
 
-    return bool(figures) and all(stated(figure) for figure in figures)
+    return bool(figures) and all(stated(figure, down) for figure, down in figures)

@@ -454,6 +454,13 @@ For each citation `{chunk_id, quote}`:
      "FY24", "fiscal 24"), the cell's column label must contain one of the
      claim's years; no label, or one with no year, fails. So "In fiscal 2024
      … $115.2 billion" is not stated by the FY2025 cell of a three-year row.
+     **Period type** — a claim naming a quarter (Q1–Q4, "second quarter",
+     "three months", "quarter") needs a label saying three months or a
+     quarter and nothing longer, so "Q2 fiscal 2025 … $61.0 billion" is not
+     stated by a "Six Months Ended" or "Year Ended" cell; a claim naming a
+     fiscal or full year ("fiscal 2025", "FY24", "full-year", "annual") with
+     no quarter word rejects a "Three/Six/Nine Months" label. NVIDIA's "Year
+     Ended › Jan 26, 2025" passes the demo's "fiscal 2025".
      **Kind** — percent only for percent. **Sign** — a negative or
      parenthesized cell never counts;
    - *or a figure written in the quote text*, when its **unit** is exactly the
@@ -462,7 +469,23 @@ For each citation `{chunk_id, quote}`:
      decimals or ≥1,000 — "Note 4" and "Item 1A" state nothing), it is not
      written as a negative, and it is not one of the quoted cells' own values
      (a table figure is judged as its cell, so the text path can't skip the
-     scale and period checks).
+     scale and period checks). **Period in prose** — when the claim names a
+     year, every year the quote names must be one of the claim's (same
+     extraction: "2025", "FY24", "fiscal 24"), so "…for fiscal year 2025 was
+     $115.2 billion" never states a fiscal-2024 claim, and "46.6% in 2025 and
+     45.2% in 2024" never states "46.6% in 2024". The quote's span must also
+     fit the claim's period type, by the same words as the cell labels (a
+     quarter claim rejects "year ended" or "six months" prose; a year claim
+     rejects "three months" or "quarter" prose).
+
+   **Direction**, on both paths: a direction word (loss, decrease(d),
+   decline(d), fell, falling, lower, negative, down) within five words of the
+   claim's figure must be matched by one within five words of the quote's
+   figure — for a cell, anywhere in the quote, such as a "Net loss" row label
+   — and the reverse. So "net income was $1.2 billion" is never stated by "a
+   net loss of $1.2 billion", nor "increased 2%" by "decreased 2%". It is
+   deliberately blunt: "revenue was $47.5 billion, lower than last year"
+   against a plain table row is rejected, a false rejection the gate accepts.
 
    Either way the **value** must be equal, or written with more decimals and
    round to the claim's figure without changing its whole number: 391.0 for
@@ -500,8 +523,22 @@ For each citation `{chunk_id, quote}`:
      the visitor never saw.
    - At most one attempt per citation and at most 3 repair calls per answer
      (`MAX_REPAIRS`); later failures stay unverified without a call.
-   - **The gate fails closed on unit, scale, period and sign**, as listed
-     above: any doubt leaves the original unverified citation.
+   - **The gate fails closed on unit, scale, period, period type, sign and
+     direction**, as listed above: any doubt leaves the original unverified
+     citation. Accepted residuals, all known:
+     - *The year must sit inside the claim span* (the words around the
+       marker, step 4). A year stated in an earlier sentence is not seen, and
+       then no year check applies.
+     - *A claim naming two years accepts either year for each figure.* "$115.2
+       billion in fiscal 2025, up from $47.5 billion in fiscal 2024" checks
+       each cell's label against {2024, 2025}; which figure belongs to which
+       year is not modelled.
+     - *Year-shaped amounts fail closed.* A bare four-digit 19xx/20xx number
+       in a prose quote reads as a year, so a quote that states such an
+       amount beside a claim naming a different year is rejected.
+     - The quarter/year words are a fixed list. A label or quote that names
+       no span ("June 28, 2025" alone) is judged only by its year, so it
+       passes a year claim; a quarter claim still needs a quarter word.
    - **Latency bound.** Each call is bounded at 10 s of wall clock (the answer
      path stops waiting on the call's future; httpx also bounds connect at
      3 s and each read at 10 s, with no SDK retries), and no new call starts
