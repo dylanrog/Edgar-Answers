@@ -440,25 +440,31 @@ For each citation `{chunk_id, quote}`:
    different figure is `NONE`). The reply then goes through **the same
    check**, steps 1–4 unchanged: exact normalized substring match, sids and
    cells resolved from the *new* quote. It is accepted only if it also
-   **states one of the claim's figures** (`figures.quote_states`): a table
-   cell the new quote covers matches a claim figure under the step-4 rules
-   (115,186 for "$115.2 billion"), or a figure written in the quote equals a
-   claim figure of the same kind (percent vs. number), exactly or after
-   rounding the quote's figure to the claim figure's decimals ("391.0
-   billion" for "$391 billion"). Accepted, it is narrowed as in step 4 and
+   **states every figure the claim states** (`figures.quote_states`). Each
+   claim figure is checked on its own: it is stated when a table cell the new
+   quote covers matches it under the step-4 rules (115,186 for "$115.2
+   billion"), or a figure written in the quote equals it, of the same kind
+   (percent vs. number), exactly or after rounding the quote's figure to the
+   claim figure's decimals ("391.0 billion" for "$391 billion"). Two
+   spellings of one value ("$115,186 million ($115.2 billion)") are two
+   requirements one cell satisfies; figures spread over several quoted rows
+   ("Compute ($102,196 million) and Networking ($12,990 million)") are each
+   met by their own row. Accepted, it is narrowed as in step 4 and
    emitted with the repaired quote and `repaired: true`. In every other case —
    `NONE` (or a reply opening with it), an empty or over-long reply, a reply
-   that still does not match, one that matches but states none of the
-   claim's figures, an exception or a timeout — the original citation is
+   that still does not match, one that matches but leaves any of the
+   claim's figures unstated, an exception or a timeout — the original citation is
    emitted exactly as it would have been without repair: `verified: false`,
    the model's own quote, no sids, no cells. Guarantees:
    - Matching stays exact; repair only supplies a second candidate quote,
      and never decides `verified` itself.
-   - **A repair is accepted only if it states a figure the claim states.**
-     Without this, "Total net sales were $412.7 billion [1]" (an invented
-     figure) plus a misquote would be "repaired" to the real "Total net sales
-     were 391.0 billion dollars" and shown verified — laundering exactly the
-     error the badge exists to show.
+   - **A repair is accepted only if it states every figure the claim
+     states.** Without this, "Total net sales were $412.7 billion [1]" (an
+     invented figure) plus a misquote would be "repaired" to the real "Total
+     net sales were 391.0 billion dollars" and shown verified — laundering
+     exactly the error the badge exists to show. "Any one figure" is not
+     enough either: "$115.2 billion and $999.9 billion [1]" would launder the
+     invented second figure through a quote of the true first one.
    - **Figure-free claims are never repaired** (no call is made). A claim's
      figures are its *significant* ones (`figures.significant_figures`):
      written with a unit, with decimals, or ≥1,000 — bare years and small
@@ -727,7 +733,7 @@ typecheck/lint job when the frontend lands.
 | EDGAR 429/5xx | Backoff + retry; resume from disk cache |
 | Unrecognized filing structure | Ingest as single `"other"` section; log warning |
 | LLM output unparseable | One retry; then answer renders with "unverified answer" notice |
-| Citation fails verification | If its claim states a figure, one repair call against the same chunk (§6.3 step 5); the new quote must pass the same exact match and state one of the claim's figures. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
+| Citation fails verification | If its claim states a figure, one repair call against the same chunk (§6.3 step 5); the new quote must pass the same exact match and state every figure the claim states. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
 | Quote repair call fails or times out | Logged as a warning; the citation stays `verified: false` exactly as without repair — never an `error` event |
 | Retrieval returns nothing relevant | Model instructed to say the corpus doesn't cover it (and the eval set includes such questions) |
 | LLM API down | `error` SSE event with a human-readable message |

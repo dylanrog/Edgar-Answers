@@ -271,8 +271,8 @@ def _repair(
     step 5), checked by the same verify_citation. None -- keep the original
     unverified citation -- on any failure: an exception, no quote, an
     over-long quote, a quote that still does not match, or one that does not
-    state any of the claim's figures (which would launder an invented figure
-    into a verified citation)."""
+    state every one of the claim's figures (which would launder an invented
+    figure into a verified citation)."""
     try:
         quote = repairer.repair(claim, citation.quote, chunk.text)
     except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
@@ -293,7 +293,7 @@ def _repair(
     quote_cells = [by_key[key] for key in repaired.cells if key in by_key]
     if not quote_states(repaired.quote, quote_cells, figures):
         logger.info(
-            "quote repair for marker %s verified but states none of the claim's figures",
+            "quote repair for marker %s verified but does not state every claim figure",
             citation.marker,
         )
         return None

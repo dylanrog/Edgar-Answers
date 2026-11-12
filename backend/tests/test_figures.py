@@ -412,3 +412,44 @@ def test_quote_states_matches_a_covered_cell_scaled_one_unit_up():
 
     assert quote_states(ROW, CELLS, significant_figures("revenue was $115.2 billion"))
     assert not quote_states(ROW, CELLS, significant_figures("revenue was $120.4 billion"))
+
+
+COMPUTE_SID, NETWORKING_SID = 3001, 3002
+SEGMENT_ROWS = "Compute 102,196 38,950 Networking 12,990 8,575"
+
+
+def segment_cell(sid, index, value):
+    raw = f"{value:,}"
+    return Cell(
+        sid=sid, col=index, cell_index=index, char_start=None, char_end=None,
+        table_id=1, raw=raw, value=Decimal(value), kind="number", row_label=None,
+        column_label=None, scale_applies=True,
+    )
+
+
+def test_quote_states_needs_every_claim_figure_not_just_one():
+    from api.figures import quote_states, significant_figures
+
+    figures = significant_figures("revenue was $115.2 billion and $999.9 billion")
+    assert not quote_states(ROW, CELLS, figures)
+    assert not quote_states("Total net sales were 391.0 billion dollars", [],
+                            significant_figures("$391.0 billion, up from $412.7 billion"))
+
+
+def test_quote_states_accepts_figures_spread_over_the_quoted_rows():
+    from api.figures import quote_states, significant_figures
+
+    cells = [
+        segment_cell(COMPUTE_SID, 1, 102196), segment_cell(COMPUTE_SID, 2, 38950),
+        segment_cell(NETWORKING_SID, 1, 12990), segment_cell(NETWORKING_SID, 2, 8575),
+    ]
+    figures = significant_figures("Compute ($102,196 million) and Networking ($12,990 million)")
+    assert quote_states(SEGMENT_ROWS, cells, figures)
+
+
+def test_two_spellings_of_one_value_are_both_stated_by_one_cell():
+    from api.figures import quote_states, significant_figures
+
+    figures = significant_figures("Data Center was $115,186 million ($115.2 billion)")
+    assert len(figures) == 2
+    assert quote_states(ROW, CELLS, figures)

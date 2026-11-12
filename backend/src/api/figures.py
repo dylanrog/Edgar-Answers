@@ -278,18 +278,26 @@ def significant_figures(text: str) -> list[Figure]:
 
 
 def quote_states(quote: str, quote_cells: list[Cell], figures: list[Figure]) -> bool:
-    """The quote itself states one of `figures` (a claim's figures): a table
-    cell the quote covers matches one (is_stated: exact digits, or scaled one
-    unit up -- 115,186 for "$115.2 billion"), or a figure written in the quote
-    text equals one of the same kind (percent vs. number), exactly or after
-    rounding the quote's figure to the claim figure's decimals ("391.0" for
-    "$391 billion"). Used to keep the repair step (design §6.3 step 5) from
-    attaching a real passage to a figure the source does not give."""
-    if any(is_stated(cell, figures) for cell in quote_cells):
-        return True
-    return any(
-        (q.unit == "percent") == (f.unit == "percent")
-        and (q.value == f.value or _rounded(q.value, f.places) == f.value)
-        for q in stated_figures(quote)
-        for f in figures
-    )
+    """The quote itself states *every* one of `figures` (a claim's figures).
+
+    A figure is stated when a table cell the quote covers matches it
+    (is_stated: exact digits, or scaled one unit up -- 115,186 for "$115.2
+    billion"), or a figure written in the quote text equals it, of the same
+    kind (percent vs. number), exactly or after rounding the quote's figure to
+    the claim figure's decimals ("391.0" for "$391 billion"). Each figure is
+    checked on its own, so two spellings of one value ("$115,186 million
+    ($115.2 billion)") are both satisfied by the one cell. Used to keep the
+    repair step (design §6.3 step 5) from attaching a real passage to a claim
+    whose figures -- any of them -- the source does not give."""
+    texts = stated_figures(quote)
+
+    def stated(figure: Figure) -> bool:
+        if any(is_stated(cell, [figure]) for cell in quote_cells):
+            return True
+        return any(
+            (q.unit == "percent") == (figure.unit == "percent")
+            and (q.value == figure.value or _rounded(q.value, figure.places) == figure.value)
+            for q in texts
+        )
+
+    return bool(figures) and all(stated(figure) for figure in figures)

@@ -176,3 +176,59 @@ def test_a_repaired_table_quote_gets_its_cells_from_the_new_quote_then_narrowed(
     assert data["quote"] == WHOLE_ROW
     assert data["sids"] == [data_center]
     assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+def _ask_repaired(conn, chunk_id, prose, repair_quote):
+    response = (
+        f"{prose}\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        '"quote": "Data Center revenue $ 115,186"}]}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(repair_quote)
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    assert len(repairer.calls) == 1
+    return next(e for e in events if e.name == "citation").data
+
+
+@pytest.mark.db
+def test_a_repair_stating_only_one_of_two_claim_figures_is_rejected(seeded):
+    # $999.9 billion is invented; a quote that states only the true 115,186
+    # must not turn the whole claim green.
+    conn, chunk_id, _ = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "Revenue was $115.2 billion and $999.9 billion [1].", WHOLE_ROW
+    )
+    assert data["verified"] is False
+    assert data["repaired"] is False
+    assert data["quote"] == "Data Center revenue $ 115,186"
+
+
+@pytest.mark.db
+def test_a_repair_spanning_two_rows_states_both_claim_figures(seeded):
+    conn, chunk_id, data_center = seeded
+    two_rows = WHOLE_ROW + " Compute 102,196"
+    data = _ask_repaired(
+        conn, chunk_id,
+        "Data Center ($115,186 million) and Compute ($102,196 million) [1].", two_rows,
+    )
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == two_rows
+    assert data["sids"] == [data_center, data_center + 1]
+
+
+@pytest.mark.db
+def test_two_spellings_of_the_same_figure_are_satisfied_by_one_cell(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "Data Center revenue was $115,186 million ($115.2 billion) [1].",
+        WHOLE_ROW,
+    )
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
