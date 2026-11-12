@@ -489,7 +489,7 @@ def test_a_repair_that_still_does_not_verify_keeps_the_original_quote(seeded_con
     [citation] = citation_events(events)
     assert len(repairer.calls) == 1
     assert citation["verified"] is False
-    assert citation["repaired"] is False
+    assert "repaired" not in citation
     assert citation["quote"] == MISQUOTE
     assert citation["sids"] == []
     assert citation["cells"] == []
@@ -542,7 +542,7 @@ def test_a_verified_citation_is_never_sent_to_repair(seeded_conn):
     [citation] = citation_events(events)
     assert repairer.calls == []
     assert citation["quote"] == GOOD_QUOTE
-    assert citation["repaired"] is False
+    assert "repaired" not in citation
 
 
 @pytest.mark.db
@@ -576,7 +576,7 @@ def test_without_a_repairer_a_misquote_stays_unverified(seeded_conn):
     events, _ = collect(seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)))
     [citation] = citation_events(events)
     assert citation["verified"] is False
-    assert citation["repaired"] is False
+    assert "repaired" not in citation
 
 
 def ask_prose_with_repairer(conn, prose, quote, repairer, *, responses=()):
@@ -612,7 +612,7 @@ def test_a_repair_cannot_launder_a_figure_the_source_does_not_give(seeded_conn):
     [citation] = citation_events(events)
     assert len(repairer.calls) == 1
     assert citation["verified"] is False
-    assert citation["repaired"] is False
+    assert "repaired" not in citation
     assert citation["quote"] == "Total net sales were $412.7 billion"
     assert citation["sids"] == []
 

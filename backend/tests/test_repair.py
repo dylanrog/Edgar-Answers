@@ -57,10 +57,11 @@ def test_the_repair_prompt_is_strict_and_separate_from_the_answer_prompt():
     assert REPAIR_SYSTEM_PROMPT != SYSTEM_PROMPT
 
 
-def test_the_anthropic_client_is_built_once_per_repairer(monkeypatch):
+def test_the_anthropic_client_is_built_once_per_process(monkeypatch):
     import anthropic
+    import httpx
 
-    from api.repair import AnthropicQuoteRepairer
+    from api import repair
 
     built = []
 
@@ -69,7 +70,35 @@ def test_the_anthropic_client_is_built_once_per_repairer(monkeypatch):
             built.append(kwargs)
 
     monkeypatch.setattr(anthropic, "Anthropic", FakeClient)
-    repairer = AnthropicQuoteRepairer(api_key="k")
-    assert repairer._anthropic() is repairer._anthropic()
-    assert len(built) == 1
-    assert built[0]["max_retries"] == 0
+    repair._client.cache_clear()
+    try:
+        first = repair.AnthropicQuoteRepairer(api_key="k")
+        second = repair.AnthropicQuoteRepairer(api_key="k")  # e.g. the next request
+        assert first._anthropic() is second._anthropic()
+        assert len(built) == 1
+        assert built[0]["max_retries"] == 0
+        assert isinstance(built[0]["timeout"], httpx.Timeout)
+        assert built[0]["timeout"].connect == repair.CONNECT_TIMEOUT_SECONDS
+    finally:
+        repair._client.cache_clear()
+
+
+def test_a_repair_call_is_bounded_by_wall_clock(monkeypatch):
+    import concurrent.futures
+    import threading
+    import time
+
+    import pytest
+
+    from api.repair import AnthropicQuoteRepairer
+
+    release = threading.Event()
+    repairer = AnthropicQuoteRepairer(api_key="k", timeout=0.05)
+    monkeypatch.setattr(repairer, "_call", lambda *args: release.wait(5) and "late")
+    started = time.monotonic()
+    try:
+        with pytest.raises(concurrent.futures.TimeoutError):
+            repairer.repair("claim", "quote", "excerpt")
+    finally:
+        release.set()
+    assert time.monotonic() - started < 1.0
