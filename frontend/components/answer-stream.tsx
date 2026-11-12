@@ -65,7 +65,7 @@ export function AnswerStream({
         {parseProse(state.prose).map((block, p) => {
           const inlines = block.inlines.map((inline, index) => {
             if ("marker" in inline) {
-              const chip = (
+              return (
                 <CitationChip
                   key={index}
                   marker={inline.marker}
@@ -74,7 +74,6 @@ export function AnswerStream({
                   emphasized={emphasizeMarker === inline.marker}
                 />
               );
-              return chip;
             }
             return inline.bold ? (
               <strong key={index}>{inline.text}</strong>

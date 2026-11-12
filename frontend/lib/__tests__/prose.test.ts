@@ -54,4 +54,56 @@ describe("parseProse", () => {
     });
     expect(parseProse("####### seven")[0].kind).toBe("paragraph");
   });
+
+  it("only bolds real emphasis", () => {
+    for (const text of ["5**2 and 3**4", "a ** b ** c"]) {
+      expect(parseProse(text)[0]).toEqual({
+        kind: "paragraph",
+        inlines: [{ text, bold: false }],
+      });
+    }
+    expect(parseProse("**Revenue:** grew [1]")[0]).toEqual({
+      kind: "paragraph",
+      inlines: [
+        { text: "Revenue:", bold: true },
+        { text: " grew ", bold: false },
+        { marker: 1, bold: false },
+      ],
+    });
+  });
+
+  it("keeps newlines inside a multi-line paragraph", () => {
+    expect(parseProse("one\ntwo")[0]).toEqual({
+      kind: "paragraph",
+      inlines: [{ text: "one\ntwo", bold: false }],
+    });
+  });
+
+  it("yields a chip for a marker in bold inside a heading", () => {
+    expect(parseProse("# A **b [3]**")[0]).toMatchObject({
+      kind: "heading",
+      inlines: [
+        { text: "A ", bold: false },
+        { text: "b ", bold: true },
+        { marker: 3, bold: true },
+      ],
+    });
+  });
+
+  it("returns no blocks for empty input", () => {
+    expect(parseProse("")).toEqual([]);
+  });
+
+  it("parses every streaming prefix without losing text", () => {
+    const sample = "# Head [1]\n\nSome **bold [2]** text\nnext line.";
+    const strip = (t: string) => t.replace(/[\s#*]/g, "");
+    for (let i = 0; i <= sample.length; i++) {
+      const prefix = sample.slice(0, i);
+      const flat = parseProse(prefix)
+        .flatMap((b) => b.inlines)
+        .map((x) => ("marker" in x ? `[${x.marker}]` : x.text))
+        .join("");
+      expect(strip(flat)).toBe(strip(prefix));
+    }
+  });
 });

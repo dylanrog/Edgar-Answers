@@ -1,4 +1,4 @@
-import { splitOnMarkers, splitParagraphs, type Segment } from "./markers";
+import { splitOnMarkers, splitParagraphs } from "./markers";
 
 export type Inline = { text: string; bold: boolean } | { marker: number; bold: boolean };
 export type ProseBlock =
@@ -12,12 +12,12 @@ export type ProseBlock =
 export function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
   const push = (chunk: string, bold: boolean) => {
-    for (const seg of splitOnMarkers(chunk) as Segment[]) {
+    for (const seg of splitOnMarkers(chunk)) {
       out.push(typeof seg === "string" ? { text: seg, bold } : { marker: seg.marker, bold });
     }
   };
   let cursor = 0;
-  for (const match of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
+  for (const match of text.matchAll(/(?<![\w*])\*\*(?=\S)([^*\n]*?\S)\*\*/g)) {
     const index = match.index ?? 0;
     push(text.slice(cursor, index), false);
     push(match[1], true);
@@ -42,6 +42,8 @@ export function parseProse(text: string): ProseBlock[] {
       }
     };
     for (const line of paragraph.split("\n")) {
+      // "# of shares" (hash + space as a number sign) becomes a heading by
+      // design; "#1 player" and "#hashtag" have no space and stay literal.
       const heading = /^(#{1,6}) +(\S.*)$/.exec(line);
       if (heading) {
         flush();
