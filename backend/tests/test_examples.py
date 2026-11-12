@@ -715,3 +715,36 @@ def test_examples_pin_the_wrong_period_figures():
     assert by_id["tutorial-1-msft"].wrong_values == ("137.7", "111.6")
     # 137.7 is the restated FY2024 figure an alternative accepts.
     assert by_id["tutorial-2-msft"].wrong_values == ("111.6",)
+
+
+def test_run_examples_counts_and_marks_repaired_citations(monkeypatch, capsys):
+    gold = entry()
+    monkeypatch.setattr(ex, "load_examples", lambda: {"g": [gold]})
+    monkeypatch.setattr(ex, "chains", lambda: [["g"]])
+    seen = {}
+
+    class FakeEvent:
+        def __init__(self, name, data):
+            self.name, self.data = name, data
+
+    def fake_answer_stream(*args, **kwargs):
+        seen.update(kwargs)
+        return iter([
+            FakeEvent("token", {"text": GOOD}),
+            FakeEvent("citation", {**cite(), "repaired": True}),
+            FakeEvent("done", {"unverified_answer": False}),
+        ])
+
+    class Conn:
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(ex, "answer_stream", fake_answer_stream)
+    repairer = object()
+    ok = ex.run_examples(Conn(), None, None, None, None, None, None, runs=2,
+                         quote_repairer=repairer)
+    out = capsys.readouterr().out
+    assert ok
+    assert seen["quote_repairer"] is repairer
+    assert "repaired_citations: 2" in out
+    assert "(repaired)" in out

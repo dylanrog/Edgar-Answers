@@ -10,6 +10,7 @@ from tests.fakes import (
     StubGenerator,
     StubPeriodDetector,
     StubQueryRewriter,
+    StubQuoteRepairer,
 )
 from tests.test_answer import (  # noqa: F401  (seeded_conn is used as a fixture)
     ACCESSION,
@@ -60,6 +61,9 @@ def stubbed_client(seeded_conn, monkeypatch):  # noqa: F811
     app.dependency_overrides[app_module.get_conversation_rewriter] = (
         lambda: StubConversationRewriter()  # noqa: PLW0108
     )
+    app.dependency_overrides[app_module.get_quote_repairer] = (
+        lambda: StubQuoteRepairer()  # noqa: PLW0108
+    )
     with TestClient(app) as client:
         yield client
     app.dependency_overrides.clear()
@@ -105,7 +109,9 @@ def test_ask_citation_event_matches_the_design_shape(stubbed_client):
         "sids",
         "quote",
         "cells",
+        "repaired",
     }
+    assert citation["repaired"] is False
     assert citation["verified"] is True
     assert citation["accession"] == ACCESSION
     assert citation["ticker"] == "TSTE"
@@ -189,6 +195,39 @@ def test_ask_rejects_an_overlong_conversation_id():
             "/ask", json={"question": "hi", "conversation_id": "x" * 500}
         )
     assert response.status_code == 422
+
+
+@pytest.mark.db
+def test_ask_repairs_a_misquote_with_the_injected_repairer(seeded_conn, monkeypatch):  # noqa: F811
+    good = "Total net sales were 391.0 billion dollars"
+    generator = StubGenerator(response_with("Net sales were $391B", chunk_id_of(seeded_conn)))
+    repairer = StubQuoteRepairer(good)
+    monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+    app.dependency_overrides[app_module.get_generator] = lambda: generator
+    app.dependency_overrides[app_module.get_embedder] = FakeEmbedder
+    app.dependency_overrides[app_module.get_company_detector] = (
+        lambda: StubCompanyDetector()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_period_detector] = (
+        lambda: StubPeriodDetector()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_query_rewriter] = (
+        lambda: StubQueryRewriter()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_conversation_rewriter] = (
+        lambda: StubConversationRewriter()  # noqa: PLW0108
+    )
+    app.dependency_overrides[app_module.get_quote_repairer] = lambda: repairer
+    try:
+        with TestClient(app) as client:
+            response = client.post("/ask", json={"question": "What were net sales?"})
+    finally:
+        app.dependency_overrides.clear()
+    citation = next(data for name, data in parse_sse(response.text) if name == "citation")
+    assert len(repairer.calls) == 1
+    assert citation["verified"] is True
+    assert citation["repaired"] is True
+    assert citation["quote"] == good
 
 
 @pytest.mark.db

@@ -25,6 +25,7 @@ from .detect import (
 )
 from .generate import AnthropicGenerator, Generator
 from .limits import AskLimiter, RateLimited, client_ip
+from .repair import AnthropicQuoteRepairer, QuoteRepairer
 from .rewrite import AnthropicQueryRewriter, QueryRewriter
 
 # Before anything reads os.environ below. This module is the process entry
@@ -123,6 +124,10 @@ def get_conversation_rewriter() -> ConversationRewriter:
     return AnthropicConversationRewriter()
 
 
+def get_quote_repairer() -> QuoteRepairer:
+    return AnthropicQuoteRepairer()
+
+
 def sse(event: AnswerEvent) -> str:
     payload = json.dumps(event.data, separators=(",", ":"))
     return f"event: {event.name}\ndata: {payload}\n\n"
@@ -144,6 +149,7 @@ def ask(
     period_detector: PeriodDetector = Depends(get_period_detector),
     query_rewriter: QueryRewriter = Depends(get_query_rewriter),
     conversation_rewriter: ConversationRewriter = Depends(get_conversation_rewriter),
+    quote_repairer: QuoteRepairer = Depends(get_quote_repairer),
 ) -> StreamingResponse:
     # FastAPI has validated the body by now, so a 422 never spends quota.
     peer = http_request.client.host if http_request.client else None
@@ -177,6 +183,7 @@ def ask(
                 query_rewriter=query_rewriter,
                 conversation_id=request.conversation_id,
                 conversation_rewriter=conversation_rewriter,
+                quote_repairer=quote_repairer,
             ):
                 yield sse(event)
 

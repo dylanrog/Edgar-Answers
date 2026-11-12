@@ -195,10 +195,14 @@ def chains() -> list[list[str]]:
 
 def run_examples(
     conn, embedder, generator, company_detector, period_detector, query_rewriter,
-    conversation_rewriter, *, runs: int = 10, verbose: bool = False,
+    conversation_rewriter, *, runs: int = 10, verbose: bool = False, quote_repairer=None,
 ) -> bool:
     groups = load_examples()
     all_ok = True
+    # Citations the repair step re-quoted into verification (design §6.3 step
+    # 5): a pass that leans on repair is still a pass, but the bracket should
+    # see how often it fires.
+    repaired_citations = 0
     for chain in chains():
         label = " -> ".join(chain)
         passed = 0
@@ -221,6 +225,7 @@ def run_examples(
                     tickers=None, form_type=None, period_detector=period_detector,
                     query_rewriter=query_rewriter, conversation_id=conversation_id,
                     conversation_rewriter=conversation_rewriter,
+                    quote_repairer=quote_repairer,
                 ):
                     if event.name == "token":
                         parts.append(event.data["text"])
@@ -237,6 +242,7 @@ def run_examples(
                         break
                 conn.commit()
                 answer = "".join(parts)
+                repaired_citations += sum(bool(c.get("repaired")) for c in citations)
                 turn_failures = [
                     f"{group}: {r}"
                     for r in judge_run(entries, answer, citations, unverified, errored)
@@ -261,7 +267,8 @@ def run_examples(
                     print(f"  [{group}] targets: {_describe_targets(targets)}")
                 for c in citations:
                     print(f"  [{group}] cited {c.get('ticker')} {c.get('accession')}"
-                          f" sids={c.get('sids')} cells={c.get('cells')}")
+                          f" sids={c.get('sids')} cells={c.get('cells')}"
+                          + (" (repaired)" if c.get("repaired") else ""))
                 print(f"  [{group}] pins: "
                       + ", ".join(f"{entry_id}={pin}" for entry_id, pin in used.items()))
                 if turn_failed or verbose:
@@ -277,5 +284,6 @@ def run_examples(
             print(f"  {entry_id}: satisfied by an alternative in {alts}/{runs} runs"
                   f" ({breakdown})")
         all_ok &= passed == runs
+    print(f"repaired_citations: {repaired_citations}")
     print("ALL PASSED" if all_ok else "FAILURES")
     return all_ok

@@ -10,6 +10,7 @@ from tests.fakes import (
     StubConversationRewriter,
     StubGenerator,
     StubPeriodDetector,
+    StubQuoteRepairer,
 )
 
 from api.answer import answer_stream
@@ -426,3 +427,153 @@ def test_verifying_progress_counts_zero_when_the_block_never_parses(seeded_conn)
     events, _ = collect(seeded_conn, "Nope.", "Still nope.")
     (verifying,) = progress(events, "verifying")
     assert verifying["quotes"] == 0
+
+
+# --- Citation repair (design §6.3 step 5) -----------------------------------
+
+GOOD_QUOTE = "Total net sales were 391.0 billion dollars"
+# True claim, wrong words: what the repair step exists for.
+MISQUOTE = "Total net sales were $391 billion"
+
+
+def ask_with_repairer(conn, response, repairer):
+    return list(
+        answer_stream(
+            conn,
+            FakeEmbedder(),
+            StubGenerator(response),
+            StubCompanyDetector(),
+            "What were total net sales?",
+            quote_repairer=repairer,
+        )
+    )
+
+
+def citation_events(events):
+    return [e.data for e in events if e.name == "citation"]
+
+
+@pytest.mark.db
+def test_a_misquote_is_repaired_against_the_same_excerpt_and_verified(seeded_conn):
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_with_repairer(
+        seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer
+    )
+    [citation] = citation_events(events)
+    assert citation["verified"] is True
+    assert citation["repaired"] is True
+    assert citation["quote"] == GOOD_QUOTE
+    assert citation["sids"] == [0]
+    assert citation["accession"] == ACCESSION
+    done = next(e for e in events if e.name == "done").data
+    assert done["citations_verified"] == 1
+
+
+@pytest.mark.db
+def test_the_repair_sees_the_claim_the_failed_quote_and_only_the_cited_chunk(seeded_conn):
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    ask_with_repairer(seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer)
+    [(claim, quote, excerpt)] = repairer.calls
+    assert "Total net sales were $391.0 billion" in claim
+    assert "[1]" not in claim
+    assert quote == MISQUOTE
+    assert excerpt == CHUNK_TEXT
+
+
+@pytest.mark.db
+def test_a_repair_that_still_does_not_verify_keeps_the_original_quote(seeded_conn):
+    repairer = StubQuoteRepairer("Total net sales were 400 billion dollars")
+    events = ask_with_repairer(
+        seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer
+    )
+    [citation] = citation_events(events)
+    assert len(repairer.calls) == 1
+    assert citation["verified"] is False
+    assert citation["repaired"] is False
+    assert citation["quote"] == MISQUOTE
+    assert citation["sids"] == []
+    assert citation["cells"] == []
+
+
+@pytest.mark.db
+def test_a_repairer_answering_none_keeps_the_original_unverified(seeded_conn):
+    repairer = StubQuoteRepairer(None)
+    events = ask_with_repairer(
+        seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer
+    )
+    [citation] = citation_events(events)
+    assert citation["verified"] is False
+    assert citation["quote"] == MISQUOTE
+
+
+@pytest.mark.db
+def test_a_repair_over_the_quote_cap_is_not_used(seeded_conn):
+    # Even a stub that skips parse_repaired_quote can't slip a long quote by.
+    repairer = StubQuoteRepairer(CHUNK_TEXT + " " + "x" * 300)
+    events = ask_with_repairer(
+        seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer
+    )
+    [citation] = citation_events(events)
+    assert citation["verified"] is False
+    assert citation["quote"] == MISQUOTE
+
+
+@pytest.mark.db
+def test_a_repairer_failure_degrades_to_the_original_unverified(seeded_conn, caplog):
+    repairer = StubQuoteRepairer(error=TimeoutError("repair timed out"))
+    with caplog.at_level(logging.WARNING, logger="api.answer"):
+        events = ask_with_repairer(
+            seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer
+        )
+    [citation] = citation_events(events)
+    assert citation["verified"] is False
+    assert citation["quote"] == MISQUOTE
+    assert not [e for e in events if e.name == "error"]
+    assert events[-1].name == "done"
+    assert "repair timed out" in caplog.text
+
+
+@pytest.mark.db
+def test_a_verified_citation_is_never_sent_to_repair(seeded_conn):
+    repairer = StubQuoteRepairer("Services revenue reached an all-time record.")
+    events = ask_with_repairer(
+        seeded_conn, response_with(GOOD_QUOTE, chunk_id_of(seeded_conn)), repairer
+    )
+    [citation] = citation_events(events)
+    assert repairer.calls == []
+    assert citation["quote"] == GOOD_QUOTE
+    assert citation["repaired"] is False
+
+
+@pytest.mark.db
+def test_a_citation_naming_an_unretrieved_chunk_is_not_repaired(seeded_conn):
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_with_repairer(seeded_conn, response_with(MISQUOTE, 987654), repairer)
+    [citation] = citation_events(events)
+    assert repairer.calls == []
+    assert citation["verified"] is False
+
+
+@pytest.mark.db
+def test_repair_calls_per_answer_are_capped(seeded_conn):
+    chunk_id = chunk_id_of(seeded_conn)
+    prose = " ".join(f"Claim {n} is true [{n}]." for n in range(1, 6))
+    block = ", ".join(
+        f'{{"marker": {n}, "chunk_id": {chunk_id}, "quote": "misquote {n}"}}'
+        for n in range(1, 6)
+    )
+    response = f'{prose}\n\n```json\n{{"citations": [{block}]}}\n```'
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_with_repairer(seeded_conn, response, repairer)
+    citations = citation_events(events)
+    assert len(repairer.calls) == 3
+    assert [c["verified"] for c in citations] == [True, True, True, False, False]
+    assert [c["quote"] for c in citations[3:]] == ["misquote 4", "misquote 5"]
+
+
+@pytest.mark.db
+def test_without_a_repairer_a_misquote_stays_unverified(seeded_conn):
+    events, _ = collect(seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)))
+    [citation] = citation_events(events)
+    assert citation["verified"] is False
+    assert citation["repaired"] is False

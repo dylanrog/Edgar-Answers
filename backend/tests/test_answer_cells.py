@@ -4,7 +4,12 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from tests.fakes import FakeEmbedder, StubCompanyDetector, StubGenerator
+from tests.fakes import (
+    FakeEmbedder,
+    StubCompanyDetector,
+    StubGenerator,
+    StubQuoteRepairer,
+)
 
 from api.answer import answer_stream
 from pipeline import db, store
@@ -144,3 +149,30 @@ def test_citations_from_the_retry_are_not_narrowed(seeded):
     data = next(e for e in events if e.name == "citation").data
     assert data["verified"] is True
     assert [c["cell"] for c in data["cells"]] == [2, 6, 10]
+
+
+@pytest.mark.db
+def test_a_repaired_table_quote_gets_its_cells_from_the_new_quote_then_narrowed(seeded):
+    # The model elided text inside the row; the repair copies the whole row,
+    # which verifies, resolves all three years, and is narrowed to the one
+    # the answer states -- exactly as a first-pass whole-row quote would be.
+    conn, chunk_id, data_center = seeded
+    response = (
+        "Data Center revenue was $115.2 billion [1].\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        '"quote": "Data Center revenue $ 115,186"}]}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(WHOLE_ROW)
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert len(repairer.calls) == 1
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == WHOLE_ROW
+    assert data["sids"] == [data_center]
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]

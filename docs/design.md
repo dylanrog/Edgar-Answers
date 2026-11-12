@@ -428,7 +428,39 @@ For each citation `{chunk_id, quote}`:
    So a quote of NVIDIA's whole three-year Data Center row beside a fiscal-2025
    answer marks only the FY2025 figure. This is display emphasis only: it never
    changes `verified`, the sids or the quote, and never hides a citation.
-5. **Emit** a `citation` SSE event with `verified: true`, the sids and the cited
+5. **Repair, once.** A citation that fails step 2 *and* names a chunk the model
+   was shown gets one more model call (`api/repair.py`, `QuoteRepairer`, same
+   model, temperature 0, its own short prompt — `SYSTEM_PROMPT` is unchanged).
+   The call sees only three things: the claim around the citation's marker
+   (the words on both sides of it, as in step 4, markers removed), the failed
+   quote, and **that one chunk's text** — no other excerpt, no table-context
+   line. It must answer with a passage copied verbatim from that chunk (≤300
+   characters) or `NONE`. The reply then goes through **the same check**,
+   steps 1–4 unchanged: exact normalized substring match, sids and cells
+   resolved from the *new* quote, then figure narrowing. If it verifies, the
+   citation is emitted with the repaired quote and `repaired: true`. In every
+   other case — `NONE`, an empty or over-long reply, a reply that still does
+   not match, an exception or a timeout (10 s, no SDK retries) — the original
+   citation is emitted exactly as it would have been without repair:
+   `verified: false`, the model's own quote, no sids, no cells. Guarantees:
+   - Matching stays exact; repair only supplies a second candidate quote,
+     and never decides `verified` itself.
+   - A citation that verified on the first pass is never sent to repair.
+   - A citation naming a chunk the model was never shown is never repaired —
+     there is no excerpt to re-quote from.
+   - A citation whose marker is not in its prose is not repaired (there is no
+     claim to re-quote for).
+   - At most one attempt per citation and at most 3 repair calls per answer
+     (`MAX_REPAIRS`); later failures stay unverified without a call.
+   - A failed repair is never worse than no repair: the visitor sees the
+     original unverified badge.
+
+   Why: the model sometimes states a true claim and misquotes its support —
+   eliding text between two table rows, dropping a word. Before repair, 1 of
+   80 live runs of the demo tutorial showed an unverified badge for exactly
+   that. The cost is one extra Haiku round-trip after the prose has streamed,
+   paid only when a quote fails.
+6. **Emit** a `citation` SSE event with `verified: true`, the sids and the cited
    cells — or, on any failure, `verified: false` with no sids and no cells.
 
 Failed citations render with a visible **"unverified" badge** rather than being
@@ -460,12 +492,18 @@ citation: {"marker": 1, "verified": true,
            "ticker": "AAPL", "form_type": "10-K",
            "filing_date": "2024-11-01",
            "sids": [1042, 1043], "quote": "…",
-           "cells": [{"sid": 1043, "cell": 4}]}   -- cited table figures,
+           "cells": [{"sid": 1043, "cell": 4}],   -- cited table figures,
                                                      narrowed to those the
                                                      answer states, failing
                                                      closed to all of them
                                                      (§6.3 step 4); [] for
                                                      prose
+           "repaired": false}                     -- additive; true only when
+                                                     the quote is the repair
+                                                     step's and verified
+                                                     (§6.3 step 5). The
+                                                     frontend ignores it; evals
+                                                     count it
 done:     {"chunks_retrieved": 8, "citations_total": 3,
            "citations_verified": 3, "unverified_answer": false}
 error:    {"message": "…"}
@@ -657,7 +695,8 @@ typecheck/lint job when the frontend lands.
 | EDGAR 429/5xx | Backoff + retry; resume from disk cache |
 | Unrecognized filing structure | Ingest as single `"other"` section; log warning |
 | LLM output unparseable | One retry; then answer renders with "unverified answer" notice |
-| Citation fails verification | `verified: false`, visible badge; answer still renders |
+| Citation fails verification | One repair call against the same chunk (§6.3 step 5); its quote must pass the same exact match. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
+| Quote repair call fails or times out | Logged as a warning; the citation stays `verified: false` exactly as without repair — never an `error` event |
 | Retrieval returns nothing relevant | Model instructed to say the corpus doesn't cover it (and the eval set includes such questions) |
 | LLM API down | `error` SSE event with a human-readable message |
 

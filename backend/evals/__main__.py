@@ -40,12 +40,13 @@ def cmd_run(args) -> None:
         )
         if not args.retrieval_only:
             from api.generate import AnthropicGenerator
+            from api.repair import AnthropicQuoteRepairer
 
             from . import faithfulness
 
             metrics |= faithfulness.run_faithfulness_eval(
                 conn, embedder, AnthropicGenerator(), company_detector, questions,
-                period_detector=period_detector,
+                period_detector=period_detector, quote_repairer=AnthropicQuoteRepairer(),
             )
     for key, value in metrics.items():
         print(f"{key}: {value}")
@@ -57,6 +58,7 @@ def cmd_examples(args) -> None:
     from api.conversation import AnthropicConversationRewriter
     from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
     from api.generate import AnthropicGenerator
+    from api.repair import AnthropicQuoteRepairer
     from api.rewrite import AnthropicQueryRewriter
 
     from . import examples
@@ -67,7 +69,7 @@ def cmd_examples(args) -> None:
             conn, Embedder(), AnthropicGenerator(), AnthropicCompanyDetector(),
             AnthropicPeriodDetector(), AnthropicQueryRewriter(),
             AnthropicConversationRewriter(), runs=args.runs,
-            verbose=args.verbose,
+            verbose=args.verbose, quote_repairer=AnthropicQuoteRepairer(),
         )
     if not ok:
         raise SystemExit(1)

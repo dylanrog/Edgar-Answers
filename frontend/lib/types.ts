@@ -49,6 +49,9 @@ export type Citation = {
   quote: string;
   /** Figures the quote covers inside a table row; empty for prose. */
   cells: CitedCell[];
+  /** The quote came from the server's one repair attempt (design §6.3 step 5).
+   *  Informational only: `verified` already says everything the UI shows. */
+  repaired?: boolean;
 };
 
 /** GET /filings/{accession} */

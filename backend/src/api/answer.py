@@ -1,27 +1,37 @@
 from __future__ import annotations
 
+import dataclasses
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 import psycopg
 
+from pipeline.canonicalize import Sentence
+from pipeline.tables import Cell
+
 from . import queries
 from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
-from .figures import narrow_cells
+from .figures import claim_sides, narrow_cells
 from .generate import (
+    FENCE,
     SYSTEM_PROMPT,
     AnswerSplitter,
     Generator,
     build_user_message,
     parse_citations,
 )
+from .repair import MAX_QUOTE_CHARS, MAX_REPAIRS, QuoteRepairer
+from .retrieval import RetrievedChunk
 from .rewrite import QueryRewriter
 from .targets import resolve_targets, retrieve_for_targets
-from .verify import VerifiedCitation, verify_citation
+from .verify import Citation, VerifiedCitation, verify_citation
 
 logger = logging.getLogger(__name__)
+
+_MARKER = re.compile(r"\[\d+\]")
 
 
 @dataclass(frozen=True)
@@ -44,9 +54,10 @@ def answer_stream(
     query_rewriter: QueryRewriter | None = None,
     conversation_id: str | None = None,
     conversation_rewriter: ConversationRewriter | None = None,
+    quote_repairer: QuoteRepairer | None = None,
 ) -> Iterator[AnswerEvent]:
     """The query path (design §6): [resolve follow-up] -> resolve targets ->
-    retrieve -> generate -> verify -> stream."""
+    retrieve -> generate -> verify [-> repair a misquote] -> stream."""
     try:
         history = load_recent_turns(conn, conversation_id) if conversation_id else []
         standalone_question = question
@@ -128,6 +139,10 @@ def answer_stream(
 
         by_id = {chunk.chunk_id: chunk for chunk in chunks}
         prose = "".join(answer_parts)
+        # The prose the citation block belongs to: what streamed on the first
+        # attempt, the retry's own (unshown) prose after a retry.
+        cited_prose = splitter.raw.split(FENCE, 1)[0]
+        repairs = 0
         verified: list[VerifiedCitation] = []
         for citation in citations or []:
             chunk = by_id.get(citation.chunk_id)
@@ -152,6 +167,13 @@ def answer_stream(
                 conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
             )
             result = verify_citation(citation, chunk, sentences, cells)
+            if not result.verified and quote_repairer is not None and repairs < MAX_REPAIRS:
+                claim = _claim(cited_prose, citation.marker)
+                if claim:
+                    repairs += 1
+                    result = _repair(
+                        quote_repairer, claim, citation, chunk, sentences, cells
+                    ) or result
             # Emphasis only: a whole multi-year row verifies, but the viewer
             # should mark just the figures the answer states (design §6.3).
             # Not after a retry: the retry's markers belong to prose the client
@@ -173,6 +195,7 @@ def answer_stream(
                     "sids": citation.sids,
                     "quote": citation.quote,
                     "cells": [{"sid": sid, "cell": cell} for sid, cell in citation.cells],
+                    "repaired": citation.repaired,
                 },
             )
 
@@ -203,3 +226,44 @@ def answer_stream(
         # trace of the failure (`fly logs`).
         logger.exception("answer_stream failed")
         yield AnswerEvent("error", {"message": f"{type(exc).__name__}: {exc}"})
+
+
+def _claim(prose: str, marker: int) -> str:
+    """The words the answer says around `[marker]`, markers removed; "" when
+    the marker is not in the prose (nothing to re-quote against)."""
+    sides = claim_sides(prose, marker)
+    if sides is None:
+        return ""
+    return " ".join(" ".join(_MARKER.sub(" ", side).split()) for side in sides).strip()
+
+
+def _repair(
+    repairer: QuoteRepairer,
+    claim: str,
+    citation: Citation,
+    chunk: RetrievedChunk,
+    sentences: list[Sentence],
+    cells: list[Cell],
+) -> VerifiedCitation | None:
+    """One re-quote of a failed citation against the same chunk (design §6.3
+    step 5), checked by the same verify_citation. None -- keep the original
+    unverified citation -- on any failure: an exception, no quote, an
+    over-long quote, or a quote that still does not match."""
+    try:
+        quote = repairer.repair(claim, citation.quote, chunk.text)
+    except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
+        logger.warning("quote repair failed for marker %s: %s", citation.marker, exc)
+        return None
+    if not quote or len(quote) > MAX_QUOTE_CHARS:
+        return None
+    repaired = verify_citation(
+        Citation(marker=citation.marker, chunk_id=citation.chunk_id, quote=quote),
+        chunk,
+        sentences,
+        cells,
+    )
+    if not repaired.verified:
+        logger.info("quote repair for marker %s did not verify", citation.marker)
+        return None
+    logger.info("quote repair verified marker %s", citation.marker)
+    return dataclasses.replace(repaired, repaired=True)

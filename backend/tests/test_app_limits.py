@@ -7,6 +7,7 @@ from tests.fakes import (
     StubGenerator,
     StubPeriodDetector,
     StubQueryRewriter,
+    StubQuoteRepairer,
 )
 
 from api import app as app_module
@@ -37,6 +38,9 @@ def client_with():
         )
         app.dependency_overrides[app_module.get_conversation_rewriter] = (
             lambda: StubConversationRewriter()  # noqa: PLW0108
+        )
+        app.dependency_overrides[app_module.get_quote_repairer] = (
+            lambda: StubQuoteRepairer()  # noqa: PLW0108
         )
         return TestClient(app)
 

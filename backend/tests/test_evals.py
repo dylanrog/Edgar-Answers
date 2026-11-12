@@ -515,3 +515,35 @@ def test_faithfulness_reports_value_accuracy_over_entries_with_expected_values(m
     assert metrics["value_questions"] == 2
     assert metrics["value_accuracy"] == 0.5
     assert metrics["value_misses"] == ["c002"]
+
+
+def test_faithfulness_counts_repaired_citations_and_forwards_the_repairer(monkeypatch):
+    question = GoldenQuestion(
+        id="q001", question="What were total net sales?", ticker="AAPL",
+        accession="0000320193-24-000123", section="item7", gold_sids=[41],
+    )
+    events = [
+        ("token", {"text": "Net sales rose [1]. Margin fell [2]."}),
+        ("citation", {"marker": 1, "verified": True, "accession": "a", "sids": [41],
+                      "quote": "q", "repaired": True}),
+        # An older event shape without the flag still counts as not repaired.
+        ("citation", {"marker": 2, "verified": True, "accession": "a", "sids": [42],
+                      "quote": "r"}),
+        ("done", {"unverified_answer": False}),
+    ]
+    seen = {}
+
+    class FakeEvent:
+        def __init__(self, name, data):
+            self.name, self.data = name, data
+
+    def fake_answer_stream(*args, **kwargs):
+        seen.update(kwargs)
+        return (FakeEvent(n, d) for n, d in events)
+
+    monkeypatch.setattr("evals.faithfulness.answer_stream", fake_answer_stream)
+    repairer = object()
+    metrics = run_faithfulness_eval(None, None, None, None, [question], quote_repairer=repairer)
+    assert metrics["repaired_citations"] == 1
+    assert metrics["verified_rate"] == 1.0
+    assert seen["quote_repairer"] is repairer
