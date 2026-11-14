@@ -29,6 +29,36 @@ test("the id looks like a UUID", () => {
   );
 });
 
+describe("on an insecure origin (plain http on a LAN address)", () => {
+  // Browsers expose crypto.randomUUID only in secure contexts (https or
+  // localhost); crypto.getRandomValues is available everywhere.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    startNewConversation();
+  });
+
+  function insecureCrypto() {
+    const real = globalThis.crypto;
+    vi.stubGlobal("crypto", {
+      getRandomValues: <T extends ArrayBufferView>(array: T) => real.getRandomValues(array),
+    });
+  }
+
+  test("an id is still created, and it is a v4 UUID", () => {
+    insecureCrypto();
+    expect(getOrCreateConversationId()).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  test("ids are distinct", () => {
+    insecureCrypto();
+    const first = getOrCreateConversationId();
+    startNewConversation();
+    expect(getOrCreateConversationId()).not.toBe(first);
+  });
+});
+
 describe("when sessionStorage is unavailable", () => {
   afterEach(() => {
     vi.restoreAllMocks();
