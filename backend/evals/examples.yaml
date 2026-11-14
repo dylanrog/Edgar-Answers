@@ -50,6 +50,12 @@
 #   billion" (the filing: "...was up 217%."). The repair returned the real sentence and the
 #   guard correctly refused it. Core figures verified in all 100 chains. The tutorial now
 #   explains a red badge when one appears, rather than hide or launder it.
+#   Then the cause was fixed: answer-prompt rule 6 ("a quote is one unbroken run ... never
+#   finish a sentence you are quoting with a figure from somewhere else"), 2ad10f4. Probe,
+#   50 chains: 0/195 citations unverified (the aside stopped being cited). --runs 50: 39/39
+#   on the runs that reached the API, 196/196 verified first pass, 0 repaired, own pins every
+#   run; runs 1-11 errored on a transient Anthropic account usage-limit response
+#   ("You have reached your specified API usage limits"), not on the demo.
 #   A probe of 20 chains found that aside unverified in 2/20 follow-ups before the repair.
 # Vetting result with citation repair (design §6.3 step 5), 2026-11-12, full local corpus,
 #   fresh planner stats: 115/115 chained runs across the repair commits -- 38/38 at 21d594a,
