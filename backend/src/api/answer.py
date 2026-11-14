@@ -21,6 +21,7 @@ from .generate import (
     SYSTEM_PROMPT,
     AnswerSplitter,
     Generator,
+    PossessiveDeduper,
     build_user_message,
     parse_citations,
 )
@@ -125,12 +126,16 @@ def answer_stream(
         citations = None
         for attempt in range(2):
             splitter = AnswerSplitter()
+            # Prose only (never the raw buffer, so quotes and the citation
+            # block are untouched). answer_parts is what the client saw, so
+            # marker positions in `prose` match the streamed text.
+            deduper = PossessiveDeduper()
             for delta in generator.stream(SYSTEM_PROMPT, user_message):
-                text = splitter.feed(delta)
+                text = deduper.feed(splitter.feed(delta))
                 if text and attempt == 0:
                     answer_parts.append(text)
                     yield AnswerEvent("token", {"text": text})
-            tail = splitter.finish()
+            tail = deduper.feed(splitter.finish()) + deduper.finish()
             if tail and attempt == 0:
                 answer_parts.append(tail)
                 yield AnswerEvent("token", {"text": tail})

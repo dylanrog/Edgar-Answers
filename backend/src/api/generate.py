@@ -136,6 +136,82 @@ class AnswerSplitter:
         return out
 
 
+_WORD = r"[\w&-]"
+_POSSESSIVE = re.compile(
+    rf"(?<!{_WORD})([A-Z]{_WORD}*)['’]s \1(?!{_WORD})"
+)
+
+
+def collapse_possessive(text: str) -> str:
+    """`W's W` -> `W` for one capitalized word W (case-sensitive, whole words)."""
+    return _POSSESSIVE.sub(r"\1", text)
+
+
+class PossessiveDeduper:
+    """Streaming form of collapse_possessive: the joined output of feed() and
+    finish() equals collapse_possessive of the joined input, however chunked.
+
+    Only a trailing fragment that could still become `W's W` is held back
+    (e.g. "Microsoft", "Microsoft's", "Microsoft's Micro"); the rest is emitted
+    at once. One emitted character is remembered so the word-boundary check
+    before W still sees what precedes a held fragment.
+    """
+
+    def __init__(self) -> None:
+        self._prev = ""
+        self._buf = ""
+
+    def feed(self, delta: str) -> str:
+        self._buf += delta
+        return self._emit(self._hold_from())
+
+    def finish(self) -> str:
+        return self._emit(len(self._buf))
+
+    def _hold_from(self) -> int:
+        text = self._prev + self._buf
+        offset = len(self._prev)
+        for i in range(offset, len(text)):
+            if not ("A" <= text[i] <= "Z"):
+                continue
+            if i > 0 and re.fullmatch(_WORD, text[i - 1]):
+                continue
+            if self._could_match(text[i:]):
+                return i - offset
+        return len(self._buf)
+
+    @staticmethod
+    def _could_match(s: str) -> bool:
+        """True when s (starting at a word start) is an unresolved prefix of `W's W`."""
+        m = re.match(f"{_WORD}*", s)
+        word = m.group()
+        rest = s[len(word) :]
+        if rest == "":
+            return True
+        if rest[0] not in "'’":
+            return False
+        if len(rest) == 1:
+            return True
+        if rest[1] != "s":
+            return False
+        if len(rest) == 2:
+            return True
+        if rest[2] != " ":
+            return False
+        tail = rest[3:]
+        if len(tail) < len(word):
+            return word.startswith(tail)
+        return len(tail) == len(word) and tail == word
+
+    def _emit(self, upto: int) -> str:
+        head, self._buf = self._buf[:upto], self._buf[upto:]
+        if not head:
+            return ""
+        out = collapse_possessive(self._prev + head)[len(self._prev) :]
+        self._prev = head[-1]
+        return out
+
+
 _BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
