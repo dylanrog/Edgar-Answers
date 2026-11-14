@@ -429,7 +429,7 @@ For each citation `{chunk_id, quote}`:
    answer marks only the FY2025 figure. This is display emphasis only: it never
    changes `verified`, the sids or the quote, and never hides a citation.
 5. **Repair, once.** A citation that fails step 2, names a chunk the model
-   was shown, and belongs to a claim stating a figure gets one more model call
+   was shown, and has a claim (words around its marker) gets one more model call
    (`api/repair.py`, `QuoteRepairer`, same model, temperature 0, its own short
    prompt — `SYSTEM_PROMPT` is unchanged). The call sees only three things:
    the claim around the citation's marker (the words on both sides of it, as
@@ -437,9 +437,38 @@ For each citation `{chunk_id, quote}`:
    text** — no other excerpt, no table-context line. It must answer with a
    passage copied verbatim from that chunk (≤300 characters) that itself
    states the claim's facts and figures, or `NONE` (a same-topic passage or a
-   different figure is `NONE`). The reply then goes through **the same
-   check**, steps 1–4 unchanged: exact normalized substring match, sids and
-   cells resolved from the *new* quote. It is accepted only if it also
+   different figure is `NONE`); the prompt adds that a failed quote is
+   usually a garbled copy of a real passage, which it should then copy
+   exactly. The reply then goes through **the same check**, steps 1–4
+   unchanged: exact normalized substring match, sids and cells resolved from
+   the *new* quote. What else it must pass depends on the claim.
+
+   **A figure-free claim** (no significant figure, see below) gets the
+   **transcription guard** (`figures.figure_free_repair_accepted`): the
+   longest common contiguous run of the failed quote and the repaired quote,
+   both normalized as in step 1 (casefold, curly quotes and dashes
+   straightened), must be at least **60% of the failed quote's normalized
+   length and at least 20 characters**, and the repaired quote must state
+   **no significant figure**. In plain terms: most of what the model quoted
+   really is in the excerpt, contiguously; repair fixes the transcription,
+   it never finds new support. The measured case: in about 1 in 10
+   tutorial follow-ups the model adds "[3] NVIDIA's Data Center revenue
+   represents sales from their data center segment" and quotes "Revenue by
+   each of the specialized markets we serve: Data Center", stitching the
+   FY2024 10-K's table caption onto a row label. The real caption, "The
+   following table summarizes information pertaining to our revenue by each
+   of the specialized markets we serve:", shares a 52-character run with the
+   64-character quote (0.81), so it is accepted. Why this is safe: for a
+   figure-free claim, first-pass verification only ever guaranteed that the
+   quote is real text from the cited chunk — nothing checks that text
+   against the claim's meaning. The guard keeps exactly that guarantee for
+   the passage the model was already quoting, and refuses everything else:
+   a different sentence of the chunk (low overlap), a short quote where a
+   run of a few words proves nothing (under 20 characters), and any passage
+   with a number, which would let a claim that gives no figure end up
+   verified against one.
+
+   **A claim stating figures** is accepted only if the new quote
    **states every figure the claim states** (`figures.quote_states`) —
    under rules stricter than step 4's narrowing, which they don't change.
    Each significant claim figure is checked on its own, and is stated by:
@@ -502,11 +531,14 @@ For each citation `{chunk_id, quote}`:
    spellings of one value ("$115,186 million ($115.2 billion)") are two
    requirements one cell satisfies; figures spread over several quoted rows
    ("Compute ($102,196 million) and Networking ($12,990 million)") are each
-   met by their own row. Accepted, it is narrowed as in step 4 and
+   met by their own row.
+
+   Accepted under either guard, it is narrowed as in step 4 and
    emitted with the repaired quote and `repaired: true`. In every other case —
    `NONE` (or a reply opening with it), an empty or over-long reply, a reply
    that still does not match, one that matches but leaves any of the
-   claim's figures unstated, an exception or a timeout — the original citation is
+   claim's figures unstated or (figure-free claim) fails the transcription
+   guard, an exception or a timeout — the original citation is
    emitted exactly as it would have been without repair: `verified: false`,
    the model's own quote, no sids, no cells. Guarantees:
    - Matching stays exact; repair only supplies a second candidate quote,
@@ -518,11 +550,21 @@ For each citation `{chunk_id, quote}`:
      exactly the error the badge exists to show. "Any one figure" is not
      enough either: "$115.2 billion and $999.9 billion [1]" would launder the
      invented second figure through a quote of the true first one.
-   - **Figure-free claims are never repaired** (no call is made). A claim's
-     figures are its *significant* ones (`figures.significant_figures`):
-     written with a unit, with decimals, or ≥1,000 — bare years and small
-     integers ("Q2", "Item 7") don't count. With no figure there is nothing
-     to check a re-quote against, and a same-topic passage would verify.
+   - **A figure-free claim is repaired only by a transcription fix** of its
+     own failed quote: ≥60% of it, ≥20 characters, one contiguous run, and no
+     significant figure in the repair. A claim's figures are its
+     *significant* ones (`figures.significant_figures`): written with a unit,
+     with decimals, or ≥1,000 — bare years and small integers ("Q2", "Item
+     7") don't count. Residuals: the guard does not check the claim's
+     meaning, only that the model was already quoting this passage — no
+     weaker than first-pass verification of a figure-free claim, and no
+     stronger; a failed quote that garbles *two* passages can be repaired
+     to whichever one holds the 60% run; and a figure-free claim whose
+     quote is mostly invented, or under 20 characters, stays unverified
+     even when a correct passage exists. Figure-free repairs draw on the
+     same per-answer cap and deadline as figure claims, so an answer with
+     several failed qualitative asides can use up the cap before a figure
+     claim is reached.
    - A citation that verified on the first pass is never sent to repair.
    - A citation naming a chunk the model was never shown is never repaired —
      there is no excerpt to re-quote from.
@@ -815,7 +857,7 @@ typecheck/lint job when the frontend lands.
 | EDGAR 429/5xx | Backoff + retry; resume from disk cache |
 | Unrecognized filing structure | Ingest as single `"other"` section; log warning |
 | LLM output unparseable | One retry; then answer renders with "unverified answer" notice |
-| Citation fails verification | If its claim states a figure, one repair call against the same chunk (§6.3 step 5); the new quote must pass the same exact match and state every figure the claim states. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
+| Citation fails verification | One repair call against the same chunk (§6.3 step 5); the new quote must pass the same exact match and either state every figure the claim states or, for a figure-free claim, be a transcription fix of the failed quote with no figure. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
 | Quote repair call fails or times out | Logged as a warning; the citation stays `verified: false` exactly as without repair — never an `error` event |
 | Retrieval returns nothing relevant | Model instructed to say the corpus doesn't cover it (and the eval set includes such questions) |
 | LLM API down | `error` SSE event with a human-readable message |

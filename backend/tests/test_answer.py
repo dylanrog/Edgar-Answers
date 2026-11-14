@@ -629,7 +629,10 @@ def test_a_rounded_claim_figure_accepts_the_precise_quote(seeded_conn):
 
 
 @pytest.mark.db
-def test_a_claim_with_no_figure_is_never_repaired(seeded_conn):
+def test_a_figure_free_claim_is_not_repaired_into_a_different_passage(seeded_conn):
+    # One call is made, but the repair shares only "services revenue " (17
+    # characters) with what the model quoted: new support, not a fixed
+    # transcription, so the badge stays.
     repairer = StubQuoteRepairer("Services revenue reached an all-time record.")
     events = ask_prose_with_repairer(
         seeded_conn,
@@ -638,9 +641,45 @@ def test_a_claim_with_no_figure_is_never_repaired(seeded_conn):
         repairer,
     )
     [citation] = citation_events(events)
-    assert repairer.calls == []
+    assert len(repairer.calls) == 1
     assert citation["verified"] is False
     assert citation["quote"] == "Services revenue hit a record"
+    assert "repaired" not in citation
+
+
+@pytest.mark.db
+def test_a_figure_free_claims_garbled_quote_is_repaired(seeded_conn):
+    repairer = StubQuoteRepairer("Services revenue reached an all-time record.")
+    events = ask_prose_with_repairer(
+        seeded_conn,
+        "Services revenue reached a record [1].",
+        "Services revenue reached an all time record",
+        repairer,
+    )
+    [citation] = citation_events(events)
+    assert len(repairer.calls) == 1
+    claim, quote, excerpt = repairer.calls[0]
+    assert claim == "Services revenue reached a record"
+    assert excerpt == CHUNK_TEXT
+    assert citation["verified"] is True
+    assert citation["repaired"] is True
+    assert citation["quote"] == "Services revenue reached an all-time record."
+    assert citation["sids"] == [1]
+
+
+@pytest.mark.db
+def test_a_figure_free_claim_is_not_repaired_into_a_figure(seeded_conn):
+    repairer = StubQuoteRepairer(GOOD_QUOTE)
+    events = ask_prose_with_repairer(
+        seeded_conn,
+        "Total net sales were the largest line [1].",
+        "Total net sales were 391.0 billion USD",
+        repairer,
+    )
+    [citation] = citation_events(events)
+    assert len(repairer.calls) == 1
+    assert citation["verified"] is False
+    assert citation["quote"] == "Total net sales were 391.0 billion USD"
 
 
 @pytest.mark.db

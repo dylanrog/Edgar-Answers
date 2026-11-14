@@ -16,7 +16,13 @@ from pipeline.tables import Cell
 from . import queries
 from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
-from .figures import claim_sides, narrow_cells, quote_states, significant_figures
+from .figures import (
+    claim_sides,
+    figure_free_repair_accepted,
+    narrow_cells,
+    quote_states,
+    significant_figures,
+)
 from .generate import (
     SYSTEM_PROMPT,
     AnswerSplitter,
@@ -173,9 +179,10 @@ def answer_stream(
                 conn, chunk.filing_id, chunk.sid_start, chunk.sid_end
             )
             result = verify_citation(citation, chunk, sentences, cells)
-            # Repair (design §6.3 step 5): only a first-attempt citation, whose
-            # marker sits in prose the visitor saw, and only for a claim that
-            # states a figure the repaired quote must then state too.
+            # Repair (design §6.3 step 5): only a first-attempt citation whose
+            # marker sits in prose the visitor saw. A claim stating figures
+            # needs a repaired quote that states them too; a figure-free one
+            # needs a repaired quote that is a transcription fix of its own.
             claim = (
                 _claim(prose, citation.marker)
                 if not result.verified
@@ -251,15 +258,13 @@ def answer_stream(
 
 def _claim(prose: str, marker: int) -> str | None:
     """The words the answer says around `[marker]` (both sides, as narrowing
-    reads them, markers removed). None when the marker is not in the prose,
-    or the claim states no significant figure: then nothing could confirm
-    that a repaired quote supports the claim rather than merely sharing its
-    topic."""
+    reads them, markers removed). None when the marker is not in the prose
+    or has no words around it: there is no claim to re-quote for."""
     sides = claim_sides(prose, marker)
     if sides is None:
         return None
     text = " ".join(_MARKER.sub(" ", " ".join(sides)).split())
-    return text if significant_figures(text) else None
+    return text or None
 
 
 def _repair(
@@ -274,10 +279,13 @@ def _repair(
     """One re-quote of a failed citation against the same chunk (design §6.3
     step 5), checked by the same verify_citation. None -- keep the original
     unverified citation -- on any failure: an exception, no quote, an
-    over-long quote, a quote that still does not match, or one that does not
-    state every one of the claim's figures in its unit, table scale, period
-    and sign (figures.quote_states) -- anything less could launder an
-    invented figure into a verified citation."""
+    over-long quote, a quote that still does not match, or one the claim's
+    guard rejects. A claim stating figures needs a quote stating every one
+    of them in its unit, table scale, period, sign and direction
+    (figures.quote_states) -- anything less could launder an invented figure
+    into a verified citation. A figure-free claim needs a transcription fix
+    of its own failed quote that states no figure
+    (figures.figure_free_repair_accepted)."""
     try:
         quote = repairer.repair(claim, citation.quote, chunk.text)
     except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
@@ -294,13 +302,21 @@ def _repair(
     if not repaired.verified:
         logger.info("quote repair for marker %s did not verify", citation.marker)
         return None
-    by_key = {(cell.sid, cell.cell_index): cell for cell in cells}
-    quote_cells = [by_key[key] for key in repaired.cells if key in by_key]
-    if not quote_states(repaired.quote, quote_cells, claim, scales):
-        logger.info(
-            "quote repair for marker %s verified but does not state every claim figure",
-            citation.marker,
-        )
-        return None
+    if not significant_figures(claim):
+        if not figure_free_repair_accepted(citation.quote, repaired.quote):
+            logger.info(
+                "quote repair for marker %s verified but is not a transcription fix",
+                citation.marker,
+            )
+            return None
+    else:
+        by_key = {(cell.sid, cell.cell_index): cell for cell in cells}
+        quote_cells = [by_key[key] for key in repaired.cells if key in by_key]
+        if not quote_states(repaired.quote, quote_cells, claim, scales):
+            logger.info(
+                "quote repair for marker %s verified but does not state every claim figure",
+                citation.marker,
+            )
+            return None
     logger.info("quote repair verified marker %s", citation.marker)
     return dataclasses.replace(repaired, repaired=True)

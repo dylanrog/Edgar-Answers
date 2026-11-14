@@ -13,9 +13,11 @@ import dataclasses
 import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from difflib import SequenceMatcher
 
 from pipeline.tables import Cell
 
+from .normalize import normalize
 from .verify import VerifiedCitation
 
 _MARKER = re.compile(r"\[(\d+)\]")
@@ -499,3 +501,37 @@ def quote_states(
         return any(q.unit == figure.unit and _agrees(q.value, figure) for q in texts)
 
     return all(stated(figure) for figure in figures)
+
+
+# --- The transcription guard (design §6.3 step 5, figure-free claims) -------
+#
+# A claim with no significant figure has nothing quote_states could check, so
+# its repair is held to what first-pass verification ever promised it: that
+# the quote is real text. The repair may fix how the model copied a passage,
+# not find a new one: most of the failed quote must already be in the
+# repaired one, contiguously.
+
+TRANSCRIPTION_SHARE = 0.6
+MIN_TRANSCRIPTION_CHARS = 20
+
+
+def transcription_matches(original: str, repaired: str) -> bool:
+    """The longest common contiguous run of the two quotes, both normalized
+    as verification normalizes them (casefold, curly quotes and dashes
+    straightened), is at least 60% of the failed quote's normalized length
+    and at least 20 characters long."""
+    a = normalize(original)[0].strip()
+    b = normalize(repaired)[0].strip()
+    if not a or not b:
+        return False
+    run = SequenceMatcher(None, a, b, autojunk=False).find_longest_match(
+        0, len(a), 0, len(b)
+    ).size
+    return run >= MIN_TRANSCRIPTION_CHARS and run >= TRANSCRIPTION_SHARE * len(a)
+
+
+def figure_free_repair_accepted(original: str, repaired: str) -> bool:
+    """A figure-free claim's repair: a transcription fix of the failed quote,
+    stating no significant figure of its own -- a claim that gives no number
+    must not end up verified against one."""
+    return not significant_figures(repaired) and transcription_matches(original, repaired)
