@@ -83,7 +83,7 @@ def test_a_repaired_quote_stating_a_figure_is_rejected_for_a_figure_free_claim()
 
 def test_a_bare_year_or_small_number_is_not_a_figure_here():
     excerpt = (
-        "Item 7. Management's Discussion and Analysis of Financial Condition and Results"
+        "Item 7. Management's Discussion and Analysis of Financial Condition. Results"
         " of Operations for fiscal 2024"
     )
     original = "Discussion and Analysis of Financial Condition for fiscal 2024"
@@ -181,9 +181,10 @@ def test_a_repair_may_not_swap_the_modal():
 def test_words_the_repair_drops_must_be_in_the_excerpt():
     original = "Demand for our Blackwell platform was strong in China"
     repaired = "Demand for our Blackwell platform was strong"
-    excerpt = "Demand for our Blackwell platform was strong in every region we serve."
+    excerpt = "Demand for our Blackwell platform was strong. It grew in every region we serve."
     assert not figure_free_repair_accepted(original, repaired, excerpt)
-    # The same trim is fine when the dropped words are real text of the chunk.
+    # The same trim is fine when the dropped words are real text of the chunk
+    # and the repair ends where the chunk's clause does.
     assert figure_free_repair_accepted(original, repaired, excerpt + " Sales in China fell.")
 
 
@@ -231,3 +232,61 @@ def test_the_trim_keeps_a_sentence_end_and_needs_a_space_after_it():
     assert trim_before_first_figure(reply) == "Demand was strong."
     # "U.S." has no space after its periods: not a sentence end.
     assert trim_before_first_figure("Sales in the U.S.A were 4,000") is None
+
+
+
+# --- A repair that drops words must stop on a clause boundary -----------------
+
+def test_a_repair_may_not_swap_the_subject_by_truncation():
+    # "revenue was driven…" is real text, but it starts mid-sentence after
+    # "Data Center"; the dropped "Gaming" occurs elsewhere in the chunk.
+    chunk = (
+        "Data Center revenue was driven by strong demand for Blackwell. "
+        "Gaming revenue was flat year on year."
+    )
+    assert not figure_free_repair_accepted(
+        "Gaming revenue was driven by strong demand for Blackwell",
+        "revenue was driven by strong demand for Blackwell",
+        chunk,
+    )
+
+
+def test_a_repair_may_not_cut_a_clause_short_at_the_end():
+    assert not figure_free_repair_accepted(
+        "Demand for our Blackwell platform was strong in China",
+        "Demand for our Blackwell platform was strong",
+        "Demand for our Blackwell platform was strong in China and India.",
+    )
+
+
+def test_a_repair_starting_a_sentence_may_drop_a_garbled_lead():
+    chunk = "Supply was tight. Revenue was driven by strong demand for Blackwell."
+    assert figure_free_repair_accepted(
+        "Supply tight Revenue was driven by strong demand for Blackwell",
+        "Revenue was driven by strong demand for Blackwell",
+        chunk,
+    )
+
+
+def test_the_caption_repair_ends_on_a_clause_boundary_in_the_real_chunk():
+    # The failed quote's extra words ("Data Center") come after the run; the
+    # repair ends on "serve:", so the end-side check passes. Nothing is dropped
+    # before the run, so no start-side check applies.
+    assert CAPTION.endswith(":")
+    assert figure_free_repair_accepted(GARBLED, CAPTION, NVDA_CHUNK)
+
+
+def test_a_repair_that_cannot_be_located_in_the_chunk_fails_closed():
+    assert not figure_free_repair_accepted(
+        "Demand for our Blackwell platform was strong in China",
+        "Demand for our Blackwell platform was strong",
+        # Every word is there, but not the repaired quote as one passage.
+        "Demand for our Blackwell platform, which was strong in China.",
+    )
+
+
+def test_non_gaap_is_not_gaap_either_way():
+    non_gaap = "Non-GAAP operating income was a record for the fiscal year"
+    gaap = "GAAP operating income was a record for the fiscal year"
+    assert not accepted(non_gaap, gaap)
+    assert not accepted(gaap, non_gaap)
