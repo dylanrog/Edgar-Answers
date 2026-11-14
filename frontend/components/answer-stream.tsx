@@ -2,7 +2,7 @@
 
 import { CitationChip } from "@/components/citation-chip";
 import type { AnswerState } from "@/lib/answer";
-import { splitOnMarkers } from "@/lib/markers";
+import { parseProse } from "@/lib/prose";
 import type { Citation } from "@/lib/types";
 
 function Dot({ delay }: { delay: string }) {
@@ -58,21 +58,45 @@ export function AnswerStream({
           {state.notice}
         </p>
       )}
-      <p className="text-sm leading-7 whitespace-pre-wrap">
-        {splitOnMarkers(state.prose).map((segment, index) =>
-          typeof segment === "string" ? (
-            <span key={index}>{segment}</span>
+      {/* One block per paragraph with a small gap, rather than the blank
+          line that pre-wrap would render between them. pre-wrap stays for
+          single line breaks inside a paragraph (lists). */}
+      <div className="space-y-[0.6em] text-sm leading-[1.55]">
+        {parseProse(state.prose).map((block, p) => {
+          const inlines = block.inlines.map((inline, index) => {
+            if ("marker" in inline) {
+              return (
+                <CitationChip
+                  key={index}
+                  marker={inline.marker}
+                  citation={state.citations.get(inline.marker)}
+                  onSelect={onSelect}
+                  emphasized={emphasizeMarker === inline.marker}
+                />
+              );
+            }
+            return inline.bold ? (
+              <strong key={index}>{inline.text}</strong>
+            ) : (
+              <span key={index}>{inline.text}</span>
+            );
+          });
+          return block.kind === "heading" ? (
+            <p
+              key={p}
+              role="heading"
+              aria-level={block.level}
+              className="whitespace-pre-wrap text-base font-semibold"
+            >
+              {inlines}
+            </p>
           ) : (
-            <CitationChip
-              key={index}
-              marker={segment.marker}
-              citation={state.citations.get(segment.marker)}
-              onSelect={onSelect}
-              emphasized={emphasizeMarker === segment.marker}
-            />
-          ),
-        )}
-      </p>
+            <p key={p} className="whitespace-pre-wrap">
+              {inlines}
+            </p>
+          );
+        })}
+      </div>
     </div>
   );
 }

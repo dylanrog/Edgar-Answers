@@ -18,6 +18,13 @@ const label = (f: FilingRef) =>
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+const MAX_LISTED = 3;
+function listFilings(filings: FilingRef[]): string {
+  const shown = filings.slice(0, MAX_LISTED).map(label).join(", ");
+  const rest = filings.length - MAX_LISTED;
+  return rest > 0 ? `${shown} +${rest} more` : shown;
+}
+
 export function buildPanel(
   state: AnswerState,
   names: Record<string, string>,
@@ -39,7 +46,7 @@ export function buildPanel(
         ? "Searching every company"
         : `Understood the question: ${targets.tickers.map((t) => names[t] ?? t).join(", ")}` +
           (targets.filings.length > 0
-            ? ` · ${targets.filings.map(label).join(", ")}`
+            ? ` · ${listFilings(targets.filings)}`
             : "");
     lines.push({ key: "targets", status: "done", text: who, detail: "company and period detection" });
   } else {
@@ -57,7 +64,7 @@ export function buildPanel(
         key: "search",
         status: "done",
         text: `Searched the filings: found ${plural(retrieved.passages, "passage")} in ${plural(retrieved.filings.length, "filing")}`,
-        detail: `vector + keyword search · ${retrieved.filings.map(label).join(", ")}`,
+        detail: `vector + keyword search · ${listFilings(retrieved.filings)}`,
       });
     } else {
       lines.push({

@@ -40,12 +40,13 @@ def cmd_run(args) -> None:
         )
         if not args.retrieval_only:
             from api.generate import AnthropicGenerator
+            from api.repair import AnthropicQuoteRepairer
 
             from . import faithfulness
 
             metrics |= faithfulness.run_faithfulness_eval(
                 conn, embedder, AnthropicGenerator(), company_detector, questions,
-                period_detector=period_detector,
+                period_detector=period_detector, quote_repairer=AnthropicQuoteRepairer(),
             )
     for key, value in metrics.items():
         print(f"{key}: {value}")
@@ -54,8 +55,10 @@ def cmd_run(args) -> None:
 
 
 def cmd_examples(args) -> None:
+    from api.conversation import AnthropicConversationRewriter
     from api.detect import AnthropicCompanyDetector, AnthropicPeriodDetector
     from api.generate import AnthropicGenerator
+    from api.repair import AnthropicQuoteRepairer
     from api.rewrite import AnthropicQueryRewriter
 
     from . import examples
@@ -64,10 +67,53 @@ def cmd_examples(args) -> None:
     with db.connect() as conn:
         ok = examples.run_examples(
             conn, Embedder(), AnthropicGenerator(), AnthropicCompanyDetector(),
-            AnthropicPeriodDetector(), AnthropicQueryRewriter(), runs=args.runs,
+            AnthropicPeriodDetector(), AnthropicQueryRewriter(),
+            AnthropicConversationRewriter(), runs=args.runs,
+            verbose=args.verbose, quote_repairer=AnthropicQuoteRepairer(),
         )
     if not ok:
         raise SystemExit(1)
+
+
+def _check_wrong_values(cur, question) -> int:
+    """The judge accepts any verified quote from a passing pin's filing, and
+    relies on gold_cells to catch a wrong year on a gold row. That is only
+    safe while the asked metric's other-period figures appear on gold rows
+    alone. Check it: no sentence outside a pin's gold sids, in that pin's
+    filing, states any of the entry's wrong_values as a whole figure. A corpus
+    rebuild that moves or splits rows shows up here, not as a silent pass."""
+    from api.normalize import normalize
+
+    from .faithfulness import _whole_figure
+
+    wrong = sorted({value for pin in question.pins() for value in pin.wrong_values})
+    if not wrong:
+        return 0
+    needles = {value: normalize(value)[0].strip() for value in wrong}
+    hits = 0
+    for n, pin in enumerate(question.pins()):
+        label = question.id if n == 0 else f"{question.id} alt {n}"
+        cur.execute(
+            "SELECT s.sid, s.text FROM sentences s JOIN filings f ON f.id = s.filing_id"
+            " WHERE f.accession = %s ORDER BY s.sid",
+            (pin.accession,),
+        )
+        rows = cur.fetchall()
+        found = 0
+        for sid, text in rows:
+            if sid in pin.gold_sids:
+                continue
+            haystack = normalize(text)[0]
+            for value, needle in needles.items():
+                if _whole_figure(needle, haystack):
+                    print(f"FAIL {label}: wrong-period figure {value!r} at non-gold sid {sid}"
+                          f" in {pin.accession}: {text[:90]}")
+                    found += 1
+        if not found:
+            print(f"ok  {label}: no wrong-period figure {wrong} outside gold sids"
+                  f" ({len(rows)} sentences)")
+        hits += found
+    return hits
 
 
 def cmd_verify(args) -> None:
@@ -81,26 +127,28 @@ def cmd_verify(args) -> None:
     failures = 0
     with db.connect() as conn, conn.cursor() as cur:
         for question in questions:
-            cur.execute(
-                "SELECT id FROM filings WHERE accession = %s", (question.accession,)
-            )
-            row = cur.fetchone()
-            if row is None:
-                print(f"FAIL {question.id}: accession {question.accession} not in DB")
-                failures += 1
-                continue
-            filing_id = row[0]
-            for sid in question.gold_sids:
-                cur.execute(
-                    "SELECT text FROM sentences WHERE filing_id = %s AND sid = %s",
-                    (filing_id, sid),
-                )
-                sentence = cur.fetchone()
-                if sentence is None:
-                    print(f"FAIL {question.id}: sid {sid} not in {question.accession}")
+            for n, pin in enumerate(question.pins()):
+                # An alternative is a pin like the entry's own, so it is checked too.
+                label = question.id if n == 0 else f"{question.id} alt {n}"
+                cur.execute("SELECT id FROM filings WHERE accession = %s", (pin.accession,))
+                row = cur.fetchone()
+                if row is None:
+                    print(f"FAIL {label}: accession {pin.accession} not in DB")
                     failures += 1
-                else:
-                    print(f"ok  {question.id} sid {sid}: {sentence[0][:90]}")
+                    continue
+                filing_id = row[0]
+                for sid in pin.gold_sids:
+                    cur.execute(
+                        "SELECT text FROM sentences WHERE filing_id = %s AND sid = %s",
+                        (filing_id, sid),
+                    )
+                    sentence = cur.fetchone()
+                    if sentence is None:
+                        print(f"FAIL {label}: sid {sid} not in {pin.accession}")
+                        failures += 1
+                    else:
+                        print(f"ok  {label} sid {sid}: {sentence[0][:90]}")
+            failures += _check_wrong_values(cur, question)
     if failures:
         raise SystemExit(f"{failures} golden-set problems")
     print(f"all {len(questions)} entries verified")
@@ -205,7 +253,8 @@ def main(argv: list[str] | None = None) -> None:
     p_ex = sub.add_parser(
         "examples", help="vet the demo example questions against pinned gold"
     )
-    p_ex.add_argument("--runs", type=int, default=5)
+    p_ex.add_argument("--runs", type=int, default=10)
+    p_ex.add_argument("--verbose", action="store_true", help="print every answer")
     p_repin = sub.add_parser(
         "repin", help="re-anchor golden gold_sids after a reprocess"
     )

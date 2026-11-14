@@ -213,6 +213,130 @@ def test_query_rewriter_failure_degrades_to_no_search_query(monkeypatch):
     assert targets == [Target("MSFT", None), Target("AMZN", None)]
 
 
+TWO_COMPANIES = [
+    {"ticker": "NVDA", "name": "NVIDIA Corporation"},
+    {"ticker": "MSFT", "name": "Microsoft Corporation"},
+]
+COMPARISON = (
+    "Compare NVIDIA's Data Center revenue in fiscal 2024 with "
+    "Microsoft's Cloud revenue in fiscal 2024."
+)
+
+
+def stub_two_companies(monkeypatch):
+    monkeypatch.setattr("api.targets.queries.load_companies", lambda conn: TWO_COMPANIES)
+    monkeypatch.setattr(
+        "api.targets.queries.load_filings_for_ticker",
+        lambda conn, ticker: [{"accession": f"ACC-{ticker}"}],
+    )
+
+
+def test_period_detector_sees_each_companys_rewritten_question(monkeypatch):
+    # The detector is shown one company's filings. Given the original
+    # comparison it abstains ("I was only given Microsoft's filings"), so it
+    # must be asked the single-company rewrite instead.
+    stub_two_companies(monkeypatch)
+    rewriter = StubQueryRewriter(
+        {
+            (COMPARISON, "NVDA"): "NVIDIA Data Center revenue fiscal 2024",
+            (COMPARISON, "MSFT"): "Microsoft Cloud revenue fiscal 2024",
+        }
+    )
+    period_detector = StubPeriodDetector(
+        {
+            "NVIDIA Data Center revenue fiscal 2024": ["ACC-NVDA"],
+            "Microsoft Cloud revenue fiscal 2024": ["ACC-MSFT"],
+        }
+    )
+    targets = resolve_targets(
+        None,
+        COMPARISON,
+        explicit_tickers=["NVDA", "MSFT"],
+        company_detector=StubCompanyDetector(),
+        period_detector=period_detector,
+        query_rewriter=rewriter,
+    )
+    assert targets == [
+        Target("NVDA", ["ACC-NVDA"], search_query="NVIDIA Data Center revenue fiscal 2024"),
+        Target("MSFT", ["ACC-MSFT"], search_query="Microsoft Cloud revenue fiscal 2024"),
+    ]
+    assert [(q, t) for q, t, _ in period_detector.calls] == [
+        ("NVIDIA Data Center revenue fiscal 2024", "NVDA"),
+        ("Microsoft Cloud revenue fiscal 2024", "MSFT"),
+    ]
+
+
+def test_period_detector_falls_back_to_the_original_question_when_the_rewrite_fails(
+    monkeypatch,
+):
+    stub_two_companies(monkeypatch)
+
+    class BoomQueryRewriter:
+        def rewrite(self, question, ticker, company_name):
+            raise RuntimeError("rate limited")
+
+    period_detector = StubPeriodDetector()
+    targets = resolve_targets(
+        None,
+        COMPARISON,
+        explicit_tickers=["NVDA", "MSFT"],
+        company_detector=StubCompanyDetector(),
+        period_detector=period_detector,
+        query_rewriter=BoomQueryRewriter(),
+    )
+    assert targets == [Target("NVDA", None), Target("MSFT", None)]
+    assert [(q, t) for q, t, _ in period_detector.calls] == [
+        (COMPARISON, "NVDA"),
+        (COMPARISON, "MSFT"),
+    ]
+
+
+def test_single_company_period_detection_sees_the_original_question(monkeypatch):
+    stub_two_companies(monkeypatch)
+    rewriter = StubQueryRewriter()
+    period_detector = StubPeriodDetector({"msft fy2024 cloud": ["ACC-MSFT"]})
+    targets = resolve_targets(
+        None,
+        "msft fy2024 cloud",
+        explicit_tickers=["MSFT"],
+        company_detector=StubCompanyDetector(),
+        period_detector=period_detector,
+        query_rewriter=rewriter,
+    )
+    assert targets == [Target("MSFT", ["ACC-MSFT"])]
+    assert [(q, t) for q, t, _ in period_detector.calls] == [("msft fy2024 cloud", "MSFT")]
+    assert rewriter.calls == []
+
+
+def test_period_detector_failure_on_a_rewritten_question_degrades_to_no_accessions(
+    monkeypatch,
+):
+    stub_two_companies(monkeypatch)
+    rewriter = StubQueryRewriter(
+        {
+            (COMPARISON, "NVDA"): "NVIDIA Data Center revenue fiscal 2024",
+            (COMPARISON, "MSFT"): "Microsoft Cloud revenue fiscal 2024",
+        }
+    )
+
+    class BoomPeriodDetector:
+        def detect(self, question, ticker, filings):
+            raise RuntimeError("rate limited")
+
+    targets = resolve_targets(
+        None,
+        COMPARISON,
+        explicit_tickers=["NVDA", "MSFT"],
+        company_detector=StubCompanyDetector(),
+        period_detector=BoomPeriodDetector(),
+        query_rewriter=rewriter,
+    )
+    assert targets == [
+        Target("NVDA", None, search_query="NVIDIA Data Center revenue fiscal 2024"),
+        Target("MSFT", None, search_query="Microsoft Cloud revenue fiscal 2024"),
+    ]
+
+
 def test_no_query_rewriter_leaves_search_query_none():
     targets = resolve_targets(
         None,

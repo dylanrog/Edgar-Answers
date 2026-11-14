@@ -31,7 +31,7 @@ def values_present(answer: str, expected: tuple[tuple[str, ...], ...]) -> bool:
 
 def run_faithfulness_eval(
     conn, embedder, generator, company_detector, questions: list[GoldenQuestion],
-    *, period_detector=None,
+    *, period_detector=None, quote_repairer=None,
 ) -> dict:
     """Full /ask path per golden question: % citations verified, % answered,
     and whether verified citations actually land on the gold sentences.
@@ -42,11 +42,16 @@ def run_faithfulness_eval(
     than the old single ticker= keyword. `period_detector` is optional and
     keyword-only so existing callers are unaffected; pass it to make this
     eval exercise the same accession-pinning path production /ask uses.
+    `quote_repairer` likewise turns on the citation-repair step /ask runs
+    (design §6.3 step 5); `repaired_citations` counts how often it rescued a
+    citation, and `first_pass_verified_rate` leaves those out -- the
+    like-for-like comparison with rows recorded before repair existed.
     """
     answered = 0
     unverified_answers = 0
     total = 0
     verified = 0
+    repaired = 0
     gold_hits = 0
     value_questions = 0
     value_hits = 0
@@ -62,6 +67,7 @@ def run_faithfulness_eval(
             question.question,
             tickers=[question.ticker],
             period_detector=period_detector,
+            quote_repairer=quote_repairer,
         ):
             if event.name == "token":
                 text_parts.append(event.data["text"])
@@ -84,6 +90,7 @@ def run_faithfulness_eval(
             answered += 1
         total += len(citations)
         verified += sum(c["verified"] for c in citations)
+        repaired += sum(bool(c.get("repaired")) for c in citations)
         gold_hits += any(
             c["verified"]
             and c["accession"] == question.accession
@@ -96,6 +103,8 @@ def run_faithfulness_eval(
         "answered_rate": round(answered / n, 4),
         "citations_total": total,
         "verified_rate": round(verified / total, 4) if total else 0.0,
+        "first_pass_verified_rate": round((verified - repaired) / total, 4) if total else 0.0,
+        "repaired_citations": repaired,
         "gold_sid_hit_rate": round(gold_hits / n, 4),
         "unverified_answers": unverified_answers,
     }

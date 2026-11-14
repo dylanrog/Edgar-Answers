@@ -32,6 +32,9 @@ class VerifiedCitation:
     # (sid, cell_index) of each table figure the quote covers (spec 2026-09-29
     # §5.7). cell_index is the browser's tr.cells[i] in the stored viewer HTML.
     cells: tuple[tuple[int, int], ...] = ()
+    # The quote is the repair step's, not the model's first one (design §6.3
+    # step 5). Only ever True alongside verified=True.
+    repaired: bool = False
 
 
 def sentence_spans(sentences: list[Sentence]) -> list[tuple[int, int, int]]:

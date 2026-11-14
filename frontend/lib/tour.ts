@@ -1,7 +1,15 @@
 import type { Citation } from "./types";
 
 export type TourStep =
-  "welcome" | "watch" | "click" | "source" | "closing" | "interrupted" | "off";
+  | "welcome"
+  | "watch"
+  | "click"
+  | "source"
+  | "more"
+  | "followup"
+  | "closing"
+  | "interrupted"
+  | "off";
 
 export type TourEvent =
   | { type: "start" }
@@ -11,48 +19,51 @@ export type TourEvent =
   | { type: "errored" }
   | { type: "citationClicked" }
   | { type: "next" }
+  | { type: "followUp" }
   | { type: "finish" };
 
 const SEEN_KEY = "edgar-answers.tour-seen";
 
 /**
  * Pure transition function. Events not listed for a step leave it unchanged;
- * `skip` ends the tour from anywhere and `start` restarts it from anywhere.
+ * `skip` and `finish` end the tour from anywhere and `start` restarts it from
+ * anywhere.
  */
 export function reduceTour(step: TourStep, event: TourEvent): TourStep {
-  if (event.type === "skip") return "off";
+  if (event.type === "skip" || event.type === "finish") return "off";
   if (event.type === "start") return "welcome";
 
   if (step === "off") return "off";
 
-  if (
-    event.type === "asked" &&
-    (step === "welcome" ||
-      step === "click" ||
-      step === "source" ||
-      step === "interrupted")
-  ) {
+  // `asked` is only ever a scripted start: the welcome card's button, or
+  // Try again after an interruption. A typed question is `finish` (askEvent).
+  if (event.type === "asked" && (step === "welcome" || step === "interrupted")) {
     return "watch";
   }
   if (step === "watch" && event.type === "settled") {
     return event.hasVerified ? "click" : "closing";
   }
-  if (step === "watch" && event.type === "errored") return "interrupted";
+  if ((step === "watch" || step === "followup") && event.type === "errored") {
+    return "interrupted";
+  }
   // Clicking during the paced reveal: the highlight is already showing.
   if ((step === "watch" || step === "click") && event.type === "citationClicked") {
     return "source";
   }
-  if (step === "source" && event.type === "next") return "closing";
-  if (step === "closing" && event.type === "finish") return "off";
+  if (step === "source" && event.type === "next") return "more";
+  if (step === "more" && event.type === "followUp") return "followup";
+  if (step === "followup" && event.type === "settled") return "closing";
   return step;
 }
 
 /**
- * What asking a question means for the tour: from `closing` it is the
- * visitor leaving the tour for their own exploration, so it finishes it.
+ * What a question typed into the form means for the tour. While the tutorial
+ * runs it is the visitor leaving the script, which lands them on the regular
+ * site (spec §9): the coach must never go on to offer the vetted follow-up on
+ * top of a question nobody vetted. The scripted asks dispatch their own events.
  */
 export function askEvent(step: TourStep): TourEvent {
-  return step === "closing" ? { type: "finish" } : { type: "asked" };
+  return step === "off" ? { type: "asked" } : { type: "finish" };
 }
 
 /** True once the tour has been marked seen. Storage failures read as unseen. */

@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
-import { splitOnMarkers } from "../markers";
+import { splitOnMarkers, splitParagraphs } from "../markers";
 
 test("text with no marker is one segment", () => {
   expect(splitOnMarkers("Just prose.")).toEqual(["Just prose."]);
@@ -37,4 +37,28 @@ test("handles a marker at the very start", () => {
 
 test("an empty string yields no segments", () => {
   expect(splitOnMarkers("")).toEqual([]);
+});
+
+describe("splitParagraphs", () => {
+  test("splits at blank lines and keeps single line breaks", () => {
+    expect(splitParagraphs("One [1].\n\nTwo\n- a [2]\n\n\n  Three.")).toEqual([
+      "One [1].",
+      "Two\n- a [2]",
+      "Three.",
+    ]);
+  });
+
+  test("a stream cut mid-break yields no empty paragraph", () => {
+    expect(splitParagraphs("One [1].\n\n")).toEqual(["One [1]."]);
+    expect(splitParagraphs("")).toEqual([]);
+  });
+
+  test("every marker survives the paragraph split", () => {
+    const prose = "A [1] b.\n\nC [2] d [3].\n\nE [10].";
+    const markers = (segments: ReturnType<typeof splitOnMarkers>) =>
+      segments.filter((s) => typeof s !== "string");
+    expect(splitParagraphs(prose).flatMap((p) => markers(splitOnMarkers(p)))).toEqual(
+      markers(splitOnMarkers(prose)),
+    );
+  });
 });

@@ -90,3 +90,21 @@ class StubConversationRewriter:
     def resolve(self, question, history):
         self.calls.append((question, tuple(history)))
         return self.answers.get(question, question)
+
+
+class StubQuoteRepairer:
+    """Returns a canned repaired quote (or None, or raises), recording every
+    (claim, quote, excerpt) it was asked -- for testing the citation-repair
+    step without hitting the live API. `answer` may be a callable of the
+    failed quote."""
+
+    def __init__(self, answer=None, *, error: Exception | None = None):
+        self.answer = answer
+        self.error = error
+        self.calls: list[tuple[str, str, str]] = []
+
+    def repair(self, claim, quote, excerpt):
+        self.calls.append((claim, quote, excerpt))
+        if self.error is not None:
+            raise self.error
+        return self.answer(quote) if callable(self.answer) else self.answer

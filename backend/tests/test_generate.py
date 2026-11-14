@@ -133,3 +133,14 @@ def test_system_prompt_forbids_quoting_context_before_the_output_example():
     assert "through that figure" in SYSTEM_PROMPT
     assert SYSTEM_PROMPT.index("never quote them") < SYSTEM_PROMPT.index(FENCE)
     assert SYSTEM_PROMPT.index("through that figure") < SYSTEM_PROMPT.index(FENCE)
+
+
+def test_system_prompt_forbids_stitched_quotes_before_the_output_example():
+    """The model sometimes ended a real sentence's opening with a table figure
+    ("Data Center revenue for fiscal year 2024 was $47.5 billion" where the
+    filing says "...was up 217%"), an unrepairable fabricated quote. The rule
+    sits before the JSON example, where rule placement is known to matter."""
+    from api.generate import FENCE, SYSTEM_PROMPT
+
+    assert "one unbroken run" in SYSTEM_PROMPT
+    assert SYSTEM_PROMPT.index("one unbroken run") < SYSTEM_PROMPT.index(FENCE)

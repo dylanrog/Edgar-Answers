@@ -136,3 +136,47 @@ test("a cited table figure is marked on its own, without the row highlight", asy
   await expect(page.locator('tr[data-sid="31"]')).not.toHaveClass(/cited-sentence/);
   await expect(cells.nth(4)).not.toHaveClass(/cited-figure/);
 });
+
+test("a markdown heading and bold render without literal markers; chips still work", async ({
+  page,
+}) => {
+  await page.route(`${API}/companies`, (route) =>
+    route.fulfill({ contentType: "application/json", body: "[]" }),
+  );
+  await page.route(`${API}/ask`, (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body: SSE_BODY.replace(
+        "Total net sales were $391,035 million [1].",
+        "# Heading [1]\\n\\n**Net sales:** $391,035 million.",
+      ),
+    }),
+  );
+  await page.route(`${API}/filings/${ACCESSION}`, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        accession: ACCESSION,
+        viewer_html: VIEWER_HTML,
+        ticker: "AAPL",
+        form_type: "10-K",
+        filing_date: "2024-11-01",
+        period_end: "2024-09-28",
+      }),
+    }),
+  );
+
+  await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
+  await page.goto("/ask");
+  await page.getByLabel("Question").fill("What were total net sales?");
+  await page.getByRole("button", { name: "Ask" }).click();
+
+  const heading = page.getByRole("heading", { name: /Heading/ });
+  await expect(heading).toBeVisible();
+  await expect(heading).not.toContainText("#");
+  await expect(page.locator("strong", { hasText: "Net sales:" })).toBeVisible();
+  await expect(page.getByText("**")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "[1]" }).click();
+  await expect(page.locator('[data-sid="647"]')).toHaveClass(/cited-sentence/);
+});

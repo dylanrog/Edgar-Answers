@@ -4,7 +4,12 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from tests.fakes import FakeEmbedder, StubCompanyDetector, StubGenerator
+from tests.fakes import (
+    FakeEmbedder,
+    StubCompanyDetector,
+    StubGenerator,
+    StubQuoteRepairer,
+)
 
 from api.answer import answer_stream
 from pipeline import db, store
@@ -68,3 +73,238 @@ def test_a_table_citation_carries_its_cited_cells(seeded):
     citation = next(e for e in events if e.name == "citation")
     assert citation.data["verified"] is True
     assert citation.data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+def _ask(conn, chunk_id, prose, quote):
+    response = (
+        f"{prose}\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{quote}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"],
+        )
+    )
+    return next(e for e in events if e.name == "citation").data
+
+
+WHOLE_ROW = "Data Center $ 115,186 $ 47,525 $ 15,005"
+
+
+@pytest.mark.db
+def test_a_whole_row_quote_marks_only_the_figure_the_answer_states(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask(conn, chunk_id, "Data Center revenue was $115.2 billion [1].", WHOLE_ROW)
+    assert data["verified"] is True
+    assert data["sids"] == [data_center]
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_a_whole_row_quote_beside_a_claim_with_no_figure_marks_no_cells(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask(conn, chunk_id, "Data Center revenue grew [1].", WHOLE_ROW)
+    assert data["verified"] is True
+    assert data["sids"] == [data_center]
+    assert data["cells"] == []
+
+
+@pytest.mark.db
+def test_a_whole_row_quote_beside_an_unmatched_figure_keeps_every_cell(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask(conn, chunk_id, "Data Center revenue grew 142% [1].", WHOLE_ROW)
+    assert data["verified"] is True
+    assert [c["cell"] for c in data["cells"]] == [2, 6, 10]
+
+
+@pytest.mark.db
+def test_a_marker_placed_before_its_claim_marks_the_figure_after_it(seeded):
+    conn, chunk_id, data_center = seeded
+    prose = "Here is the comparison: [1] Data Center revenue was $115,186 million."
+    data = _ask(conn, chunk_id, prose, WHOLE_ROW)
+    assert data["verified"] is True
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_citations_from_the_retry_are_not_narrowed(seeded):
+    # Attempt 1's prose streams to the client but its citation block does not
+    # parse; the retry's citations belong to prose nobody saw, so the cells
+    # stay as verified.
+    conn, chunk_id, data_center = seeded
+    first = "Data Center revenue was $115.2 billion [1].\n\n```json\nnot json\n```"
+    retry = (
+        "Data Center revenue was $47.5 billion [1].\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{WHOLE_ROW}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(first, retry), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"],
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert data["verified"] is True
+    assert [c["cell"] for c in data["cells"]] == [2, 6, 10]
+
+
+@pytest.mark.db
+def test_a_repaired_table_quote_gets_its_cells_from_the_new_quote_then_narrowed(seeded):
+    # The model elided text inside the row; the repair copies the whole row,
+    # which verifies, resolves all three years, and is narrowed to the one
+    # the answer states -- exactly as a first-pass whole-row quote would be.
+    conn, chunk_id, data_center = seeded
+    response = (
+        "Data Center revenue was $115.2 billion [1].\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        '"quote": "Data Center revenue $ 115,186"}]}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(WHOLE_ROW)
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert len(repairer.calls) == 1
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == WHOLE_ROW
+    assert data["sids"] == [data_center]
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+def _ask_repaired(conn, chunk_id, prose, repair_quote):
+    response = (
+        f"{prose}\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        '"quote": "Data Center revenue $ 115,186"}]}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(repair_quote)
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    assert len(repairer.calls) == 1
+    return next(e for e in events if e.name == "citation").data
+
+
+@pytest.mark.db
+def test_a_repair_stating_only_one_of_two_claim_figures_is_rejected(seeded):
+    # $999.9 billion is invented; a quote that states only the true 115,186
+    # must not turn the whole claim green.
+    conn, chunk_id, _ = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "Revenue was $115.2 billion and $999.9 billion [1].", WHOLE_ROW
+    )
+    assert data["verified"] is False
+    assert "repaired" not in data
+    assert data["quote"] == "Data Center revenue $ 115,186"
+
+
+@pytest.mark.db
+def test_a_repair_spanning_two_rows_states_both_claim_figures(seeded):
+    conn, chunk_id, data_center = seeded
+    two_rows = WHOLE_ROW + " Compute 102,196"
+    data = _ask_repaired(
+        conn, chunk_id,
+        "Data Center ($115,186 million) and Compute ($102,196 million) [1].", two_rows,
+    )
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == two_rows
+    assert data["sids"] == [data_center, data_center + 1]
+
+
+@pytest.mark.db
+def test_two_spellings_of_the_same_figure_are_satisfied_by_one_cell(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "Data Center revenue was $115,186 million ($115.2 billion) [1].",
+        WHOLE_ROW,
+    )
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_the_demo_claim_with_its_fiscal_year_is_repaired(seeded):
+    conn, chunk_id, data_center = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "NVIDIA's Data Center revenue in fiscal 2025 was $115.2 billion [1].",
+        WHOLE_ROW,
+    )
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["cells"] == [{"sid": data_center, "cell": 2}]
+
+
+@pytest.mark.db
+def test_a_repair_onto_another_years_column_is_rejected(seeded):
+    conn, chunk_id, _ = seeded
+    data = _ask_repaired(
+        conn, chunk_id, "In fiscal 2024 Data Center revenue was $115.2 billion [1].", WHOLE_ROW
+    )
+    assert data["verified"] is False
+    assert "repaired" not in data
+    assert data["quote"] == "Data Center revenue $ 115,186"
+
+
+@pytest.mark.db
+def test_a_figure_free_aside_with_a_stitched_caption_quote_is_repaired(seeded):
+    # The tutorial failure: a qualitative aside quoting the table caption
+    # stitched onto a row label. The repair copies the caption as written.
+    conn, chunk_id, _ = seeded
+    garbled = "Revenue by specialized markets: Data Center"
+    caption = "The following table summarizes revenue by specialized markets:"
+    response = (
+        "[1] NVIDIA's Data Center revenue represents sales from its data center segment.\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{garbled}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(caption)
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert len(repairer.calls) == 1
+    assert repairer.calls[0][1] == garbled
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == caption
+    assert data["cells"] == []
+
+
+@pytest.mark.db
+def test_a_figure_free_repair_running_into_the_table_is_trimmed_and_accepted(seeded):
+    # The live failure mode: the repairer copies the caption on through the
+    # first row's figures. Trimmed before the first figure, it is the caption.
+    conn, chunk_id, _ = seeded
+    garbled = "Revenue by specialized markets: Data Center"
+    caption = "The following table summarizes revenue by specialized markets:"
+    response = (
+        "[1] NVIDIA's Data Center revenue represents sales from its data center segment.\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{garbled}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(caption + " Year Ended Jan 26, 2025 Data Center $ 115,186")
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == caption

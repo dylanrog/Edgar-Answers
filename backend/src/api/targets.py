@@ -113,18 +113,6 @@ def resolve_targets(
 
     targets = []
     for ticker in tickers:
-        accessions = None
-        if period_detector is not None:
-            filings = queries.load_filings_for_ticker(conn, ticker)
-            if filings:
-                try:
-                    accessions = period_detector.detect(question, ticker, filings) or None
-                except Exception as exc:  # noqa: BLE001 -- same degrade-safely rationale
-                    logger.warning(
-                        "period_detector.detect failed for %s, degrading to no accessions: %s",
-                        ticker, exc,
-                    )
-                    accessions = None
         search_query = None
         if query_rewriter is not None and len(tickers) > 1:
             company_name = name_by_ticker.get(ticker, ticker)
@@ -136,6 +124,27 @@ def resolve_targets(
                     ticker, exc,
                 )
                 search_query = None
+        accessions = None
+        if period_detector is not None:
+            filings = queries.load_filings_for_ticker(conn, ticker)
+            if filings:
+                # The detector sees one company's filings. Asked a comparison
+                # that names another company, it abstains ("I was only given
+                # Microsoft's filings"), so a comparison never got a period
+                # pin and retrieval fell back to every filing -- including
+                # later 10-Ks that restate the asked-for year. The rewrite is
+                # single-company and keeps the period, so ask about that.
+                try:
+                    accessions = (
+                        period_detector.detect(search_query or question, ticker, filings)
+                        or None
+                    )
+                except Exception as exc:  # noqa: BLE001 -- same degrade-safely rationale
+                    logger.warning(
+                        "period_detector.detect failed for %s, degrading to no accessions: %s",
+                        ticker, exc,
+                    )
+                    accessions = None
         targets.append(
             Target(ticker=ticker, accessions=accessions, search_query=search_query)
         )

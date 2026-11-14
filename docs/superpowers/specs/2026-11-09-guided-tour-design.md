@@ -164,9 +164,9 @@ not a full-screen modal; the page stays usable underneath. Steps:
 5. **Not just SEC filings + handoff**: "This demo runs on 120 SEC filings
    from ten companies, but the pipeline underneath (sentence-anchored
    ingestion, hybrid search, quote verification) works on any document
-   collection." Then: the other example questions, the input box, and a
-   link to the GitHub repo (`github.com/dylanrog/Edgar-Answers`, public;
-   *my call*). **Done**.
+   collection." Then: the other example questions, the input box, and
+   **Done**. *(Amended 2026-11-14: the GitHub repo link was removed — the
+   repo is going private.)*
 
 Behaviour:
 - It shows on first visit. Finishing or skipping sets a
@@ -278,3 +278,101 @@ and positioning technique (no new dependency unless clearly warranted);
 pacing timings; breakpoint; copy drafts; the vetting script's name and
 location; how the example list is shared between frontend and script
 (one JSON file is the obvious choice).
+
+## 9. Amendment (2026-11-10): one scripted conversation
+
+Dylan revised the tour after a hand check, so this section overrides §2.3,
+§5.4 and §6 where they conflict.
+
+**The tutorial is one scripted conversation, not a menu.**
+1. **Welcome:** one line on what this is, one button that asks the tutorial
+   question, and **Skip tutorial**. There is no list of examples.
+2. **Watch:** as in §5.3/§5.4.
+3. **Click:** as in §5.4. The coach pulses the first verified citation.
+4. **Source:** as in §5.4, then **Next**.
+5. **One more example:** the coach offers **one more example**, which is the
+   scripted follow-up, or **Skip tutorial**. The follow-up is asked **in the
+   same conversation**, so conversation memory is part of what is shown off.
+   It is the one deliberate exception to "examples start a fresh
+   conversation" (§5.4).
+6. **Watch the follow-up:** the panel ticks as before. While the follow-up
+   streams, as soon as its resolved standalone question arrives, the coach
+   points at the existing "Searched for: …" line to show how the follow-up
+   was read in context. When the answer settles, the tutorial moves on to
+   the closing.
+   *(Amended 2026-11-10: the pointer originally appeared on settle; it now
+   appears mid-stream, on `resolved`, and settling goes to the closing.)*
+7. **Closing:** the "works on any document collection" note and **Done**.
+   There are no example buttons and no repo link (removed 2026-11-14: the
+   repo is going private).
+   *(Amended 2026-11-14: when the latest answer has an unverified citation,
+   the "more" and closing cards add one sentence explaining the red badge.
+   In about 3–6% of follow-ups the model fabricates the quote for an aside —
+   e.g. "Data Center revenue for fiscal year 2024 was $47.5 billion", where
+   the filing says "…was up 217%" — and verification rightly refuses it, so
+   the tutorial explains the badge rather than hide or launder it.)*
+
+**Skip, Done, or leaving the script lands on the regular site.** There are
+no example chips on the empty state after the tutorial. A **Take the
+tutorial** link in the header replays it. The under-the-hood panel stays on
+every answer. It is part of the site, not the tutorial. "Tour" copy becomes
+"tutorial" everywhere a visitor reads it.
+
+**Questions** (Dylan's wording, verbatim):
+- Turn 1: "Compare NVIDIA's Data Center revenue in fiscal 2025 with
+  Microsoft's Cloud revenue in fiscal 2025."
+- Turn 2: "What about 24?"
+
+We probed a variant without the possessive ("...with Microsoft Cloud revenue
+in fiscal 2025.") and rejected it. The model still wrote "Microsoft's
+Microsoft Cloud", and on turn 2 period targeting no longer narrowed to the
+FY2024 filing. The answer cited the FY2026 10-K's restated $137.7B instead.
+
+Probing showed that "Microsoft's **Intelligent Cloud** revenue" fails turn 2
+on every run. The model cites Microsoft *Cloud* revenue ($137.4B) as
+Intelligent Cloud, which is verified but wrong. It also hits a segment
+restatement: FY2024 Intelligent Cloud is $105,362M as originally reported
+and $87,464M as restated. That is why the first turn asks about Microsoft
+Cloud.
+
+**Gold (both turns are judged; a run passes only if both pass):**
+| turn | NVIDIA Data Center | Microsoft Cloud |
+| --- | --- | --- |
+| 1 | $115,186M, NVDA FY2025 10-K `0001045810-25-000023` sid 2768 (table cell) | $168.9B, MSFT FY2025 10-K `0000950170-25-100235` sids 1138, 2869 |
+| 2 | $47,525M, NVDA FY2024 10-K `0001045810-24-000029` sid 2777 (table cell) | $137.4B, MSFT FY2024 10-K `0000950170-24-087843` sids 1317, 3161 |
+
+FY2024 Microsoft Cloud uses the figure as originally reported in the FY2024
+10-K ($137.4B), which is what the system cites. The FY2025 10-K's restated
+$137.7B is not accepted.
+*(Amended 2026-11-10: it is now accepted as an explicit alternative. In 1 of
+20 live runs the follow-up cited the FY2026 10-K's restated $137.7B (sid
+2907). A later filing's restatement of the same fiscal year answers the period
+asked; it is not period confusion. `examples.yaml` lists the FY2026 10-K
+`0001193125-26-323660` sid 2907 and the FY2025 10-K `0000950170-25-100235`
+sid 2869 as alternatives, each requiring $137.7B to be stated. A citation is
+not stray only when it comes from the filing of a pin that passes on its own,
+so an answer stating $137.4B that also cites the restated filing's $137.7B row
+fails, and so does the reverse. Within a passing pin's filing any verified
+quote is accepted, whatever its sids (turn 1 sometimes adds a true third claim
+quoting the Data Center, Compute and Networking rows). The release
+check prints which pin satisfied each entry and each turn's targets, and
+counts alternative passes per entry, so the restatement path stays visible
+rather than silently passing.)* The vetting bar rises from 5 to **10 runs** for the
+tutorial, since this one conversation is the demo.
+
+*(Amended 2026-11-11: root cause of the restated-figure follow-ups.* Period
+targeting never fired on either turn. `resolve_targets` asked the period
+detector the original two-company question while showing it one company's
+filings, and the detector abstained ("I was only provided with Microsoft's
+filings…"). 20 of 20 vetting runs printed "filings: not narrowed". With no
+period pin, each company's retrieval spanned every 10-K, so the FY2025 and
+FY2026 10-Ks' restated $137.7B competed with the FY2024 10-K's $137.4B. In 2 of
+20 follow-ups the answer stated the restated $137.7B while citing the FY2024
+10-K sentence that says $137.4B, a mismatched figure a visitor sees. The fix
+asks the period detector each company's single-company rewrite instead (design
+§14). In a live probe both turns now pin the gold filings: turn 1 the two
+FY2025 10-Ks, turn 2 NVDA `0001045810-24-000029` and MSFT
+`0000950170-24-087843`. With narrowing on, the restated alternatives should
+stop appearing, because the later 10-Ks are no longer retrieved for turn 2. The
+earlier vetting was all run without narrowing, so the tutorial needs
+re-vetting.)*

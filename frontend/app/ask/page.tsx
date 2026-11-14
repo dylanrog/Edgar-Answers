@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AskForm } from "@/components/ask-form";
 import { ConversationTurn } from "@/components/conversation-turn";
-import { ExampleQuestions } from "@/components/example-questions";
 import { FilingTabs } from "@/components/filing-tabs";
 import { FilingViewer } from "@/components/filing-viewer";
 import { TourCallout, TourWelcome } from "@/components/tour-coach";
@@ -13,8 +12,7 @@ import type { AnswerState } from "@/lib/answer";
 import { askStream, fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
-import { EXAMPLES, askExampleFresh } from "@/lib/examples";
-import type { Example } from "@/lib/examples";
+import { TUTORIAL, askFresh } from "@/lib/tutorial";
 import {
   askEvent,
   firstVerifiedMarker,
@@ -38,24 +36,40 @@ export default function AskPage() {
   const [tabs, setTabs] = useState(initialTabState);
   const [highlights, setHighlights] = useState<Record<string, Highlight>>({});
   const [companies, setCompanies] = useState<Company[]>([]);
-  // Starts "off" and is read from storage on mount: the page is prerendered,
-  // so reading storage during render would mismatch on hydration.
   const nextTurnId = useRef(0);
   const askAbort = useRef<AbortController | null>(null);
+  const [clicked, setClicked] = useState<Citation | null>(null);
+  // Starts "off" and is read from storage on mount: the page is prerendered,
+  // so reading storage during render would mismatch on hydration.
   const [tour, setTour] = useState<TourStep>("off");
+  // Until the mount-time check has run, "off" only means "not read yet": the
+  // header's tutorial link and the empty conversation (composer and welcome
+  // card alike) wait for it, or a first-time visitor sees the regular site
+  // flash before the welcome card replaces it.
+  const [tourChecked, setTourChecked] = useState(false);
+  // The turn whose panel the closing folded (see `expanded` below).
+  const [foldedTurn, setFoldedTurn] = useState<number | null>(null);
 
   useEffect(() => {
     // Deferred so the first client render matches the prerendered "off".
-    if (!hasSeenTour()) queueMicrotask(() => setTour(reduceTour("off", { type: "start" })));
+    queueMicrotask(() => {
+      try {
+        if (!hasSeenTour()) setTour(reduceTour("off", { type: "start" }));
+      } finally {
+        // Whatever the check does, never leave the composer hidden.
+        setTourChecked(true);
+      }
+    });
   }, []);
 
-  function dispatch(event: TourEvent) {
+  function dispatch(event: TourEvent): TourStep {
     const next = reduceTour(tour, event);
     setTour(next);
     // A dismissed or finished tour must never come back by itself.
     if (next === "off" && (event.type === "skip" || event.type === "finish")) {
       markTourSeen();
     }
+    return next;
   }
 
   useEffect(() => {
@@ -75,6 +89,19 @@ export default function AskPage() {
 
   const threadRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLElement>(null);
+  // Whether the visitor has opened a citation of the latest answer since it
+  // was asked; reset by every ask.
+  const openedLatest = useRef(false);
+
+  // Scrolls the page to the viewer after the click has rendered, not in the
+  // click handler: until then the viewer is a short placeholder at the foot
+  // of the page, so a scroll aimed at it stops at the old page end, short of
+  // the now-taller viewer and its source card. (The highlight scrolls only
+  // the pane, so nothing else would finish the job.)
+  const [revealViewer, setRevealViewer] = useState(0);
+  useEffect(() => {
+    if (revealViewer > 0) viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [revealViewer]);
 
   // When a new turn is added, pull its question to the top of the thread so
   // the answer streams into view below it. Keyed on the turn count, so it
@@ -110,8 +137,13 @@ export default function AskPage() {
     });
   }
 
-  async function ask(question: string, filters: AskFilters) {
-    dispatch(askEvent(tour));
+  async function ask(
+    question: string,
+    filters: AskFilters,
+    options?: { tourEvent?: TourEvent },
+  ) {
+    dispatch(options?.tourEvent ?? askEvent(tour));
+    openedLatest.current = false;
     askAbort.current?.abort();
     const controller = new AbortController();
     askAbort.current = controller;
@@ -151,25 +183,71 @@ export default function AskPage() {
     setHighlights({});
   }
 
-  function select(citation: Citation) {
-    // Unverified and unattributable citations are inert by design (§6.3):
-    // there is nothing trustworthy to scroll to.
-    if (!citation.verified || citation.accession === "") return;
-    dispatch({ type: "citationClicked" });
+  /** Opens a citation's filing in the viewer with the citation highlighted. */
+  function openCitation(citation: Citation) {
+    setClicked(citation);
     setTabs((previous) => openTab(previous, citation.accession));
     setHighlights((previous) => ({
       ...previous,
       [citation.accession]: { sids: citation.sids, cells: citation.cells },
     }));
-    // Stacked layout (below md): the viewer is further down the page, so bring
-    // it on screen. Its own highlight scroll then positions the sentence.
-    if (window.matchMedia("(max-width: 767px)").matches) {
-      viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
   }
 
-  function pickExample(example: Example) {
-    askExampleFresh(example, { newConversation, ask });
+  /**
+   * The closing step shows the follow-up's payoff: on a split screen the
+   * viewer opens the latest answer's first verified citation, as if clicked,
+   * so the highlighted 2024 figure sits beside the answer. Not on a phone,
+   * where the viewer is below the thread and opening it would scroll away from
+   * the closing card.
+   */
+  function showPayoff(state: AnswerState) {
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
+    // The visitor already opened one of this answer's sources themselves:
+    // switching their tab would undo their choice.
+    if (openedLatest.current) return;
+    const marker = firstVerifiedMarker(state.citations);
+    const citation = marker === null ? undefined : state.citations.get(marker);
+    if (citation !== undefined) openCitation(citation);
+  }
+
+  function select(citation: Citation) {
+    // Unverified and unattributable citations are inert by design (§6.3):
+    // there is nothing trustworthy to scroll to.
+    if (!citation.verified || citation.accession === "") return;
+    dispatch({ type: "citationClicked" });
+    const latest = turns.at(-1)?.state.citations.get(citation.marker);
+    if (latest?.accession === citation.accession && latest.quote === citation.quote) {
+      openedLatest.current = true;
+    }
+    openCitation(citation);
+    // Stacked layout (below md): the viewer is further down the page, so bring
+    // it on screen. Its own highlight scroll then positions the sentence.
+    if (window.matchMedia("(max-width: 767px)").matches) setRevealViewer((n) => n + 1);
+  }
+
+  // The scripted starts (welcome card, Try again) are the only asks that run
+  // the tutorial; a typed question leaves it (askEvent).
+  function startTutorialQuestion() {
+    askFresh(TUTORIAL.question, {
+      newConversation,
+      ask: (question, filters) => ask(question, filters, { tourEvent: { type: "asked" } }),
+    });
+  }
+
+  function askFollowUp() {
+    // The open filing belongs to turn 1; next to a fiscal-2024 answer it would
+    // read as that answer's source. Start the viewer empty until the visitor
+    // clicks one of the follow-up's citations.
+    setTabs(initialTabState);
+    setHighlights({});
+    // Same conversation: the follow-up only makes sense with its context.
+    ask(TUTORIAL.followUp, {}, { tourEvent: { type: "followUp" } });
+  }
+
+  function backToAnswer() {
+    threadRef.current
+      ?.querySelector("article:last-of-type")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function takeTour() {
@@ -177,22 +255,22 @@ export default function AskPage() {
     dispatch({ type: "start" });
   }
 
-  function retry() {
-    const question = turns.at(-1)?.question;
-    if (question === undefined) return;
-    askExampleFresh({ question }, { newConversation, ask });
-  }
-
-  function callout(step: "watch" | "click" | "source" | "closing" | "interrupted") {
+  function callout(
+    step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
+    target?: Citation,
+  ) {
     return (
       <TourCallout
         step={step}
+        marker={target?.marker}
         onSkip={() => dispatch({ type: "skip" })}
         onNext={() => dispatch({ type: "next" })}
         onFinish={() => dispatch({ type: "finish" })}
-        onRetry={retry}
-        examples={EXAMPLES}
-        onPick={pickExample}
+        onRetry={startTutorialQuestion}
+        onFollowUp={askFollowUp}
+        figure={((target ?? clicked)?.cells.length ?? 0) > 0}
+        followUpResolved={turns.at(-1)?.state.standaloneQuestion != null}
+        unverified={[...(turns.at(-1)?.state.citations.values() ?? [])].some((c) => !c.verified)}
         disabled={streaming}
       />
     );
@@ -206,13 +284,16 @@ export default function AskPage() {
             EDGAR ANSWERS
           </h1>
           <div className="flex items-baseline gap-4">
-            <button
-              type="button"
-              onClick={takeTour}
-              className="text-xs text-slate-500 underline hover:text-slate-300"
-            >
-              Take the tour
-            </button>
+            {/* Hidden while it runs: the welcome card is the one call to action. */}
+            {tourChecked && tour === "off" && (
+              <button
+                type="button"
+                onClick={takeTour}
+                className="text-xs text-slate-500 underline hover:text-slate-300"
+              >
+                Take the tutorial
+              </button>
+            )}
             {turns.length > 0 && (
               <button
                 type="button"
@@ -234,75 +315,117 @@ export default function AskPage() {
             {turns.map((turn, index) => {
               const latest = index === turns.length - 1;
               const lastState = turn.state;
+              const emphasized =
+                latest && tour === "click" ? firstVerifiedMarker(turn.state.citations) : null;
               return (
-              <ConversationTurn
-                key={turn.id}
-                question={turn.question}
-                state={turn.state}
-                onSelect={select}
-                names={names}
-                expanded={index === turns.length - 1}
-                onSettled={
-                  latest
-                    ? () =>
-                        dispatch(
-                          lastState.status === "error"
-                            ? { type: "errored" }
-                            : {
-                                type: "settled",
-                                hasVerified:
-                                  firstVerifiedMarker(lastState.citations) !== null,
-                              },
-                        )
-                    : noop
-                }
-                emphasizeMarker={
-                  latest && tour === "click"
-                    ? firstVerifiedMarker(turn.state.citations)
-                    : null
-                }
-                coachAbovePanel={latest && tour === "watch" ? callout("watch") : null}
-                coachBelowAnswer={latest && tour === "click" ? callout("click") : null}
-                coachBelowTurn={
-                  latest && (tour === "closing" || tour === "interrupted")
-                    ? callout(tour)
-                    : null
-                }
-              />
+                <ConversationTurn
+                  key={turn.id}
+                  question={turn.question}
+                  state={turn.state}
+                  onSelect={select}
+                  names={names}
+                  // From the closing on, this turn's panel stays folded to its
+                  // summary line -- also after Done, when the closing card goes
+                  // and a re-expanding panel would push the answer away. A new
+                  // turn has a new id, so it starts expanded.
+                  expanded={latest && turn.id !== foldedTurn}
+                  onSettled={
+                    latest
+                      ? () => {
+                          const before = tour;
+                          const next = dispatch(
+                            lastState.status === "error"
+                              ? { type: "errored" }
+                              : {
+                                  type: "settled",
+                                  hasVerified:
+                                    firstVerifiedMarker(lastState.citations) !== null,
+                                },
+                          );
+                          if (next === "closing" && before !== "closing") {
+                            setFoldedTurn(turn.id);
+                            showPayoff(lastState);
+                          }
+                        }
+                      : noop
+                  }
+                  emphasizeMarker={emphasized}
+                  coachAbovePanel={
+                    latest && (tour === "watch" || tour === "followup")
+                      ? callout(tour)
+                      : null
+                  }
+                  coachBelowAnswer={
+                    emphasized !== null
+                      ? callout("click", turn.state.citations.get(emphasized))
+                      : null
+                  }
+                  coachBelowTurn={
+                    latest && (tour === "more" || tour === "closing" || tour === "interrupted")
+                      ? callout(tour)
+                      : null
+                  }
+                />
               );
             })}
           </div>
         )}
 
+        {/* Prerendered and until the mount-time check has run: an empty,
+            composer-sized space rather than the regular site, which a
+            first-time visitor would see jump as the welcome card is inserted
+            above it (and whose form a pre-hydration tap would submit
+            natively). */}
+        {turns.length === 0 && !tourChecked && (
+          <div aria-busy="true" className="min-h-64 flex-1" />
+        )}
+
         {turns.length === 0 && tour === "welcome" && (
           <TourWelcome
-            examples={EXAMPLES}
-            onPick={pickExample}
+            onAsk={startTutorialQuestion}
             onSkip={() => dispatch({ type: "skip" })}
             disabled={streaming}
           />
         )}
 
-        <AskForm companies={companies} disabled={streaming} onSubmit={ask} docked={turns.length > 0} />
+        {(turns.length > 0 || tourChecked) && (
+          <AskForm
+            companies={companies}
+            disabled={streaming}
+            onSubmit={ask}
+            docked={turns.length > 0}
+            quiet={tour === "welcome"}
+          />
+        )}
 
         {turns.length === 0 && tour === "welcome" && <div className="flex-1" />}
 
-        {turns.length === 0 && tour !== "welcome" && (
+        {turns.length === 0 && tourChecked && tour !== "welcome" && (
           <div className="flex-1 px-5 pt-4">
             <p className="mb-3 text-slate-500">Ask a question about a filing.</p>
-            {tour === "off" && (
-              <ExampleQuestions
-                examples={EXAMPLES}
-                onPick={pickExample}
-                disabled={streaming}
-              />
-            )}
           </div>
         )}
       </section>
 
-      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[70dvh]" : "h-auto"}`}>
+      {/* On a phone an open viewer is nearly a full screen tall: it is the
+          last thing on the page, so a much shorter one could not be scrolled
+          to the top, and its source card would sit mid-screen under the
+          composer. 3rem short of full, so the thread still peeks above it. */}
+      <section ref={viewerRef} className={`flex min-w-0 flex-col overflow-hidden md:h-auto ${tabs.open.length > 0 ? "h-[calc(100dvh-3rem)]" : "h-auto"}`}>
         {tour === "source" && <div className="shrink-0 px-3 pb-2">{callout("source")}</div>}
+        {tabs.open.length > 0 && tour !== "source" && (
+          // Phones only: with the filing filling the screen, a plain way back
+          // to the answer rather than the tab strip's small close buttons.
+          // Not at the tutorial's source step: right under that card's Next,
+          // it would take the visitor to a thread with no card to go on from.
+          <button
+            type="button"
+            onClick={backToAnswer}
+            className="flex min-h-10 shrink-0 items-center gap-1 px-3 text-left text-sm text-blue-300 hover:text-blue-200 md:hidden"
+          >
+            <span aria-hidden>↑</span> Back to answer
+          </button>
+        )}
         <FilingTabs
           tabs={tabs}
           labels={labels}

@@ -61,7 +61,6 @@ body {
   background-color: #78350f;
   color: #fef3c7;
   box-shadow: 0 0 0 3px #78350f;
-  scroll-margin-top: 4rem;
 }
 
 /* A cited table row carries data-sid on the <tr> itself, because a <span>
@@ -88,5 +87,79 @@ th.cited-figure {
   font-weight: 700;
   outline: 2px solid #fbbf24;
   outline-offset: -2px;
-  scroll-margin-top: 4rem;
+  /* Filings set figure cells' horizontal padding to 0 inline, and a squeezed
+     column is exactly as wide as its number, so the inset outline above would
+     be drawn over the first and last digit (it sliced through the "4" of
+     47,525 on a phone). Room for it, whatever the inline style says. */
+  padding-left: 0.375rem !important;
+  padding-right: 0.375rem !important;
+}
+
+/* A freshly applied highlight pulses twice (~1.5 s) so the eye finds it on
+   first open (lib/highlight.ts PULSE_CLASS). Motion only when the visitor has
+   not asked for less; otherwise the steady highlight above is the whole cue.
+   A row's background lives on its cells, so that is where it animates. */
+@keyframes cited-pulse {
+  50% {
+    background-color: #f59e0b;
+    color: #1c1917;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cited-sentence.cited-pulse:not(tr),
+  tr.cited-sentence.cited-pulse td,
+  tr.cited-sentence.cited-pulse th,
+  .cited-figure.cited-pulse {
+    animation: cited-pulse 0.75s ease-in-out 2;
+  }
+}
+
+/* Filings justify their body text inline; on a phone-width column that opens
+   huge gaps between words. Table cells keep their own alignment. */
+@media (max-width: 639px) {
+  .filing-html [style*="justify"]:not(td, th) {
+    text-align: left !important;
+  }
+}
+
+/* Phones: a figure cell (tagged `fig` in lib/viewer-html.ts) never wraps, so
+   a squeezed column cannot spill a number out of its cell (the cited-figure
+   box then sliced through a digit). Text cells still wrap: some filing cells
+   hold whole paragraphs, and unwrapping those would make the widest table set
+   the pane's sideways extent. When figures cannot fit, the table's auto
+   layout overflows and the pane scrolls sideways (overflow-auto on
+   .filing-pane), its right edge fading while there is more to the right.
+   The fade is a scroll-driven animation: where that is unsupported, or the
+   pane cannot scroll sideways, the timeline is inactive and --edge-fade stays
+   0px, so nothing is masked. */
+@property --edge-fade {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes edge-fade {
+  from,
+  90% {
+    --edge-fade: 32px;
+  }
+  to {
+    --edge-fade: 0px;
+  }
+}
+
+@media (max-width: 639px) {
+  .filing-html td.fig,
+  .filing-html th.fig {
+    white-space: nowrap;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .filing-pane {
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--edge-fade)), transparent);
+      animation: edge-fade linear both;
+      animation-timeline: scroll(self x);
+    }
+  }
 }

@@ -17,6 +17,25 @@ _REQUIRED = ("id", "question", "ticker", "accession", "section", "gold_sids")
 
 
 _CATEGORIES = ("table_tail", "column")
+_ALTERNATIVE_FIELDS = {
+    "accession", "gold_sids", "expected_values", "gold_cells", "requires_cell", "wrong_values",
+}
+
+
+@dataclass(frozen=True)
+class Alternative:
+    """Examples only: another filing that also answers an entry correctly --
+    a later filing reporting the same period's figure as restated. Judged by
+    the same rules as the entry's own pin."""
+
+    accession: str
+    gold_sids: list[int]
+    expected_values: tuple[tuple[str, ...], ...] = ()
+    gold_cells: tuple[int, ...] = ()
+    requires_cell: bool = False
+    # The asked metric's figures for other periods. `evals verify --examples`
+    # checks none appears outside the gold sids of the pin's filing.
+    wrong_values: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -32,6 +51,95 @@ class GoldenQuestion:
     category: str = ""
     # One inner tuple per required figure, holding its accepted spellings.
     expected_values: tuple[tuple[str, ...], ...] = ()
+    # Examples only: the group this one follows in the same conversation.
+    after: str = ""
+    # Examples only: a verified citation on this accession must carry cells.
+    requires_cell: bool = False
+    # Examples only: the cell indexes (tr.cells[i]) on the gold sids that may
+    # be cited -- the year-of-interest column of a multi-year row. Empty means
+    # any cell on a gold sid.
+    gold_cells: tuple[int, ...] = ()
+    # Examples only: other pins that satisfy this entry instead of its own.
+    alternatives: tuple[Alternative, ...] = ()
+    # Examples only: the asked metric's other-period figures (see Alternative).
+    wrong_values: tuple[str, ...] = ()
+
+    def pins(self) -> list[Alternative]:
+        """The entry's own pin first, then its alternatives."""
+        own = Alternative(
+            self.accession, self.gold_sids, self.expected_values,
+            self.gold_cells, self.requires_cell, self.wrong_values,
+        )
+        return [own, *self.alternatives]
+
+
+def _gold_sids(value, where: str) -> list[int]:
+    if not isinstance(value, list) or not all(isinstance(s, int) for s in value):
+        raise ValueError(f"golden entry {where}: gold_sids must be a list of ints")
+    return value
+
+
+def _expected_values(value, where: str) -> tuple[tuple[str, ...], ...]:
+    # Quoted strings only: an unquoted 115,186 inside a YAML flow list
+    # parses as two integers, which is exactly the mistake to catch here.
+    if not isinstance(value, list) or not all(
+        isinstance(spellings, list)
+        and spellings
+        and all(isinstance(s, str) and s for s in spellings)
+        for spellings in value
+    ):
+        raise ValueError(
+            f"golden entry {where}: expected_values must be a list of"
+            " non-empty lists of quoted strings"
+        )
+    return tuple(tuple(spellings) for spellings in value)
+
+
+def _wrong_values(value, where: str) -> tuple[str, ...]:
+    # Quoted strings only, for the same reason as expected_values.
+    if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
+        raise ValueError(
+            f"golden entry {where}: wrong_values must be a list of non-empty quoted strings"
+        )
+    return tuple(value)
+
+
+def _gold_cells(value, where: str) -> tuple[int, ...]:
+    if not isinstance(value, list) or not all(
+        isinstance(c, int) and not isinstance(c, bool) for c in value
+    ):
+        raise ValueError(f"golden entry {where}: gold_cells must be a list of ints")
+    return tuple(value)
+
+
+def _alternatives(value, where: str) -> tuple[Alternative, ...]:
+    if not isinstance(value, list) or not all(isinstance(a, dict) for a in value):
+        raise ValueError(f"golden entry {where}: alternatives must be a list of mappings")
+    alternatives = []
+    for n, alt in enumerate(value):
+        label = f"{where} alternative {n}"
+        unknown = set(alt) - _ALTERNATIVE_FIELDS
+        if unknown:
+            raise ValueError(f"golden entry {label}: unknown field(s) {sorted(unknown)}")
+        for field in ("accession", "gold_sids"):
+            if field not in alt:
+                raise ValueError(f"golden entry {label}: missing field {field!r}")
+        if not isinstance(alt["accession"], str) or not alt["accession"]:
+            raise ValueError(f"golden entry {label}: accession must be a quoted string")
+        requires_cell = alt.get("requires_cell", False)
+        if not isinstance(requires_cell, bool):
+            raise ValueError(f"golden entry {label}: requires_cell must be true or false")
+        alternatives.append(
+            Alternative(
+                alt["accession"],
+                _gold_sids(alt["gold_sids"], label),
+                _expected_values(alt.get("expected_values", []), label),
+                _gold_cells(alt.get("gold_cells", []), label),
+                requires_cell,
+                _wrong_values(alt.get("wrong_values", []), label),
+            )
+        )
+    return tuple(alternatives)
 
 
 def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
@@ -42,37 +150,35 @@ def load_golden(path: Path = GOLDEN_PATH) -> list[GoldenQuestion]:
         for field in _REQUIRED:
             if field not in entry:
                 raise ValueError(f"golden entry {entry_id}: missing field {field!r}")
-        if not isinstance(entry["gold_sids"], list) or not all(
-            isinstance(s, int) for s in entry["gold_sids"]
-        ):
-            raise ValueError(f"golden entry {entry_id}: gold_sids must be a list of ints")
+        _gold_sids(entry["gold_sids"], entry_id)
         group = entry.get("group", entry["id"])
         category = entry.get("category", "")
         if category and category not in _CATEGORIES:
             raise ValueError(f"golden entry {entry_id}: unknown category {category!r}")
-        expected = entry.get("expected_values", [])
-        # Quoted strings only: an unquoted 115,186 inside a YAML flow list
-        # parses as two integers, which is exactly the mistake to catch here.
-        if not isinstance(expected, list) or not all(
-            isinstance(spellings, list)
-            and spellings
-            and all(isinstance(s, str) and s for s in spellings)
-            for spellings in expected
-        ):
-            raise ValueError(
-                f"golden entry {entry_id}: expected_values must be a list of"
-                " non-empty lists of quoted strings"
-            )
         questions.append(
             GoldenQuestion(
                 *(entry[f] for f in _REQUIRED),
                 group,
                 category,
-                tuple(tuple(spellings) for spellings in expected),
+                _expected_values(entry.get("expected_values", []), entry_id),
+                entry.get("after", ""),
+                bool(entry.get("requires_cell", False)),
+                _gold_cells(entry.get("gold_cells", []), entry_id),
+                _alternatives(entry.get("alternatives", []), entry_id),
+                _wrong_values(entry.get("wrong_values", []), entry_id),
             )
         )
     by_group: dict[str, str] = {}
+    seen_groups: set[str] = set()
     for question in questions:
+        if question.after and (
+            question.after == question.group or question.after not in seen_groups
+        ):
+            raise ValueError(
+                f"golden entry {question.id}: after {question.after!r} must name a"
+                " group defined earlier in the file"
+            )
+        seen_groups.add(question.group)
         prior = by_group.setdefault(question.group, question.question)
         if prior != question.question:
             raise ValueError(
