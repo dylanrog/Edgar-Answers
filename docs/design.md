@@ -477,12 +477,29 @@ For each citation `{chunk_id, quote}`:
      form), so trimming "…was strong in China" to "…was strong" fails when
      "China" is nowhere in the chunk. In the motivating case "data" and
      "center" are in the chunk's table row. No chunk text: no repair;
+   - **a dropped side ends on a clause boundary**: on any side where the
+     failed quote has words the repair lacks, the repair's edge on that side
+     must fall on a clause boundary of the chunk, locating the repair with the
+     verifier's own match (`find_quote`). Dropping a lead, the repair must
+     start the chunk or follow ".", ":", ";", "?", "!" or a newline (spaces
+     between ignored); dropping a tail, its last character must be one of
+     ".", ":", ";", "?", "!", or the chunk text right after it must start with
+     one of those, a newline or the chunk's end. A repair that can't be
+     located fails. This stops a subject swap by truncation: a failed
+     "Gaming revenue was driven by strong demand for Blackwell" is never
+     repaired to "revenue was driven by…", which the chunk has only after
+     "Data Center" (even when "Gaming" occurs elsewhere in it), nor "…was
+     strong in China" to "…was strong" when the chunk goes on "in China and
+     India." The motivating repair drops "Data Center" at its end and ends on
+     "serve:", so it passes; nothing is dropped before its run, so no start
+     check applies;
    - **leftovers are short**: the failed quote may keep at most **3 words**
      (the garbled bit), the repair may add at most **12** (a caption's
      lead-in, such as "The following table summarizes information
      pertaining to our", 8 words);
    - **leftovers carry no polarity**: neither may hold a negation (not, no,
-     never, nor, without, none, cannot, n't, longer), a direction word (the
+     never, nor, without, none, cannot, n't, longer, non — so "non-GAAP"
+     and "GAAP" never stand in for each other), a direction word (the
      figure path's down words below — loss, decrease, fell, lower, "used
      in", expense and the rest — plus increase\*, rose, grew, higher, up,
      more, gain\*), or a scope word (include\*, exclude\*,
@@ -600,7 +617,8 @@ For each citation `{chunk_id, quote}`:
      trimmed to whole words, leftover words on each side of the run in at
      most one of the two quotes (edges only), at most 3 words left over in
      the failed quote and 12 in the repair, every dropped word present in
-     the chunk, no negation, direction or scope word in either leftover,
+     the chunk, a clause boundary at every edge where words were dropped,
+     no negation, direction or scope word in either leftover,
      and no significant figure in the repair. A claim's figures are its
      *significant* ones (`figures.significant_figures`): written with a unit,
      with decimals, or ≥1,000 — bare years and small integers ("Q2", "Item

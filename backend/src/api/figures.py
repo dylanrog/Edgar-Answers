@@ -18,7 +18,7 @@ from difflib import SequenceMatcher
 from pipeline.tables import Cell
 
 from .normalize import normalize
-from .verify import VerifiedCitation
+from .verify import VerifiedCitation, find_quote
 
 _MARKER = re.compile(r"\[(\d+)\]")
 # Whole figures only: "115,186", "115.2", "2025". A lookbehind/lookahead keeps
@@ -523,7 +523,7 @@ _WORD = re.compile(r"\w+")
 # Negation, direction and scope: dropping or adding any of these changes what
 # the quote says. On word boundaries, casefolded; "n't" anywhere.
 _POLARITY = re.compile(
-    r"n't|\b(?:not|no|never|nor|without|none|cannot|longer|only|except|unless"
+    r"n't|\b(?:not|no|non|never|nor|without|none|cannot|longer|only|except|unless"
     r"|increas\w*|rose|grew|higher|up|more|gain\w*|exclud\w*|includ\w*)\b",
     re.IGNORECASE,
 )
@@ -553,6 +553,26 @@ def _transcription_form(text: str) -> str:
     return " ".join(normalize(text)[0].replace("-", " ").split())
 
 
+# What a clause ends with, for the boundary check on a side the repair drops.
+_CLAUSE_END = ".:;?!"
+
+
+def _starts_a_clause(excerpt: str, start: int) -> bool:
+    """excerpt[start:] begins the chunk or follows a clause end or a newline
+    (spaces between are ignored)."""
+    before = excerpt[:start].rstrip(" \t")
+    return not before or before[-1] in _CLAUSE_END + "\n"
+
+
+def _ends_a_clause(excerpt: str, end: int) -> bool:
+    """excerpt[:end] ends with a clause end, or what follows it (spaces
+    ignored) is a clause end, a newline, or the end of the chunk."""
+    if excerpt[:end].rstrip()[-1:] in tuple(_CLAUSE_END):
+        return True
+    after = excerpt[end:].lstrip(" \t")
+    return not after or after[0] in _CLAUSE_END + "\n"
+
+
 def transcription_matches(original: str, repaired: str, excerpt: str | None) -> bool:
     """The repair fixes how the failed quote was copied, and nothing else.
 
@@ -569,7 +589,15 @@ def transcription_matches(original: str, repaired: str, excerpt: str | None) -> 
       (`_POLARITY`, `_DOWN`);
     - every word the repair drops from the failed quote is a word of the
       excerpt (whole words, same form), so a trimmed tail can't take an
-      invented "in China" with it. No excerpt: no repair.
+      invented "in China" with it. No excerpt: no repair;
+    - on a side where the repair drops words, its edge must fall on a clause
+      boundary of the excerpt (located as the verifier locates it): dropping
+      a lead, it must start the chunk or follow ".", ":", ";", "?", "!" or a
+      newline; dropping a tail, it must end on one of those or be followed by
+      one, a newline or the chunk's end. Truncating "Data Center revenue was
+      driven by…" to "revenue was driven by…" therefore never stands in for
+      a failed "Gaming revenue was driven by…". A repair that can't be
+      located fails.
     """
     if not excerpt:
         return False
@@ -595,7 +623,18 @@ def transcription_matches(original: str, repaired: str, excerpt: str | None) -> 
     ):
         return False
     excerpt_words = set(_WORD.findall(_transcription_form(excerpt)))
-    return all(word in excerpt_words for word in dropped)
+    if not all(word in excerpt_words for word in dropped):
+        return False
+    drops_lead, drops_tail = (bool(_WORD.search(side)) for side, _ in sides)
+    if not (drops_lead or drops_tail):
+        return True
+    span = find_quote(excerpt, repaired)
+    if span is None:
+        return False
+    start, end = span
+    return (not drops_lead or _starts_a_clause(excerpt, start)) and (
+        not drops_tail or _ends_a_clause(excerpt, end)
+    )
 
 
 def figure_free_repair_accepted(original: str, repaired: str, excerpt: str | None) -> bool:
