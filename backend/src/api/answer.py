@@ -303,7 +303,7 @@ def _repair(
         logger.info("quote repair for marker %s did not verify", citation.marker)
         return None
     if not significant_figures(claim):
-        if not figure_free_repair_accepted(citation.quote, repaired.quote):
+        if not figure_free_repair_accepted(citation.quote, repaired.quote, chunk.text):
             logger.info(
                 "quote repair for marker %s verified but is not a transcription fix",
                 citation.marker,
