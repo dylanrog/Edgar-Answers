@@ -102,11 +102,9 @@ class StubQuoteRepairer:
         self.answer = answer
         self.error = error
         self.calls: list[tuple[str, str, str]] = []
-        self.figure_free: list[bool] = []  # the flag each call was made with
 
-    def repair(self, claim, quote, excerpt, figure_free=False):
+    def repair(self, claim, quote, excerpt):
         self.calls.append((claim, quote, excerpt))
-        self.figure_free.append(figure_free)
         if self.error is not None:
             raise self.error
         return self.answer(quote) if callable(self.answer) else self.answer
