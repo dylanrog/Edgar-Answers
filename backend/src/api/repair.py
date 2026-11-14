@@ -43,8 +43,12 @@ _WRAPPING = {'"': '"', "“": "”", "'": "'"}
 class QuoteRepairer(Protocol):
     """The LLM, narrowed to re-quoting one failed citation."""
 
-    def repair(self, claim: str, quote: str, excerpt: str) -> str | None:
-        """A passage copied from `excerpt` that supports `claim`, or None."""
+    def repair(
+        self, claim: str, quote: str, excerpt: str, figure_free: bool = False
+    ) -> str | None:
+        """A passage copied from `excerpt` that supports `claim`, or None.
+        `figure_free`: the claim states no significant figure, so the passage
+        should hold no numbers either (design §6.3 step 5)."""
         ...
 
 
@@ -62,6 +66,24 @@ row, copy from the start of that row through the figure and stop there.
 If the excerpt only discusses the same topic, or gives a different figure than
 the claim, the claim is not supported: reply with exactly NONE. Never pick a
 nearby passage just because it is close."""
+
+
+# Added only for a figure-free claim; the figure path's prompt stays exactly
+# REPAIR_SYSTEM_PROMPT. Asked to fix a quote that stitched a table caption onto
+# a row label, the model returned the caption *through the row's figures* 5 of
+# 5 times, which the transcription guard rightly rejects. A live probe with
+# this sentence appended (2026-11-14) got the identical reply 5 of 5 times: on
+# its own it does not change that behaviour.
+FIGURE_FREE_INSTRUCTION = (
+    "The claim states no figures: return a passage that contains no numbers, "
+    "and stop before any table figures or column headings."
+)
+
+
+def repair_system_prompt(figure_free: bool) -> str:
+    if figure_free:
+        return f"{REPAIR_SYSTEM_PROMPT}\n\n{FIGURE_FREE_INSTRUCTION}"
+    return REPAIR_SYSTEM_PROMPT
 
 
 def build_repair_prompt(claim: str, quote: str, excerpt: str) -> str:
@@ -114,22 +136,26 @@ class AnthropicQuoteRepairer:
     def _anthropic(self):
         return _client(self.api_key or os.environ["ANTHROPIC_API_KEY"], self.timeout)
 
-    def repair(self, claim: str, quote: str, excerpt: str) -> str | None:
+    def repair(
+        self, claim: str, quote: str, excerpt: str, figure_free: bool = False
+    ) -> str | None:
         # httpx's timeouts bound each phase (connect 3 s; each read, write and
         # pool wait 10 s), not the call as a whole. future.result bounds the
         # whole call at `timeout` seconds of wall clock: past it, this raises
         # TimeoutError and the answer path keeps the unverified original. With
         # REPAIR_BUDGET_SECONDS that bounds repair's added latency per answer
         # at under BUDGET + TIMEOUT (20 s).
-        future = _EXECUTOR.submit(self._call, claim, quote, excerpt)
+        future = _EXECUTOR.submit(self._call, claim, quote, excerpt, figure_free)
         return future.result(timeout=self.timeout)
 
-    def _call(self, claim: str, quote: str, excerpt: str) -> str | None:
+    def _call(
+        self, claim: str, quote: str, excerpt: str, figure_free: bool = False
+    ) -> str | None:
         message = self._anthropic().messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             temperature=0,
-            system=REPAIR_SYSTEM_PROMPT,
+            system=repair_system_prompt(figure_free),
             messages=[
                 {"role": "user", "content": build_repair_prompt(claim, quote, excerpt)}
             ],

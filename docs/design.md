@@ -437,8 +437,14 @@ For each citation `{chunk_id, quote}`:
    text** — no other excerpt, no table-context line. It must answer with a
    passage copied verbatim from that chunk (≤300 characters) that itself
    states the claim's facts and figures, or `NONE` (a same-topic passage or a
-   different figure is `NONE`). The reply then goes through **the same
-   check**, steps 1–4
+   different figure is `NONE`). For a figure-free claim the call passes
+   `figure_free=True`, which appends one sentence to that prompt ("The claim
+   states no figures: return a passage that contains no numbers, and stop
+   before any table figures or column headings."); the figure path's prompt
+   is byte-identical to before, pinned by a test. A live probe found the
+   sentence alone did not change the tutorial case's reply (the caption run
+   on through the Data Center row's figures, 5 of 5). The reply then goes
+   through **the same check**, steps 1–4
    unchanged: exact normalized substring match, sids and cells resolved from
    the *new* quote. What else it must pass depends on the claim.
 

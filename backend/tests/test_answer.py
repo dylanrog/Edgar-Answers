@@ -474,6 +474,7 @@ def test_the_repair_sees_the_claim_the_failed_quote_and_only_the_cited_chunk(see
     repairer = StubQuoteRepairer(GOOD_QUOTE)
     ask_with_repairer(seeded_conn, response_with(MISQUOTE, chunk_id_of(seeded_conn)), repairer)
     [(claim, quote, excerpt)] = repairer.calls
+    assert repairer.figure_free == [False]
     assert "Total net sales were $391.0 billion" in claim
     assert "[1]" not in claim
     assert quote == MISQUOTE
@@ -660,6 +661,7 @@ def test_a_figure_free_claims_garbled_quote_is_repaired(seeded_conn):
     assert len(repairer.calls) == 1
     claim, quote, excerpt = repairer.calls[0]
     assert claim == "Services revenue reached a record"
+    assert repairer.figure_free == [True]
     assert excerpt == CHUNK_TEXT
     assert citation["verified"] is True
     assert citation["repaired"] is True

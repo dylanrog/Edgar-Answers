@@ -286,8 +286,9 @@ def _repair(
     into a verified citation. A figure-free claim needs a transcription fix
     of its own failed quote that states no figure
     (figures.figure_free_repair_accepted)."""
+    figure_free = not significant_figures(claim)
     try:
-        quote = repairer.repair(claim, citation.quote, chunk.text)
+        quote = repairer.repair(claim, citation.quote, chunk.text, figure_free=figure_free)
     except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
         logger.warning("quote repair failed for marker %s: %s", citation.marker, exc)
         return None
@@ -302,7 +303,7 @@ def _repair(
     if not repaired.verified:
         logger.info("quote repair for marker %s did not verify", citation.marker)
         return None
-    if not significant_figures(claim):
+    if figure_free:
         if not figure_free_repair_accepted(citation.quote, repaired.quote, chunk.text):
             logger.info(
                 "quote repair for marker %s verified but is not a transcription fix",

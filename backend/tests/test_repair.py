@@ -102,3 +102,51 @@ def test_a_repair_call_is_bounded_by_wall_clock(monkeypatch):
     finally:
         release.set()
     assert time.monotonic() - started < 1.0
+
+
+# The figure path's system prompt as bracketed (35e2592); it must not move.
+FIGURE_PATH_PROMPT_SHA256 = "13f73536eaff55777271ee230a3f175041975e15283ceb95903952932868f2eb"
+
+
+def _captured_system(monkeypatch, **repair_kwargs):
+    from api import repair
+
+    sent = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+
+            class Message:
+                content = []
+
+            return Message()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    monkeypatch.setattr(repair, "_client", lambda *args: FakeClient())
+    repair.AnthropicQuoteRepairer(api_key="k").repair("claim", "quote", "excerpt", **repair_kwargs)
+    return sent["system"]
+
+
+def test_the_figure_path_prompt_is_byte_identical(monkeypatch):
+    import hashlib
+
+    from api.repair import REPAIR_SYSTEM_PROMPT
+
+    assert hashlib.sha256(REPAIR_SYSTEM_PROMPT.encode()).hexdigest() == FIGURE_PATH_PROMPT_SHA256
+    assert _captured_system(monkeypatch) == REPAIR_SYSTEM_PROMPT
+    assert _captured_system(monkeypatch, figure_free=False) == REPAIR_SYSTEM_PROMPT
+
+
+def test_a_figure_free_repair_asks_for_a_passage_with_no_numbers(monkeypatch):
+    from api.repair import FIGURE_FREE_INSTRUCTION, REPAIR_SYSTEM_PROMPT
+
+    system = _captured_system(monkeypatch, figure_free=True)
+    assert system.startswith(REPAIR_SYSTEM_PROMPT)
+    assert FIGURE_FREE_INSTRUCTION in system
+    assert FIGURE_FREE_INSTRUCTION == (
+        "The claim states no figures: return a passage that contains no numbers, "
+        "and stop before any table figures or column headings."
+    )
