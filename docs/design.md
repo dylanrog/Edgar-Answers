@@ -442,7 +442,14 @@ For each citation `{chunk_id, quote}`:
    unchanged: exact normalized substring match, sids and cells resolved from
    the *new* quote. What else it must pass depends on the claim.
 
-   **A figure-free claim** (no significant figure, see below) gets the
+   **A figure-free claim** (no significant figure, see below) first has the
+   repairer's reply **trimmed before its first figure**
+   (`figures.trim_before_first_figure`): a reply containing a digit is cut at
+   the last sentence end or colon before that digit, keeping the
+   punctuation — a verbatim prefix of the reply — and with no such boundary
+   the repair fails. That turns the live reply "…markets we serve: Year Ended
+   Jan 28, 2024 … Data Center $ 47,525" into the caption alone. The trimmed
+   quote then gets the unchanged exact match and the
    **transcription guard** (`figures.figure_free_repair_accepted`): the
    longest common contiguous run of the failed quote and the repaired quote,
    both normalized as in step 1 (casefold, curly quotes and dashes
@@ -612,7 +619,9 @@ For each citation `{chunk_id, quote}`:
      even when a correct passage exists. Figure-free repairs draw on the
      same per-answer cap and deadline as figure claims, so an answer with
      several failed qualitative asides can use up the cap before a figure
-     claim is reached.
+     claim is reached. A prompt hint asking for a number-free passage was
+     tried first and changed nothing (5 of 5 identical live replies), so the
+     trim is deterministic instead.
    - A citation that verified on the first pass is never sent to repair.
    - A citation naming a chunk the model was never shown is never repaired —
      there is no excerpt to re-quote from.

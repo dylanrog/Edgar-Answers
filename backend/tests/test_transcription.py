@@ -185,3 +185,49 @@ def test_words_the_repair_drops_must_be_in_the_excerpt():
     assert not figure_free_repair_accepted(original, repaired, excerpt)
     # The same trim is fine when the dropped words are real text of the chunk.
     assert figure_free_repair_accepted(original, repaired, excerpt + " Sales in China fell.")
+
+
+# --- The trim before the first figure (figure-free repairs only) -------------
+
+# The live repairer's reply to the tutorial aside, 5 of 5 times (2026-11-14).
+LIVE_REPLY = (
+    "The following table summarizes information pertaining to our revenue by each of "
+    "the specialized markets we serve: Year Ended Jan 28, 2024 Jan 29, 2023 Jan 30, "
+    "2022 Revenue: (In millions) Data Center $ 47,525"
+)
+
+
+def test_the_live_reply_is_trimmed_to_the_caption_and_accepted():
+    from api.figures import trim_before_first_figure
+
+    # The first digit is the "2" of "Jan 28", before "Revenue:" -- so the last
+    # colon ahead of it is "serve:".
+    assert LIVE_REPLY.index("2") < LIVE_REPLY.index("Revenue:")
+    trimmed = trim_before_first_figure(LIVE_REPLY)
+    assert trimmed == CAPTION
+    assert LIVE_REPLY.startswith(trimmed)  # a verbatim prefix of the reply
+    assert trimmed in NVDA_CHUNK
+    assert not figure_free_repair_accepted(GARBLED, LIVE_REPLY, NVDA_CHUNK)
+    assert figure_free_repair_accepted(GARBLED, trimmed, NVDA_CHUNK)
+
+
+def test_a_reply_whose_first_digit_precedes_any_boundary_is_dropped():
+    from api.figures import trim_before_first_figure
+
+    assert trim_before_first_figure("Data Center $ 47,525 for the year: strong demand") is None
+    assert trim_before_first_figure("Revenue of 47,525. Data Center grew.") is None
+
+
+def test_a_reply_with_no_digit_is_unchanged():
+    from api.figures import trim_before_first_figure
+
+    assert trim_before_first_figure(CAPTION) == CAPTION
+
+
+def test_the_trim_keeps_a_sentence_end_and_needs_a_space_after_it():
+    from api.figures import trim_before_first_figure
+
+    reply = "Demand was strong. Data Center revenue grew to $47.5 billion"
+    assert trim_before_first_figure(reply) == "Demand was strong."
+    # "U.S." has no space after its periods: not a sentence end.
+    assert trim_before_first_figure("Sales in the U.S.A were 4,000") is None

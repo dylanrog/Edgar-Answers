@@ -606,3 +606,28 @@ def figure_free_repair_accepted(original: str, repaired: str, excerpt: str | Non
     return not significant_figures(repaired) and transcription_matches(
         original, repaired, excerpt
     )
+
+
+def trim_before_first_figure(reply: str) -> str | None:
+    """A figure-free repair cut short of its first number (design §6.3 step 5).
+
+    Asked to fix a quote that stitched a table caption onto a row label, the
+    repairer copies the caption on through the row's figures ("…markets we
+    serve: Year Ended Jan 28, 2024 … Data Center $ 47,525"). A reply with no
+    digit is returned unchanged. Otherwise it is cut at the last sentence end
+    (".", "?" or "!" followed by whitespace) or colon before its first digit,
+    keeping that punctuation, then stripped -- a verbatim prefix of the
+    reply, so still exact text if the reply was. None when no such boundary
+    exists or nothing is left: the repair fails closed.
+    """
+    first_digit = next((i for i, ch in enumerate(reply) if ch.isdigit()), None)
+    if first_digit is None:
+        return reply
+    head = reply[:first_digit]
+    cut = None
+    for i, ch in enumerate(head):
+        if ch == ":" or (ch in ".?!" and i + 1 < len(head) and head[i + 1].isspace()):
+            cut = i + 1
+    if cut is None:
+        return None
+    return reply[:cut].strip() or None

@@ -283,3 +283,28 @@ def test_a_figure_free_aside_with_a_stitched_caption_quote_is_repaired(seeded):
     assert data["repaired"] is True
     assert data["quote"] == caption
     assert data["cells"] == []
+
+
+@pytest.mark.db
+def test_a_figure_free_repair_running_into_the_table_is_trimmed_and_accepted(seeded):
+    # The live failure mode: the repairer copies the caption on through the
+    # first row's figures. Trimmed before the first figure, it is the caption.
+    conn, chunk_id, _ = seeded
+    garbled = "Revenue by specialized markets: Data Center"
+    caption = "The following table summarizes revenue by specialized markets:"
+    response = (
+        "[1] NVIDIA's Data Center revenue represents sales from its data center segment.\n\n"
+        '```json\n{"citations": [{"marker": 1, "chunk_id": CHUNK, '
+        f'"quote": "{garbled}"}}]}}\n```'
+    ).replace("CHUNK", str(chunk_id))
+    repairer = StubQuoteRepairer(caption + " Year Ended Jan 26, 2025 Data Center $ 115,186")
+    events = list(
+        answer_stream(
+            conn, FakeEmbedder(), StubGenerator(response), StubCompanyDetector(),
+            "What was Data Center revenue?", tickers=["TSTW"], quote_repairer=repairer,
+        )
+    )
+    data = next(e for e in events if e.name == "citation").data
+    assert data["verified"] is True
+    assert data["repaired"] is True
+    assert data["quote"] == caption
