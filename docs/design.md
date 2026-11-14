@@ -442,7 +442,14 @@ For each citation `{chunk_id, quote}`:
    unchanged: exact normalized substring match, sids and cells resolved from
    the *new* quote. What else it must pass depends on the claim.
 
-   **A figure-free claim** (no significant figure, see below) gets the
+   **A figure-free claim** (no significant figure, see below) first has the
+   repairer's reply **trimmed before its first figure**
+   (`figures.trim_before_first_figure`): a reply containing a digit is cut at
+   the last sentence end or colon before that digit, keeping the
+   punctuation — a verbatim prefix of the reply — and with no such boundary
+   the repair fails. That turns the live reply "…markets we serve: Year Ended
+   Jan 28, 2024 … Data Center $ 47,525" into the caption alone. The trimmed
+   quote then gets the unchanged exact match and the
    **transcription guard** (`figures.figure_free_repair_accepted`): the
    longest common contiguous run of the failed quote and the repaired quote,
    both normalized as in step 1 (casefold, curly quotes and dashes
@@ -450,7 +457,26 @@ For each citation `{chunk_id, quote}`:
    length and at least 20 characters**, and the repaired quote must state
    **no significant figure**. The run is first trimmed to whole words at
    both ends, in both quotes, so a run that ends on the "in" of "increased"
-   does not count those letters. Outside the run:
+   does not count those letters (for this guard a hyphen also reads as a
+   space, so "all-time" and "all time" are one transcription). Outside the
+   run:
+   - **edges only**: each quote's leftover has a part before the run and a
+     part after it, and on each side at most *one* of the two quotes may
+     have words. A repair may trim the failed quote at an edge or extend it
+     at an edge, never replace words on the same side. The motivating case
+     passes because the failed quote's extra words ("Data Center") come
+     after the run and the repair's ("…pertaining to our") before it. A
+     subject, company, year or modal swap ("Gaming revenue was driven by…"
+     → "Data Center revenue was driven by…", "Microsoft is our largest
+     customer" → "Amazon is…", "In fiscal 2024, we adopted…" → "In fiscal
+     2025…", "We will discontinue" → "We may discontinue") leaves words on
+     the same side of both quotes and is rejected — a class no word list
+     could close;
+   - **dropped words are real**: every word the repair drops from the failed
+     quote must be a whole word of the cited chunk's text (same normalized
+     form), so trimming "…was strong in China" to "…was strong" fails when
+     "China" is nowhere in the chunk. In the motivating case "data" and
+     "center" are in the chunk's table row. No chunk text: no repair;
    - **leftovers are short**: the failed quote may keep at most **3 words**
      (the garbled bit), the repair may add at most **12** (a caption's
      lead-in, such as "The following table summarizes information
@@ -571,22 +597,31 @@ For each citation `{chunk_id, quote}`:
      invented second figure through a quote of the true first one.
    - **A figure-free claim is repaired only by a transcription fix** of its
      own failed quote: ≥60% of it, ≥20 characters, one contiguous run
-     trimmed to whole words, at most 3 words left over in the failed quote
-     and 12 in the repair, no negation, direction or scope word in either
-     leftover, and no significant figure in the repair. A claim's figures are its
+     trimmed to whole words, leftover words on each side of the run in at
+     most one of the two quotes (edges only), at most 3 words left over in
+     the failed quote and 12 in the repair, every dropped word present in
+     the chunk, no negation, direction or scope word in either leftover,
+     and no significant figure in the repair. A claim's figures are its
      *significant* ones (`figures.significant_figures`): written with a unit,
      with decimals, or ≥1,000 — bare years and small integers ("Q2", "Item
      7") don't count. Residuals: the guard does not check the claim's
      meaning, only that the model was already quoting this passage — no
      weaker than first-pass verification of a figure-free claim, and no
-     stronger; a meaning-changing word outside the lists (an adjective such
-     as "temporary" vs "permanent") in a leftover is not caught; a failed quote that garbles *two* passages can be repaired
+     stronger; trimming or extending at an edge can still change meaning
+     when the trimmed or added words are outside the polarity lists yet
+     present in the chunk (dropping a real "for fiscal 2024" that the chunk
+     mentions elsewhere, or extending with a qualifying clause such as
+     "temporarily"); the dropped-words check is per word, not per phrase, so
+     words that each occur somewhere in the chunk pass even if the phrase
+     does not; a failed quote that garbles *two* passages can be repaired
      to whichever one holds the 60% run; and a figure-free claim whose
      quote is mostly invented, or under 20 characters, stays unverified
      even when a correct passage exists. Figure-free repairs draw on the
      same per-answer cap and deadline as figure claims, so an answer with
      several failed qualitative asides can use up the cap before a figure
-     claim is reached.
+     claim is reached. A prompt hint asking for a number-free passage was
+     tried first and changed nothing (5 of 5 identical live replies), so the
+     trim is deterministic instead.
    - A citation that verified on the first pass is never sent to repair.
    - A citation naming a chunk the model was never shown is never repaired —
      there is no excerpt to re-quote from.

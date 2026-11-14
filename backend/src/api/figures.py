@@ -546,35 +546,88 @@ def _shared_run(a: str, b: str) -> tuple[int, int, int]:
     return i, j, n
 
 
-def transcription_matches(original: str, repaired: str) -> bool:
+def _transcription_form(text: str) -> str:
+    """normalize() (casefold, curly quotes and dashes straightened), with a
+    hyphen read as a space and whitespace collapsed: "all-time" and "all
+    time" are one transcription."""
+    return " ".join(normalize(text)[0].replace("-", " ").split())
+
+
+def transcription_matches(original: str, repaired: str, excerpt: str | None) -> bool:
     """The repair fixes how the failed quote was copied, and nothing else.
 
-    Both quotes are normalized as verification normalizes them (casefold,
-    curly quotes and dashes straightened). Their longest common contiguous
-    run, trimmed to whole words, must be at least 60% of the failed quote and
-    at least 20 characters. Outside the run the failed quote may keep at most
-    3 words and the repair at most 12, and neither leftover may hold a
-    negation, direction or scope word (`_POLARITY`, `_DOWN`)."""
-    a = normalize(original)[0].strip()
-    b = normalize(repaired)[0].strip()
+    Both quotes are put in `_transcription_form`. Their longest common
+    contiguous run, trimmed to whole words, must be at least 60% of the
+    failed quote and at least 20 characters. Outside the run:
+
+    - edges only: on each side of the run (before, after) at most one of the
+      two quotes has words left -- a repair trims or extends the failed
+      quote at an edge, never replaces words on the same side ("Gaming
+      revenue was ..." is never repaired to "Data Center revenue was ...");
+    - the failed quote keeps at most 3 words and the repair at most 12;
+    - neither leftover holds a negation, direction or scope word
+      (`_POLARITY`, `_DOWN`);
+    - every word the repair drops from the failed quote is a word of the
+      excerpt (whole words, same form), so a trimmed tail can't take an
+      invented "in China" with it. No excerpt: no repair.
+    """
+    if not excerpt:
+        return False
+    a = _transcription_form(original)
+    b = _transcription_form(repaired)
     if not a or not b:
         return False
     i, j, n = _shared_run(a, b)
     if n < MIN_TRANSCRIPTION_CHARS or n < TRANSCRIPTION_SHARE * len(a):
         return False
+    sides = ((a[:i], b[:j]), (a[i + n :], b[j + n :]))
+    if any(_WORD.search(a_side) and _WORD.search(b_side) for a_side, b_side in sides):
+        return False
     original_rest = a[:i] + " " + a[i + n :]
     repaired_rest = b[:j] + " " + b[j + n :]
-    if len(_WORD.findall(original_rest)) > MAX_ORIGINAL_LEFTOVER_WORDS:
+    dropped = _WORD.findall(original_rest)
+    if len(dropped) > MAX_ORIGINAL_LEFTOVER_WORDS:
         return False
     if len(_WORD.findall(repaired_rest)) > MAX_REPAIRED_LEFTOVER_WORDS:
         return False
-    return not any(
+    if any(
         _POLARITY.search(rest) or _DOWN.search(rest) for rest in (original_rest, repaired_rest)
+    ):
+        return False
+    excerpt_words = set(_WORD.findall(_transcription_form(excerpt)))
+    return all(word in excerpt_words for word in dropped)
+
+
+def figure_free_repair_accepted(original: str, repaired: str, excerpt: str | None) -> bool:
+    """A figure-free claim's repair: a transcription fix of the failed quote
+    against its excerpt (`transcription_matches`), stating no significant
+    figure of its own -- a claim that gives no number must not end up
+    verified against one."""
+    return not significant_figures(repaired) and transcription_matches(
+        original, repaired, excerpt
     )
 
 
-def figure_free_repair_accepted(original: str, repaired: str) -> bool:
-    """A figure-free claim's repair: a transcription fix of the failed quote,
-    stating no significant figure of its own -- a claim that gives no number
-    must not end up verified against one."""
-    return not significant_figures(repaired) and transcription_matches(original, repaired)
+def trim_before_first_figure(reply: str) -> str | None:
+    """A figure-free repair cut short of its first number (design §6.3 step 5).
+
+    Asked to fix a quote that stitched a table caption onto a row label, the
+    repairer copies the caption on through the row's figures ("…markets we
+    serve: Year Ended Jan 28, 2024 … Data Center $ 47,525"). A reply with no
+    digit is returned unchanged. Otherwise it is cut at the last sentence end
+    (".", "?" or "!" followed by whitespace) or colon before its first digit,
+    keeping that punctuation, then stripped -- a verbatim prefix of the
+    reply, so still exact text if the reply was. None when no such boundary
+    exists or nothing is left: the repair fails closed.
+    """
+    first_digit = next((i for i, ch in enumerate(reply) if ch.isdigit()), None)
+    if first_digit is None:
+        return reply
+    head = reply[:first_digit]
+    cut = None
+    for i, ch in enumerate(head):
+        if ch == ":" or (ch in ".?!" and i + 1 < len(head) and head[i + 1].isspace()):
+            cut = i + 1
+    if cut is None:
+        return None
+    return reply[:cut].strip() or None

@@ -22,6 +22,7 @@ from .figures import (
     narrow_cells,
     quote_states,
     significant_figures,
+    trim_before_first_figure,
 )
 from .generate import (
     SYSTEM_PROMPT,
@@ -291,6 +292,11 @@ def _repair(
     except Exception as exc:  # noqa: BLE001 -- degrades to the unverified original
         logger.warning("quote repair failed for marker %s: %s", citation.marker, exc)
         return None
+    figure_free = not significant_figures(claim)
+    if quote and figure_free:
+        # The reply often runs from the passage on into a table's figures;
+        # cut it before the first one. The figure path is never trimmed.
+        quote = trim_before_first_figure(quote)
     if not quote or len(quote) > MAX_QUOTE_CHARS:
         return None
     repaired = verify_citation(
@@ -302,8 +308,8 @@ def _repair(
     if not repaired.verified:
         logger.info("quote repair for marker %s did not verify", citation.marker)
         return None
-    if not significant_figures(claim):
-        if not figure_free_repair_accepted(citation.quote, repaired.quote):
+    if figure_free:
+        if not figure_free_repair_accepted(citation.quote, repaired.quote, chunk.text):
             logger.info(
                 "quote repair for marker %s verified but is not a transcription fix",
                 citation.marker,
