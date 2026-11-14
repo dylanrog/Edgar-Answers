@@ -508,26 +508,69 @@ def quote_states(
 # A claim with no significant figure has nothing quote_states could check, so
 # its repair is held to what first-pass verification ever promised it: that
 # the quote is real text. The repair may fix how the model copied a passage,
-# not find a new one: most of the failed quote must already be in the
-# repaired one, contiguously.
+# not find a new one, and not change what it says: most of the failed quote
+# must already be in the repaired one, contiguously, and what either quote
+# has outside that shared run must be short and carry no negation, direction
+# or scope word -- the words that would make a wrong claim look supported.
 
 TRANSCRIPTION_SHARE = 0.6
 MIN_TRANSCRIPTION_CHARS = 20
+# Words outside the shared run: the failed quote may lose a few (the garbled
+# bit), the repair may add a few more (a caption's lead-in), no more.
+MAX_ORIGINAL_LEFTOVER_WORDS = 3
+MAX_REPAIRED_LEFTOVER_WORDS = 12
+_WORD = re.compile(r"\w+")
+# Negation, direction and scope: dropping or adding any of these changes what
+# the quote says. On word boundaries, casefolded; "n't" anywhere.
+_POLARITY = re.compile(
+    r"n't|\b(?:not|no|never|nor|without|none|cannot|longer|only|except|unless"
+    r"|increas\w*|rose|grew|higher|up|more|gain\w*|exclud\w*|includ\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _boundary(text: str, i: int) -> bool:
+    return i <= 0 or i >= len(text) or not (text[i - 1].isalnum() and text[i].isalnum())
+
+
+def _shared_run(a: str, b: str) -> tuple[int, int, int]:
+    """(start in a, start in b, length) of the longest common contiguous run,
+    trimmed so it starts and ends on a word boundary in both strings -- a run
+    ending on the "in" of "increased" must not count those letters."""
+    match = SequenceMatcher(None, a, b, autojunk=False).find_longest_match(0, len(a), 0, len(b))
+    i, j, n = match.a, match.b, match.size
+    while n > 0 and not (_boundary(a, i) and _boundary(b, j)):
+        i, j, n = i + 1, j + 1, n - 1
+    while n > 0 and not (_boundary(a, i + n) and _boundary(b, j + n)):
+        n -= 1
+    return i, j, n
 
 
 def transcription_matches(original: str, repaired: str) -> bool:
-    """The longest common contiguous run of the two quotes, both normalized
-    as verification normalizes them (casefold, curly quotes and dashes
-    straightened), is at least 60% of the failed quote's normalized length
-    and at least 20 characters long."""
+    """The repair fixes how the failed quote was copied, and nothing else.
+
+    Both quotes are normalized as verification normalizes them (casefold,
+    curly quotes and dashes straightened). Their longest common contiguous
+    run, trimmed to whole words, must be at least 60% of the failed quote and
+    at least 20 characters. Outside the run the failed quote may keep at most
+    3 words and the repair at most 12, and neither leftover may hold a
+    negation, direction or scope word (`_POLARITY`, `_DOWN`)."""
     a = normalize(original)[0].strip()
     b = normalize(repaired)[0].strip()
     if not a or not b:
         return False
-    run = SequenceMatcher(None, a, b, autojunk=False).find_longest_match(
-        0, len(a), 0, len(b)
-    ).size
-    return run >= MIN_TRANSCRIPTION_CHARS and run >= TRANSCRIPTION_SHARE * len(a)
+    i, j, n = _shared_run(a, b)
+    if n < MIN_TRANSCRIPTION_CHARS or n < TRANSCRIPTION_SHARE * len(a):
+        return False
+    original_rest = a[:i] + " " + a[i + n :]
+    repaired_rest = b[:j] + " " + b[j + n :]
+    if len(_WORD.findall(original_rest)) > MAX_ORIGINAL_LEFTOVER_WORDS:
+        return False
+    if len(_WORD.findall(repaired_rest)) > MAX_REPAIRED_LEFTOVER_WORDS:
+        return False
+    return not any(
+        _POLARITY.search(rest) or _DOWN.search(rest) for rest in (original_rest, repaired_rest)
+    )
 
 
 def figure_free_repair_accepted(original: str, repaired: str) -> bool:

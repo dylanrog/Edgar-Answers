@@ -437,9 +437,8 @@ For each citation `{chunk_id, quote}`:
    text** — no other excerpt, no table-context line. It must answer with a
    passage copied verbatim from that chunk (≤300 characters) that itself
    states the claim's facts and figures, or `NONE` (a same-topic passage or a
-   different figure is `NONE`); the prompt adds that a failed quote is
-   usually a garbled copy of a real passage, which it should then copy
-   exactly. The reply then goes through **the same check**, steps 1–4
+   different figure is `NONE`). The reply then goes through **the same
+   check**, steps 1–4
    unchanged: exact normalized substring match, sids and cells resolved from
    the *new* quote. What else it must pass depends on the claim.
 
@@ -449,9 +448,29 @@ For each citation `{chunk_id, quote}`:
    both normalized as in step 1 (casefold, curly quotes and dashes
    straightened), must be at least **60% of the failed quote's normalized
    length and at least 20 characters**, and the repaired quote must state
-   **no significant figure**. In plain terms: most of what the model quoted
-   really is in the excerpt, contiguously; repair fixes the transcription,
-   it never finds new support. The measured case: in about 1 in 10
+   **no significant figure**. The run is first trimmed to whole words at
+   both ends, in both quotes, so a run that ends on the "in" of "increased"
+   does not count those letters. Outside the run:
+   - **leftovers are short**: the failed quote may keep at most **3 words**
+     (the garbled bit), the repair may add at most **12** (a caption's
+     lead-in, such as "The following table summarizes information
+     pertaining to our", 8 words);
+   - **leftovers carry no polarity**: neither may hold a negation (not, no,
+     never, nor, without, none, cannot, n't, longer), a direction word (the
+     figure path's down words below — loss, decrease, fell, lower, "used
+     in", expense and the rest — plus increase\*, rose, grew, higher, up,
+     more, gain\*), or a scope word (include\*, exclude\*,
+     only, except, unless). Matched on word boundaries, casefolded.
+
+   In plain terms: most of what the model quoted really is in the excerpt,
+   contiguously, and the repair changes nothing about what it says;
+   repair fixes the transcription, it never finds new support. These rules
+   reject a repair that drops or adds "not" ("We do not expect … material
+   impact" ↔ "We expect …"), flips "increased" to "decreased", drops an
+   invented tail ("…supply constraints and increased", "…platforms which we
+   no longer sell"), or appends new material (a 44-character fragment
+   extended by a sentence). False rejections are accepted. The measured
+   case: in about 1 in 10
    tutorial follow-ups the model adds "[3] NVIDIA's Data Center revenue
    represents sales from their data center segment" and quotes "Revenue by
    each of the specialized markets we serve: Data Center", stitching the
@@ -551,14 +570,17 @@ For each citation `{chunk_id, quote}`:
      enough either: "$115.2 billion and $999.9 billion [1]" would launder the
      invented second figure through a quote of the true first one.
    - **A figure-free claim is repaired only by a transcription fix** of its
-     own failed quote: ≥60% of it, ≥20 characters, one contiguous run, and no
-     significant figure in the repair. A claim's figures are its
+     own failed quote: ≥60% of it, ≥20 characters, one contiguous run
+     trimmed to whole words, at most 3 words left over in the failed quote
+     and 12 in the repair, no negation, direction or scope word in either
+     leftover, and no significant figure in the repair. A claim's figures are its
      *significant* ones (`figures.significant_figures`): written with a unit,
      with decimals, or ≥1,000 — bare years and small integers ("Q2", "Item
      7") don't count. Residuals: the guard does not check the claim's
      meaning, only that the model was already quoting this passage — no
      weaker than first-pass verification of a figure-free claim, and no
-     stronger; a failed quote that garbles *two* passages can be repaired
+     stronger; a meaning-changing word outside the lists (an adjective such
+     as "temporary" vs "permanent") in a leftover is not caught; a failed quote that garbles *two* passages can be repaired
      to whichever one holds the 60% run; and a figure-free claim whose
      quote is mostly invented, or under 20 characters, stays unverified
      even when a correct passage exists. Figure-free repairs draw on the

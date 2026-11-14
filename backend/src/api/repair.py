@@ -55,10 +55,8 @@ and the excerpt the quote was meant to come from.
 
 Reply with ONLY one contiguous passage copied character-for-character from the
 excerpt that supports the claim: 300 characters or fewer, no quotation marks,
-no ellipsis, no commentary. The failed quote is usually a garbled copy of a real
-passage: when it is, copy that passage exactly as the excerpt writes it. A
-passage supports the claim only if it states the claim's facts and figures
-itself. When the claim cites a figure from a table
+no ellipsis, no commentary. A passage supports the claim only if it states the
+claim's facts and figures itself. When the claim cites a figure from a table
 row, copy from the start of that row through the figure and stop there.
 
 If the excerpt only discusses the same topic, or gives a different figure than
