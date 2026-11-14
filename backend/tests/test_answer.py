@@ -692,3 +692,23 @@ def test_no_new_repair_starts_after_the_per_answer_budget(seeded_conn, monkeypat
     citations = citation_events(ask_with_repairer(seeded_conn, response, repairer))
     assert len(repairer.calls) == 1
     assert [c["verified"] for c in citations] == [True, False, False]
+
+
+@pytest.mark.db
+def test_doubled_company_name_is_collapsed_in_tokens_and_citation_still_verifies(
+    seeded_conn,
+):
+    quote = "Total net sales were 391.0 billion dollars"
+    response = (
+        "Microsoft's Microsoft Cloud revenue was $168.9 billion [1].\n\n"
+        "```json\n"
+        '{"citations": [{"marker": 1, "chunk_id": CHUNK_ID, "quote": "QUOTE"}]}\n'
+        "```"
+    ).replace("CHUNK_ID", str(chunk_id_of(seeded_conn))).replace("QUOTE", quote)
+    events, _ = collect(seeded_conn, response)
+    answer = "".join(e.data["text"] for e in events if e.name == "token")
+    assert answer.strip() == "Microsoft Cloud revenue was $168.9 billion [1]."
+    citations = [e for e in events if e.name == "citation"]
+    assert len(citations) == 1
+    assert citations[0].data["verified"] is True
+    assert citations[0].data["sids"] == [0]

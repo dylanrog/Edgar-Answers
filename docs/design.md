@@ -615,6 +615,14 @@ done:     {"chunks_retrieved": 8, "citations_total": 3,
 error:    {"message": "…"}
 ```
 
+The answer model often doubles a company name already inside a segment name
+("Microsoft's Microsoft Cloud revenue"); two prompt rules failed to stop it, so
+the stream collapses `W's W` to `W` for one capitalized word W (ASCII or curly
+apostrophe, exactly one space, whole words, case-sensitive) before it becomes
+`token` events (`PossessiveDeduper`, chunking-independent). It changes prose
+only, never quotes, citations or verification; the citation markers and the
+figure-narrowing logic read the same collapsed prose the client saw.
+
 ### 6.5 Other endpoints
 
 - `GET /filings/{accession}` → `{viewer_html, ticker, form_type, filing_date, period_end}`
