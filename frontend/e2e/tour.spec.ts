@@ -134,6 +134,37 @@ const TYPED =
   nvdaCitation(1) +
   done(1, 1);
 
+// A follow-up whose figure verifies but whose aside's quote was fabricated —
+// the real failure the vetting saw in ~6% of follow-ups.
+const TURN2_WITH_UNVERIFIED_ASIDE =
+  sse("resolved", { standalone_question: STANDALONE }) +
+  progress(nvdaRef) +
+  sse("token", {
+    text: "In fiscal 2024 it was $47,525 million [1]. Data Center is a single segment [2].",
+  }) +
+  sse("progress", { stage: "verifying", quotes: 2 }) +
+  sse("citation", {
+    marker: 1,
+    verified: true,
+    ...nvdaRef,
+    sids: [31],
+    quote: "Data Center $ 47,525",
+    cells: [{ sid: 31, cell: 4 }],
+  }) +
+  sse("citation", {
+    marker: 2,
+    verified: false,
+    accession: "",
+    ticker: "",
+    form_type: "",
+    filing_date: "",
+    sids: [],
+    quote: "Data Center revenue for fiscal year 2024 was $47.5 billion",
+  }) +
+  done(2, 1);
+
+const BADGE_NOTE = /unverified” badge means that quote didn't match the filing word for word/;
+
 const UNVERIFIED_TURN1 =
   progress(nvdaRef) +
   sse("token", { text: "NVIDIA Data Center revenue was something [1]." }) +
@@ -306,6 +337,8 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
 
   // Closing: Done only — no repo link (the repo is private) and no example buttons.
   await expect(page.getByText(/works on any document collection/)).toBeVisible();
+  // Every quote verified, so nothing to explain.
+  await expect(page.getByText(BADGE_NOTE)).toHaveCount(0);
   await expect(callout(page).getByRole("link")).toHaveCount(0);
   await expect(callout(page).getByRole("button")).toHaveCount(1);
   await expect(followUpButton(page)).toHaveCount(0);
@@ -434,7 +467,22 @@ test("no verified citation on turn 1 goes straight to the closing, with the unve
   await expect(page.getByText(/works on any document collection/)).toBeVisible();
   await expect(page.getByText(CLICK_STEP)).toHaveCount(0);
   await expect(page.getByText("[1] unverified")).toBeVisible();
+  await expect(callout(page).getByText(BADGE_NOTE)).toBeVisible();
   await expect(callout(page).getByRole("button", { name: "Done", exact: true })).toBeVisible();
+});
+
+test("an unverified aside in the follow-up is explained at the closing, not hidden", async ({
+  page,
+}) => {
+  await stub(page, [TURN1, TURN2_WITH_UNVERIFIED_ASIDE]);
+  await toMoreStep(page);
+  // Turn 1 verified in full: the more card has nothing to explain.
+  await expect(page.getByText(BADGE_NOTE)).toHaveCount(0);
+  await followUpButton(page).click();
+
+  await expect(page.getByText(/works on any document collection/)).toBeVisible();
+  await expect(page.getByText("[2] unverified")).toBeVisible();
+  await expect(callout(page).getByText(BADGE_NOTE)).toBeVisible();
 });
 
 test("an error on the follow-up shows the interrupted card; Try again starts a new conversation", async ({

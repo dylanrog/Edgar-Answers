@@ -44,6 +44,12 @@
 #   doubled company name in any of the 120 answers (it was in 60/60 first answers before).
 #   Final HEAD dfcbb1a, fresh ANALYZE: --runs 50 -> 50/50 (336/337 verified first pass, the
 #   other repaired: Compute/Networking FY2025 cells; own pins every run; 0 doubled names).
+#   A 50-chain probe on the same code logged every repair: 3/50 follow-ups had one
+#   unverified aside ("[3] NVIDIA's Data Center revenue represents a single product
+#   segment"), its quote fabricated as "Data Center revenue for fiscal year 2024 was $47.5
+#   billion" (the filing: "...was up 217%."). The repair returned the real sentence and the
+#   guard correctly refused it. Core figures verified in all 100 chains. The tutorial now
+#   explains a red badge when one appears, rather than hide or launder it.
 #   A probe of 20 chains found that aside unverified in 2/20 follow-ups before the repair.
 # Vetting result with citation repair (design §6.3 step 5), 2026-11-12, full local corpus,
 #   fresh planner stats: 115/115 chained runs across the repair commits -- 38/38 at 21d594a,

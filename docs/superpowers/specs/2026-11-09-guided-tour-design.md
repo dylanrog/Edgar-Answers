@@ -305,6 +305,12 @@ Dylan revised the tour after a hand check, so this section overrides §2.3,
 7. **Closing:** the "works on any document collection" note and **Done**.
    There are no example buttons and no repo link (removed 2026-11-14: the
    repo is going private).
+   *(Amended 2026-11-14: when the latest answer has an unverified citation,
+   the "more" and closing cards add one sentence explaining the red badge.
+   In about 3–6% of follow-ups the model fabricates the quote for an aside —
+   e.g. "Data Center revenue for fiscal year 2024 was $47.5 billion", where
+   the filing says "…was up 217%" — and verification rightly refuses it, so
+   the tutorial explains the badge rather than hide or launder it.)*
 
 **Skip, Done, or leaving the script lands on the regular site.** There are
 no example chips on the empty state after the tutorial. A **Take the

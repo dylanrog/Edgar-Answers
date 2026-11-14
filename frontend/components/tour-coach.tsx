@@ -110,6 +110,7 @@ export function TourCallout({
   marker,
   figure = false,
   followUpResolved = false,
+  unverified = false,
   disabled = false,
 }: {
   step: CalloutStep;
@@ -124,6 +125,10 @@ export function TourCallout({
   figure?: boolean;
   /** The follow-up's standalone (resolved) question has arrived. */
   followUpResolved?: boolean;
+  /** The latest answer has a citation that failed verification. The model
+   *  occasionally fabricates a quote for an aside; the badge is the product
+   *  working, so the tutorial explains it rather than leave it unexplained. */
+  unverified?: boolean;
   disabled?: boolean;
 }) {
   const coarse = useCoarsePointer();
@@ -143,10 +148,17 @@ export function TourCallout({
     interrupted:
       "That one didn't go through. You can try again or explore on your own.",
   }[step];
+  const badgeNote =
+    unverified && (step === "more" || step === "closing")
+      ? " A red “unverified” badge means that quote didn't match the filing word for word, so the app flags it instead of hiding it."
+      : "";
 
   return (
     <Frame scrollIntoView={step === "more" || step === "closing" || step === "interrupted"}>
-      <p>{copy}</p>
+      <p>
+        {copy}
+        {badgeNote}
+      </p>
       <div className="mt-2 flex flex-wrap items-center gap-3">
         {step === "source" && (
           <button type="button" onClick={onNext} className={action}>

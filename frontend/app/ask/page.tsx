@@ -270,6 +270,7 @@ export default function AskPage() {
         onFollowUp={askFollowUp}
         figure={((target ?? clicked)?.cells.length ?? 0) > 0}
         followUpResolved={turns.at(-1)?.state.standaloneQuestion != null}
+        unverified={[...(turns.at(-1)?.state.citations.values() ?? [])].some((c) => !c.verified)}
         disabled={streaming}
       />
     );
