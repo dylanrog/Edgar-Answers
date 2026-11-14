@@ -164,9 +164,9 @@ not a full-screen modal; the page stays usable underneath. Steps:
 5. **Not just SEC filings + handoff**: "This demo runs on 120 SEC filings
    from ten companies, but the pipeline underneath (sentence-anchored
    ingestion, hybrid search, quote verification) works on any document
-   collection." Then: the other example questions, the input box, and a
-   link to the GitHub repo (`github.com/dylanrog/Edgar-Answers`, public;
-   *my call*). **Done**.
+   collection." Then: the other example questions, the input box, and
+   **Done**. *(Amended 2026-11-14: the GitHub repo link was removed — the
+   repo is going private.)*
 
 Behaviour:
 - It shows on first visit. Finishing or skipping sets a
@@ -302,8 +302,9 @@ Dylan revised the tour after a hand check, so this section overrides §2.3,
    the closing.
    *(Amended 2026-11-10: the pointer originally appeared on settle; it now
    appears mid-stream, on `resolved`, and settling goes to the closing.)*
-7. **Closing:** the "works on any document collection" note, the GitHub
-   link and **Done**. There are no example buttons.
+7. **Closing:** the "works on any document collection" note and **Done**.
+   There are no example buttons and no repo link (removed 2026-11-14: the
+   repo is going private).
 
 **Skip, Done, or leaving the script lands on the regular site.** There are
 no example chips on the empty state after the tutorial. A **Take the

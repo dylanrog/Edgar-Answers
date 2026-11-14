@@ -5,8 +5,6 @@ import type { ReactNode } from "react";
 
 import { TUTORIAL } from "@/lib/tutorial";
 
-const REPO_URL = "https://github.com/dylanrog/Edgar-Answers";
-
 function SkipButton({ onSkip }: { onSkip: () => void }) {
   return (
     <button
@@ -166,19 +164,9 @@ export function TourCallout({
           </button>
         )}
         {step === "closing" && (
-          <>
-            <a
-              href={REPO_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-blue-300 underline hover:text-blue-200"
-            >
-              See the code on GitHub
-            </a>
-            <button type="button" onClick={onFinish} className={action}>
-              Done
-            </button>
-          </>
+          <button type="button" onClick={onFinish} className={action}>
+            Done
+          </button>
         )}
         {step !== "closing" && <SkipButton onSkip={onSkip} />}
       </div>

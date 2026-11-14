@@ -304,12 +304,9 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await expect(page.getByText(/Follow-ups keep context/)).toBeVisible();
   await expect(page.getByText(`Searched for: “${STANDALONE}”`)).toBeVisible();
 
-  // Closing: GitHub link, Done, and no example buttons.
+  // Closing: Done only — no repo link (the repo is private) and no example buttons.
   await expect(page.getByText(/works on any document collection/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "See the code on GitHub" })).toHaveAttribute(
-    "href",
-    "https://github.com/dylanrog/Edgar-Answers",
-  );
+  await expect(callout(page).getByRole("link")).toHaveCount(0);
   await expect(callout(page).getByRole("button")).toHaveCount(1);
   await expect(followUpButton(page)).toHaveCount(0);
   await expect(tutorialButton(page)).toHaveCount(0);
