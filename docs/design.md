@@ -481,8 +481,10 @@ For each citation `{chunk_id, quote}`:
      failed quote has words the repair lacks, the repair's edge on that side
      must fall on a clause boundary of the chunk, locating the repair with the
      verifier's own match (`find_quote`). Dropping a lead, the repair must
-     start the chunk or follow ".", ":", ";", "?", "!" or a newline (spaces
-     between ignored); dropping a tail, its last character must be one of
+     start the chunk or follow ".", "?", "!" or a newline (spaces between
+     ignored) — not ":" or ";", because the dropped words may be a label
+     ("Data Center: revenue was driven by …" must not stand in for a failed
+     "Gaming revenue was driven by …"); dropping a tail, its last character must be one of
      ".", ":", ";", "?", "!", or the chunk text right after it must start with
      one of those, a newline or the chunk's end. A repair that can't be
      located fails. This stops a subject swap by truncation: a failed

@@ -251,6 +251,19 @@ def test_a_repair_may_not_swap_the_subject_by_truncation():
     )
 
 
+def test_a_repair_may_not_drop_a_label_before_a_colon():
+    # "Data Center:" is a label; starting after the colon swaps the subject.
+    chunk = (
+        "Gaming revenue was flat year on year.\n"
+        "Data Center: revenue was driven by hyperscalers."
+    )
+    assert not figure_free_repair_accepted(
+        "Gaming revenue was driven by hyperscalers",
+        "revenue was driven by hyperscalers.",
+        chunk,
+    )
+
+
 def test_a_repair_may_not_cut_a_clause_short_at_the_end():
     assert not figure_free_repair_accepted(
         "Demand for our Blackwell platform was strong in China",

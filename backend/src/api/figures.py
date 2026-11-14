@@ -555,13 +555,17 @@ def _transcription_form(text: str) -> str:
 
 # What a clause ends with, for the boundary check on a side the repair drops.
 _CLAUSE_END = ".:;?!"
+# Where a repair that drops lead words may start: after a sentence end only.
+# Not after ":" or ";" -- the dropped words may be a label ("Data Center:
+# revenue was driven by ..."), and dropping it would swap the subject.
+_LEAD_BOUNDARY = ".?!"
 
 
 def _starts_a_clause(excerpt: str, start: int) -> bool:
-    """excerpt[start:] begins the chunk or follows a clause end or a newline
+    """excerpt[start:] begins the chunk or follows a sentence end or a newline
     (spaces between are ignored)."""
     before = excerpt[:start].rstrip(" \t")
-    return not before or before[-1] in _CLAUSE_END + "\n"
+    return not before or before[-1] in _LEAD_BOUNDARY + "\n"
 
 
 def _ends_a_clause(excerpt: str, end: int) -> bool:
@@ -592,12 +596,13 @@ def transcription_matches(original: str, repaired: str, excerpt: str | None) -> 
       invented "in China" with it. No excerpt: no repair;
     - on a side where the repair drops words, its edge must fall on a clause
       boundary of the excerpt (located as the verifier locates it): dropping
-      a lead, it must start the chunk or follow ".", ":", ";", "?", "!" or a
-      newline; dropping a tail, it must end on one of those or be followed by
-      one, a newline or the chunk's end. Truncating "Data Center revenue was
-      driven by…" to "revenue was driven by…" therefore never stands in for
-      a failed "Gaming revenue was driven by…". A repair that can't be
-      located fails.
+      a lead, it must start the chunk or follow ".", "?", "!" or a newline
+      (not ":" or ";", where the dropped words may be a label: "Data Center:
+      revenue was ..."); dropping a tail, it must end on ".", ":", ";", "?"
+      or "!" or be followed by one, a newline or the chunk's end. Truncating
+      "Data Center revenue was driven by…" to "revenue was driven by…"
+      therefore never stands in for a failed "Gaming revenue was driven
+      by…". A repair that can't be located fails.
     """
     if not excerpt:
         return False
