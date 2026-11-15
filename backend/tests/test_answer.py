@@ -198,7 +198,47 @@ def test_generator_failure_becomes_an_error_event(seeded_conn):
         )
     )
     assert events[-1].name == "error"
-    assert "message" in events[-1].data
+    assert events[-1].data["code"] == "failed"
+    # The raw exception is for the log, not the visitor.
+    assert "upstream is down" not in events[-1].data["message"]
+
+
+@pytest.mark.db
+def test_an_exhausted_api_account_gets_the_credits_message(seeded_conn, monkeypatch):
+    import anthropic
+    import httpx
+
+    monkeypatch.setenv("CREDITS_EXHAUSTED_MESSAGE", "Out of credits, back soon.")
+    body = {
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "message": "You have reached your specified API usage limits.",
+        },
+    }
+    response = httpx.Response(
+        400, request=httpx.Request("POST", "https://api.anthropic.com"), json=body
+    )
+
+    class Exhausted:
+        def stream(self, system, user):
+            raise anthropic.BadRequestError("Error code: 400", response=response, body=body)
+            yield  # pragma: no cover
+
+    events = list(
+        answer_stream(
+            seeded_conn,
+            FakeEmbedder(),
+            Exhausted(),
+            StubCompanyDetector(),
+            "What were net sales?",
+        )
+    )
+    assert events[-1].name == "error"
+    assert events[-1].data == {
+        "message": "Out of credits, back soon.",
+        "code": "credits_exhausted",
+    }
 
 
 @pytest.mark.db

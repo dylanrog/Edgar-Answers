@@ -263,7 +263,8 @@ dashboards. **A** only as a throwaway / first smoke test.
 - [ ] Provision DB, `CREATE EXTENSION vector`, `python -m pipeline migrate`
 - [ ] Load corpus (`pg_dump` → `pg_restore`), spot-check row counts + one `/ask`
 - [ ] Run `python -m evals examples --runs 10 --verbose` with `DATABASE_URL` pointed at prod, after the restore and `VACUUM ANALYZE`, and before posting the link — and read the printed answers: derived figures (differences, growth rates) are not machine-checked
-- [ ] API env: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `FRONTEND_ORIGIN`
+- [ ] API env: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `FRONTEND_ORIGIN`; optionally `CREDITS_EXHAUSTED_MESSAGE` (what visitors see if the Anthropic account runs dry)
+- [ ] Check the Anthropic account's usage limit and credit balance before posting the link; the demo's vetting once hit the limit
 - [ ] Frontend env: `NEXT_PUBLIC_API_URL` → deployed API URL; rebuild
 - [ ] Health check → `/healthz`
 - [ ] `conversation_turns` prune cron (or a monitoring note)
