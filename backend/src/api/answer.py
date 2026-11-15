@@ -16,6 +16,7 @@ from pipeline.tables import Cell
 from . import queries
 from .conversation import ConversationRewriter, load_recent_turns, save_turn
 from .detect import CompanyDetector, PeriodDetector
+from .errors import visitor_error
 from .figures import (
     claim_sides,
     figure_free_repair_accepted,
@@ -252,9 +253,12 @@ def answer_stream(
         # time generation starts the response headers are already sent, so
         # raising here would truncate the stream with no explanation. The 200 is
         # already in the access log too, so this line is the only server-side
-        # trace of the failure (`fly logs`).
+        # trace of the failure (`fly logs`) -- and the only place the raw
+        # exception goes: the visitor gets a plain message and a `code`
+        # (api/errors.py), never the SDK's JSON dump.
         logger.exception("answer_stream failed")
-        yield AnswerEvent("error", {"message": f"{type(exc).__name__}: {exc}"})
+        code, message = visitor_error(exc)
+        yield AnswerEvent("error", {"message": message, "code": code})
 
 
 def _claim(prose: str, marker: int) -> str | None:

@@ -111,6 +111,7 @@ export function TourCallout({
   figure = false,
   followUpResolved = false,
   unverified = false,
+  outOfCredits = false,
   disabled = false,
 }: {
   step: CalloutStep;
@@ -129,6 +130,10 @@ export function TourCallout({
    *  occasionally fabricates a quote for an aside; the badge is the product
    *  working, so the tutorial explains it rather than leave it unexplained. */
   unverified?: boolean;
+  /** The interruption was the API account running out of credits: retrying
+   *  can't help, so the card offers no Try again. The answer above already
+   *  shows the server's (configurable) message; the card doesn't repeat it. */
+  outOfCredits?: boolean;
   disabled?: boolean;
 }) {
   const coarse = useCoarsePointer();
@@ -145,8 +150,9 @@ export function TourCallout({
       : `Asking "${TUTORIAL.followUp}" in the same conversation…`,
     closing:
       "This demo runs on 120 SEC filings from ten companies, but the pipeline underneath (sentence-anchored ingestion, hybrid search, quote verification) works on any document collection.",
-    interrupted:
-      "That one didn't go through. You can try again or explore on your own.",
+    interrupted: outOfCredits
+      ? "The demo can't answer questions right now, so the tour stops here."
+      : "That one didn't go through. You can try again or explore on your own.",
   }[step];
   const badgeNote =
     unverified && (step === "more" || step === "closing")
@@ -170,7 +176,7 @@ export function TourCallout({
             Ask &quot;{TUTORIAL.followUp}&quot;
           </button>
         )}
-        {step === "interrupted" && (
+        {step === "interrupted" && !outOfCredits && (
           <button type="button" onClick={onRetry} className={action}>
             Try again
           </button>

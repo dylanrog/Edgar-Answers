@@ -66,6 +66,15 @@ test("an error keeps the prose already streamed", () => {
   expect(state.status).toBe("error");
   expect(state.prose).toBe("Partial answer");
   expect(state.errorMessage).toContain("upstream is down");
+  // An error from an older server has no code.
+  expect(state.errorCode).toBeNull();
+});
+
+test("an error keeps its code, so the page can tell an empty API account from a blip", () => {
+  const state = feed([
+    ["error", { message: "This demo has used up its AI budget for now.", code: "credits_exhausted" }],
+  ]);
+  expect(state.errorCode).toBe("credits_exhausted");
 });
 
 test("an unknown event leaves state untouched", () => {

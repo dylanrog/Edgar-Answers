@@ -8,6 +8,10 @@ export type AnswerState = {
   notice: string | null;
   /** Set only when status is "error". */
   errorMessage: string | null;
+  /** The server's error `code` (design §6.4): "credits_exhausted" (the API
+   *  account is out of credits, so retrying can't help), "busy", "failed".
+   *  Null for errors the page raised itself, or from an older server. */
+  errorCode: string | null;
   chunksRetrieved: number | null;
   /** The rewritten, self-contained question used for retrieval — set only
    *  when a follow-up was rewritten (design §6.4 `resolved` event). */
@@ -22,6 +26,7 @@ export const initialAnswerState: AnswerState = {
   status: "idle",
   notice: null,
   errorMessage: null,
+  errorCode: null,
   chunksRetrieved: null,
   standaloneQuestion: null,
   progress: { targets: null, retrieved: null, quotes: null },
@@ -60,10 +65,10 @@ export function reduceAnswer(state: AnswerState, event: SSEEvent): AnswerState {
       };
     }
     case "error": {
-      const { message } = event.data as { message: string };
+      const { message, code } = event.data as { message: string; code?: string };
       // Deliberately keeps `prose`: a partial answer is more useful than a
       // blank pane, and design §10 says an outage is reported, not hidden.
-      return { ...state, status: "error", errorMessage: message };
+      return { ...state, status: "error", errorMessage: message, errorCode: code ?? null };
     }
     case "resolved": {
       const { standalone_question } = event.data as { standalone_question: string };

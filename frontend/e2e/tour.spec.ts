@@ -509,6 +509,21 @@ test("an error on the follow-up shows the interrupted card; Try again starts a n
   await expect(page.getByText(CLICK_STEP)).toBeVisible();
 });
 
+test("an exhausted API account stops the tutorial without offering Try again", async ({ page }) => {
+  const CREDITS = "This demo has used up its AI budget for now. Please check back later.";
+  await stub(page, [
+    progress(nvdaRef) + sse("error", { message: CREDITS, code: "credits_exhausted" }),
+  ]);
+  await page.goto("/ask");
+  await tutorialButton(page).click();
+
+  // The server's message is shown once, in the answer; the card doesn't repeat it.
+  await expect(page.getByText(CREDITS)).toHaveCount(1);
+  await expect(callout(page).getByText(/can't answer questions right now/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0);
+  await expect(callout(page).getByRole("button", { name: "Skip tutorial" })).toBeVisible();
+});
+
 test("Take the tutorial from an existing thread restarts at welcome in a fresh conversation", async ({
   page,
 }) => {

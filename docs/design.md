@@ -731,7 +731,11 @@ citation: {"marker": 1, "verified": true,
                                                      count it
 done:     {"chunks_retrieved": 8, "citations_total": 3,
            "citations_verified": 3, "unverified_answer": false}
-error:    {"message": "…"}
+error:    {"message": "…", "code": "credits_exhausted" | "busy" | "failed"}
+                                                     `message` is plain text for
+                                                     the visitor, never the raw
+                                                     exception (that goes to the
+                                                     log only; api/errors.py)
 ```
 
 The answer model often doubles a company name already inside a segment name
@@ -937,7 +941,8 @@ typecheck/lint job when the frontend lands.
 | Citation fails verification | One repair call against the same chunk (§6.3 step 5); the new quote must pass the same exact match and either state every figure the claim states or, for a figure-free claim, be a transcription fix of the failed quote with no figure. Otherwise `verified: false` with the original quote, visible badge; answer still renders |
 | Quote repair call fails or times out | Logged as a warning; the citation stays `verified: false` exactly as without repair — never an `error` event |
 | Retrieval returns nothing relevant | Model instructed to say the corpus doesn't cover it (and the eval set includes such questions) |
-| LLM API down | `error` SSE event with a human-readable message |
+| LLM API down | `error` SSE event with a human-readable message and a `code` (`api/errors.py`): `busy` for a 429, 5xx/529 or network error ("try again in a minute"), `failed` for anything else. The raw exception is logged, never shown |
+| Anthropic account out of credits or at its spend limit | `error` event with code `credits_exhausted` and the `CREDITS_EXHAUSTED_MESSAGE` text (a default if unset). Detected from a 402 `billing_error`, or a 400 whose message mentions a usage limit or the credit balance. The tutorial's interrupted card then offers no Try again |
 
 ## 11. Deployment
 
