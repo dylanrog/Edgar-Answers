@@ -119,3 +119,32 @@ figure in the original filing, highlighted…" is true of a card).
     horizontal overflow at 390 px.
 - **Classic specs** move to `/classic` unchanged.
 - **Live QA** against the local API at 1440×900 and 390×844, then against prod after deploy.
+
+## 8. Round 2 (2026-11-17, after review on a phone)
+
+Dylan's notes on the shipped layout, and what changed:
+
+1. **"It should be obvious when you're in the tutorial."** He chose idea 2 from the design canvas:
+   while the tour runs, its panel takes the input bar's place. It shows a "TUTORIAL · Step n of 5"
+   label with step dots, and the step's text and buttons. There is no input bar until Done or
+   Exit tutorial, and the input coming back in the same spot means "your turn".
+   - It is a `variant="dock"` on the shared `TourCallout`, with the same copy and buttons. The
+     classic page keeps its inline cards.
+   - Steps: 1 watch, 2 click, 3 source, 4 more/follow-up, 5 closing. An interruption has no
+     number.
+2. **"It says what the corpus is twice."** The header coverage line and the empty-state sentence
+   are gone. The coverage is stated once per screen:
+   - On the landing: "This app only covers the 10-K and 10-Q SEC filings of 10 companies, from
+     the last 3 years.", with the tickers under it.
+   - In chat, as a caption under the input: "10-K and 10-Q filings · 10 companies · last 3
+     years".
+   - Plus the found-nothing hint, which now reuses the same sentence.
+3. **"Super simple on a phone; the input bar hugs the bottom."**
+   - A first visit lands on a full-screen **Landing**: what it is, the coverage, and two buttons,
+     "Take the 1-minute tour" and "Skip, ask my own question". This replaces the welcome card
+     above the form.
+   - In chat, the input bar is `sticky bottom-0` with safe-area padding, like a chat app's.
+   - The ten ticker buttons fold into one "All 10 companies ▾" button that opens the filter
+     panel. The new **Composer** owns that.
+   - The classic `AskForm` is untouched.
+   - "Take the tour" in the header goes back to the landing.

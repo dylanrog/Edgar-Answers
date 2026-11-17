@@ -5,15 +5,63 @@ import type { ReactNode } from "react";
 
 import { TUTORIAL } from "@/lib/tutorial";
 
-function SkipButton({ onSkip }: { onSkip: () => void }) {
+function SkipButton({ onSkip, label = "Skip tutorial", className }: { onSkip: () => void; label?: string; className?: string }) {
   return (
     <button
       type="button"
       onClick={onSkip}
-      className="text-xs text-slate-500 underline hover:text-slate-300"
+      className={className ?? "text-xs text-slate-500 underline hover:text-slate-300"}
     >
-      Skip tutorial
+      {label}
     </button>
+  );
+}
+
+/** The dock's "Step n of 5". Follow-up and its answer share step 4; an
+ *  interruption has no number. */
+const DOCK_STEP: Partial<Record<CalloutStep, number>> = {
+  watch: 1,
+  click: 2,
+  source: 3,
+  more: 4,
+  followup: 4,
+  closing: 5,
+};
+const DOCK_STEPS = 5;
+
+/** The evidence layout's tutorial panel: it sits where the input bar does and
+ *  takes its place while the tour runs (design canvas, round 2, idea 2), so
+ *  the mode can't be missed and the input coming back means "your turn". */
+function DockFrame({ step, children }: { step: CalloutStep; children: ReactNode }) {
+  const n = DOCK_STEP[step];
+  return (
+    <section
+      aria-label="Tutorial"
+      data-testid="tour-callout"
+      className="rounded-2xl border-[1.5px] border-blue-500 bg-blue-950 px-4 pb-3 pt-3 text-slate-100 shadow-[0_-12px_32px_rgba(2,6,23,0.9)]"
+    >
+      <div className="mb-2 flex items-center gap-2">
+        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-white uppercase">
+          Tutorial
+        </span>
+        {n !== undefined && (
+          <>
+            <span className="text-xs text-blue-200">
+              Step {n} of {DOCK_STEPS}
+            </span>
+            <span aria-hidden className="ml-1 flex gap-1">
+              {Array.from({ length: DOCK_STEPS }, (_, i) => (
+                <span
+                  key={i}
+                  className={"h-1.5 w-1.5 rounded-full " + (i < n ? "bg-blue-300" : "bg-blue-800")}
+                />
+              ))}
+            </span>
+          </>
+        )}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -113,6 +161,7 @@ export function TourCallout({
   unverified = false,
   outOfCredits = false,
   disabled = false,
+  variant = "inline",
 }: {
   step: CalloutStep;
   onSkip: () => void;
@@ -135,10 +184,15 @@ export function TourCallout({
    *  shows the server's (configurable) message; the card doesn't repeat it. */
   outOfCredits?: boolean;
   disabled?: boolean;
+  /** "inline": a card in the thread (the classic layout). "dock": the panel
+   *  that takes the input bar's place (the evidence layout). Same words. */
+  variant?: "inline" | "dock";
 }) {
   const coarse = useCoarsePointer();
   const action =
-    "rounded bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-600";
+    variant === "dock"
+      ? "min-h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400"
+      : "rounded bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-600";
   const copy = {
     watch:
       "Watch the panel: every quote the model uses is checked against the filing before you see it.",
@@ -159,13 +213,14 @@ export function TourCallout({
       ? " A red “unverified” badge means that quote didn't match the filing word for word, so the app flags it instead of hiding it."
       : "";
 
-  return (
-    <Frame scrollIntoView={step === "more" || step === "closing" || step === "interrupted"}>
-      <p>
+  const dock = variant === "dock";
+  const body = (
+    <>
+      <p className={dock ? "text-[15px] leading-snug" : undefined}>
         {copy}
         {badgeNote}
       </p>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
+      <div className={dock ? "mt-3 flex flex-wrap items-center gap-3" : "mt-2 flex flex-wrap items-center gap-3"}>
         {step === "source" && (
           <button type="button" onClick={onNext} className={action}>
             Next
@@ -186,8 +241,24 @@ export function TourCallout({
             Done
           </button>
         )}
-        {step !== "closing" && <SkipButton onSkip={onSkip} />}
+        {step !== "closing" &&
+          (dock ? (
+            <SkipButton
+              onSkip={onSkip}
+              label="Exit tutorial"
+              className="min-h-10 text-sm text-blue-200 underline hover:text-white"
+            />
+          ) : (
+            <SkipButton onSkip={onSkip} />
+          ))}
       </div>
+    </>
+  );
+
+  if (dock) return <DockFrame step={step}>{body}</DockFrame>;
+  return (
+    <Frame scrollIntoView={step === "more" || step === "closing" || step === "interrupted"}>
+      {body}
     </Frame>
   );
 }

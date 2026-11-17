@@ -95,21 +95,39 @@ async function askTyped(page: Page, question: string) {
 
 const card = (page: Page, marker: number) => page.locator(`article[data-marker="${marker}"]`);
 const chip = (page: Page, marker = 1) => page.getByRole("button", { name: `[${marker}]`, exact: true });
-const callout = (page: Page) => page.getByTestId("tour-callout");
 const evidenceColumn = (page: Page) => page.getByRole("region", { name: "Evidence column" });
 
-test("the header says the demo covers only these companies, and the composer says so too", async ({ page }) => {
-  await stub(page, [TURN1], { seenTour: true });
+const dock = (page: Page) => page.getByTestId("tour-callout");
+const SUMMARY = "This app only covers the 10-K and 10-Q SEC filings of 2 companies, from the last 3 years.";
+
+test("the landing says what the demo covers once, and the chat says it once, under the input", async ({ page }) => {
+  await stub(page, [TURN1]);
   await page.goto("/ask");
-  await expect(page.getByTestId("coverage-line")).toHaveText(
-    "Covers only Microsoft and NVIDIA · 10-K and 10-Q filings, Aug 2023 – Jul 2026",
-  );
-  await expect(page.getByText("Limit to:")).toBeVisible();
-  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", "Ask about these 2 companies' filings…");
-  // The coverage line stays once a conversation is underway.
-  await askTyped(page, "anything");
+  const landing = page.getByTestId("tour-welcome");
+  await expect(landing.getByTestId("coverage")).toContainText(SUMMARY);
+  await expect(landing.getByText("MSFT · NVDA")).toBeVisible();
+  // The landing is a choice, not a chat: no input bar on it.
+  await expect(page.getByLabel("Question")).toHaveCount(0);
+  await expect(page.getByText(/We have 10-K/)).toHaveCount(0);
+
+  await landing.getByRole("button", { name: "Skip, ask my own question" }).click();
+  await expect(page.getByText("What do you want to know?")).toBeVisible();
+  await expect(page.getByTestId("coverage-caption")).toHaveText("10-K and 10-Q filings · 2 companies · last 3 years");
+  await expect(page.getByText(SUMMARY)).toHaveCount(0);
+  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", "Ask about a filing…");
+});
+
+test("the company filter folds into one button and reaches the request", async ({ page }) => {
+  const requests = await stub(page, [TURN1], { seenTour: true });
+  await page.goto("/ask");
+  await page.getByRole("button", { name: "All 2 companies" }).click();
+  await page.getByRole("button", { name: "NVDA", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^NVDA/ }).first()).toBeVisible();
+  await askTyped(page, "Data Center revenue?");
   await expect(card(page, 1)).toBeVisible();
-  await expect(page.getByTestId("coverage-line")).toBeVisible();
+  expect((requests[0] as unknown as { filters: { tickers: string[] } }).filters.tickers).toEqual(["NVDA"]);
+  // The input stays at the bottom with a follow-up prompt.
+  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", "Ask a follow-up…");
 });
 
 test("each citation gets an evidence card cut from the filing, with the cited figure marked", async ({ page }) => {
@@ -165,41 +183,56 @@ test("an answer that finds nothing says what the demo covers", async ({ page }) 
   await askTyped(page, "What was Coca-Cola's revenue in 2024?");
   await expect(
     page.getByText(
-      "This demo only covers 2 companies (Microsoft and NVIDIA), with filings from Aug 2023 – Jul 2026. Questions outside that can't be answered from it.",
+      "This app only covers the 10-K and 10-Q SEC filings of 2 companies, from the last 3 years. Those are Microsoft and NVIDIA. Questions outside that can't be answered from it.",
     ),
   ).toBeVisible();
   await expect(evidenceColumn(page).getByText("This answer has no evidence to show.")).toBeVisible();
 });
 
-test("the tutorial walks from the welcome card to the closing, the source card sitting on its evidence", async ({
+test("the tutorial runs in the input bar's place, step by step, and hands the input back at the end", async ({
   page,
 }) => {
   const requests = await stub(page, [TURN1, TURN2]);
   await page.goto("/ask");
-  await page.getByTestId("tour-welcome").getByRole("button", { name: "Ask this question", exact: true }).click();
-  await expect(page.getByText("Click the pulsing [1] to see that figure in the original filing.")).toBeVisible();
+  await page.getByRole("button", { name: "Take the 1-minute tour" }).click();
+
+  // While the tour runs there is no input bar: the tutorial panel is in its place.
+  await expect(dock(page)).toContainText("Tutorial");
+  await expect(page.getByLabel("Question")).toHaveCount(0);
+  await expect(dock(page)).toContainText("Step 2 of 5");
+  await expect(dock(page)).toContainText("Click the pulsing [1] to see that figure in the original filing.");
 
   await chip(page).first().click();
-  // The source step's card sits directly above the selected evidence card.
-  await expect(callout(page)).toContainText("That's the exact figure in the original filing");
-  const above = await callout(page).evaluate((el) => {
-    const next = el.closest("[id^=evidence-]")?.querySelector("article[data-marker]");
-    return next?.getAttribute("data-marker") ?? null;
-  });
-  expect(above).toBe("1");
+  await expect(dock(page)).toContainText("Step 3 of 5");
+  await expect(dock(page)).toContainText("That's the exact figure in the original filing");
   await expect(card(page, 1)).toHaveAttribute("aria-current", "true");
 
-  await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(page.getByText(/Want to see one more/)).toBeVisible();
-  await page.getByRole("button", { name: `Ask "${tutorial.followUp}"`, exact: true }).click();
-  await expect(callout(page).filter({ hasText: "any document collection" })).toBeVisible();
+  await dock(page).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(dock(page)).toContainText("Step 4 of 5");
+  await dock(page).getByRole("button", { name: `Ask "${tutorial.followUp}"`, exact: true }).click();
+  await expect(dock(page)).toContainText("any document collection");
+  await expect(dock(page)).toContainText("Step 5 of 5");
 
   // The closing shows the follow-up's evidence: its fiscal-2024 figure.
   await expect(evidenceColumn(page).locator('article[aria-current="true"] .cited-figure')).toHaveText("47,525");
   expect(requests).toHaveLength(2);
   expect(requests[0].conversation_id).toBe(requests[1].conversation_id);
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(callout(page)).toHaveCount(0);
+
+  await dock(page).getByRole("button", { name: "Done" }).click();
+  await expect(dock(page)).toHaveCount(0);
+  await expect(page.getByLabel("Question")).toBeVisible();
+  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", "Ask a follow-up…");
+});
+
+test("Exit tutorial hands the input back straight away", async ({ page }) => {
+  await stub(page, [TURN1]);
+  await page.goto("/ask");
+  await page.getByRole("button", { name: "Take the 1-minute tour" }).click();
+  await expect(dock(page)).toContainText("Step 2 of 5");
+  await dock(page).getByRole("button", { name: "Exit tutorial" }).click();
+  await expect(dock(page)).toHaveCount(0);
+  await expect(page.getByLabel("Question")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take the tour" })).toBeVisible();
 });
 
 test("clicking an earlier answer's citation shows that answer's evidence", async ({ page }) => {
@@ -217,17 +250,18 @@ test("clicking an earlier answer's citation shows that answer's evidence", async
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-  test("evidence sits inline under the answer, and the tutorial card scrolls into view with it", async ({ page }) => {
+  test("evidence sits inline, the tutorial panel stays at the bottom, and the input comes back pinned", async ({ page }) => {
     await stub(page, [TURN1, TURN2]);
     await page.goto("/ask");
-    await page.getByTestId("tour-welcome").getByRole("button", { name: "Ask this question", exact: true }).click();
-    await expect(page.getByText(/Tap the pulsing \[1\]/)).toBeVisible();
+    await page.getByRole("button", { name: "Take the 1-minute tour" }).tap();
+    await expect(dock(page)).toContainText(/Tap the pulsing \[1\]/);
+    await expect(dock(page)).toBeInViewport();
     await expect(evidenceColumn(page)).toHaveCount(0);
     // The cards are inside the turn, under the answer.
     await expect(page.locator("article:not([data-marker]) article[data-marker]")).toHaveCount(2);
 
     await chip(page).first().tap();
-    await expect(callout(page).getByRole("button", { name: "Next", exact: true })).toBeInViewport();
+    await expect(dock(page).getByRole("button", { name: "Next", exact: true })).toBeInViewport();
     await expect(card(page, 1).locator(".cited-figure")).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
@@ -239,10 +273,15 @@ test.describe("on a phone", () => {
 
     // The follow-up scrolls its own question into view, not turn 1's first
     // evidence card (both are <article>s).
-    await page.getByRole("button", { name: "Next", exact: true }).tap();
-    await page.getByRole("button", { name: `Ask "${tutorial.followUp}"`, exact: true }).tap();
-    await expect(callout(page).filter({ hasText: "any document collection" })).toBeVisible();
+    await dock(page).getByRole("button", { name: "Next", exact: true }).tap();
+    await dock(page).getByRole("button", { name: `Ask "${tutorial.followUp}"`, exact: true }).tap();
+    await expect(dock(page)).toContainText("any document collection");
     await expect(page.getByText(tutorial.followUp, { exact: true }).last()).toBeInViewport();
+
+    await dock(page).getByRole("button", { name: "Done" }).tap();
+    await expect(page.getByLabel("Question")).toBeInViewport();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(page.getByLabel("Question")).toBeInViewport();
   });
 
   test("the page behind an open drawer is inert", async ({ page }) => {
