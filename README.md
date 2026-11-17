@@ -55,6 +55,10 @@ fiscal-period detection (see Evals).
 
 ## Demo
 
+**Live: [edgar-answers.vercel.app](https://edgar-answers.vercel.app)**. A first visit
+opens a short guided tour. Each visitor can ask 20 questions an hour, and the
+whole site 200 a day, because every answer is a paid model call.
+
 ![EDGAR Answers: a question is answered with a streamed, citation-marked response; clicking a citation highlights the exact sentence in the filing; a follow-up then opens a second filing](docs/demo.gif)
 
 A run through the flow: ask an analyst-style question, watch the answer stream
