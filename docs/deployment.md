@@ -2,8 +2,11 @@
 
 Working notes for the Phase 5 public demo. `design.md` §11 has the original
 one-paragraph sketch (Vercel + Fly/Render + Supabase); this expands it with
-what the code actually needs and where the real decisions are. Nothing here
-is committed to yet.
+what the code actually needs and where the real decisions are.
+
+**Shipped 2026-11-16 as bundle B with Neon:** Vercel + one Fly machine + Neon
+Free. §8 records what was done and how to redeploy. Everything above §7 is the
+original option analysis, kept for the reasoning.
 
 ---
 
@@ -254,20 +257,55 @@ dashboards. **A** only as a throwaway / first smoke test.
 
 ---
 
-## 7. Pre-deploy checklist (once a target is chosen)
+## 7. Pre-deploy checklist
 
-- [ ] Anthropic console: hard monthly spend limit + email alert
-- [ ] `backend/Dockerfile` — `python:3.13-slim`, `pip install .`, pre-download the model into the image, `uvicorn ... --host 0.0.0.0`
-- [ ] Rate limit or password gate on `/ask`
+Completed on 2026-11-16, except the one item left open.
+
+- [x] Anthropic console: hard monthly spend limit + email alert
+- [x] `backend/Dockerfile`: `python:3.13-slim`, pinned `requirements.lock`, model baked in, `uvicorn ... --host 0.0.0.0` (PR #28)
+- [x] Rate limit on `/ask`: 20 per visitor per hour, 200 per day (`api/limits.py`, PR #28)
 - [x] `frontend/.env.local.example` exists; `NEXT_PUBLIC_API_URL` documented
-- [ ] Provision DB, `CREATE EXTENSION vector`, `python -m pipeline migrate`
-- [ ] Load corpus (`pg_dump` → `pg_restore`), spot-check row counts + one `/ask`
-- [ ] Run `python -m evals examples --runs 10 --verbose` with `DATABASE_URL` pointed at prod, after the restore and `VACUUM ANALYZE`, and before posting the link — and read the printed answers: derived figures (differences, growth rates) are not machine-checked
-- [ ] API env: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `FRONTEND_ORIGIN`; optionally `CREDITS_EXHAUSTED_MESSAGE` (what visitors see if the Anthropic account runs dry)
-- [ ] Check the Anthropic account's usage limit and credit balance before posting the link; the demo's vetting once hit the limit
-- [ ] Frontend env: `NEXT_PUBLIC_API_URL` → deployed API URL; rebuild
-- [ ] Health check → `/healthz`
-- [ ] `conversation_turns` prune cron (or a monitoring note)
-- [ ] Log drain / Sentry DSN
-- [ ] End-to-end from a fresh browser: ask → stream → citation → highlight, in Chrome and Firefox
-- [ ] `README.md` "Demo" section + `design.md` §11 updated with what was actually done
+- [x] Provision DB: Neon Free, Postgres 16, pgvector 0.8.7, `us-east-1`
+- [x] Load corpus (`pg_dump` → `pg_restore`, then `VACUUM ANALYZE`). Row counts and the index list match local exactly; one `/ask` answered and verified
+- [x] `python -m evals examples --runs 10 --verbose` against prod: 10/10, 40/40 citations verified first pass, answers read by hand
+- [x] Retrieval on prod matches local: `--retrieval-only` gives identical recall@10, unfiltered and targeted (once local had a fresh `ANALYZE`)
+- [x] API env: `DATABASE_URL`, `ANTHROPIC_API_KEY` as Fly secrets; `FRONTEND_ORIGIN` etc. in `fly.toml`. `CREDITS_EXHAUSTED_MESSAGE` left at its default
+- [x] Anthropic usage limit and credit balance checked before posting the link
+- [x] Frontend env: `NEXT_PUBLIC_API_URL=https://edgar-answers-api.fly.dev`, rebuilt
+- [x] Health check → `/healthz` (in `fly.toml`)
+- [x] `conversation_turns` retention: `save_turn` deletes conversations idle for 7 days (PR #28), so no cron is needed
+- [ ] Log drain / Sentry DSN. Not done; `fly logs` is the only trace for now
+- [x] End to end on the live URL: the full tutorial, with both turns' citations clicked and highlighted, in Chromium (desktop and phone size), Firefox and WebKit (phone size). No console or CORS errors
+- [x] Forged `Fly-Client-IP` can't buy fresh quota: with the cap at 2, the third request (each with a different forged IP) got a 429, and the UI showed the limit message
+- [x] `README.md` "Demo" section + `design.md` §11 updated
+
+## 8. Running it
+
+| What | Where |
+| --- | --- |
+| Site | https://edgar-answers.vercel.app (Vercel project `edgar-answers`, root directory `frontend`) |
+| API | https://edgar-answers-api.fly.dev (Fly app `edgar-answers-api`, one machine in `iad`) |
+| Database | Neon project in AWS `us-east-1`. The URL is in `backend/.env.production` as `PROD_DATABASE_URL` (gitignored) |
+
+- **Redeploy the API:** run `fly deploy --ha=false` from `backend/`. A plain
+  `fly deploy` may create a second machine, which splits the `/ask` counters.
+- **Change a secret:** `fly secrets set NAME=value -a edgar-answers-api`. This
+  restarts the machine, and that resets the in-process `/ask` counters.
+- **Frontend changes:** Vercel rebuilds on every push to `main`. A change to
+  `NEXT_PUBLIC_API_URL` needs a **Redeploy**, because Next bakes it in at build
+  time. The variable must be a plain (non-sensitive) variable with the
+  `NEXT_PUBLIC_` prefix.
+- **Don't let Vercel host the backend.** Importing at the repo root makes Vercel
+  offer a multi-service `vercel.json` with the FastAPI backend in it. Set the
+  root directory to `frontend` instead.
+- **Reload the corpus** after any local `rechunk`, `reprocess` or `ingest`. Run
+  the dump and restore from the primary checkout with `MSYS_NO_PATHCONV=1`
+  (see the deploy plan, Task 5). Read `PROD_DATABASE_URL` with `grep | cut`,
+  not `. .env.production`: Neon's URL contains `&`, which shell sourcing treats
+  as "run in background", leaving the variable empty.
+- **After a restore, always `VACUUM ANALYZE`** before measuring anything.
+  Without fresh stats the planner's choice between HNSW and a seq scan is
+  arbitrary.
+- **Re-run the release check** (`python -m evals examples --runs 10 --verbose`
+  with `DATABASE_URL` set to the prod URL) after any prompt, retrieval or
+  corpus change.

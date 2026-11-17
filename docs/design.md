@@ -953,13 +953,26 @@ typecheck/lint job when the frontend lands.
   dependencies (`fastembed` / `onnxruntime`) ship 3.13 wheels.
 - **Dev:** `docker-compose` pgvector Postgres; API and frontend run locally;
   ingestion CLI run by hand.
-- **Demo:** Vercel (frontend) + Fly.io or Render (API container, includes the
-  ~30 MB ONNX embedding model for query-time embedding) + Supabase (DB).
-  Ingestion runs from the dev machine against the Supabase DB — no ingestion
-  infrastructure to deploy.
-- **Cost:** ~$0 infrastructure on free tiers; Claude usage is pennies per answer.
-  A `MAX_OUTPUT_TOKENS` cap keeps per-answer spend bounded, and nothing is
-  publicly deployed until Phase 5, so there is no unattended public spend before then.
+- **Demo (live since 2026-11-16):** https://edgar-answers.vercel.app
+  - **Frontend:** Vercel Hobby, root directory `frontend`, with
+    `NEXT_PUBLIC_API_URL=https://edgar-answers-api.fly.dev` baked in at build.
+  - **API:** one always-on Fly.io machine (`shared-cpu-1x`, 512 MB) in `iad`,
+    built from `backend/Dockerfile` with the embedding model inside the image.
+    It's deployed with `fly deploy --ha=false`, because the `/ask` caps
+    (`api/limits.py`) count in process and two machines would split them.
+  - **Database:** Neon Free, Postgres 16, AWS `us-east-1` (next to `iad`), over
+    the direct (non-pooler) connection. Neon was chosen over Supabase because
+    an idle Supabase Free project pauses after about a week, while Neon wakes
+    in under a second, so no keepalive job is needed. The corpus was loaded
+    with `pg_restore` (246 MB of the 0.5 GB free tier), then `VACUUM ANALYZE`.
+  - **Caps:** 20 questions per visitor per hour and 200 per UTC day site-wide.
+    The client IP comes from `Fly-Client-IP`, which a live forged-header test
+    showed Fly overwrites. The Anthropic console also has a monthly spend limit.
+  - **Ingestion** runs from the dev machine against the prod DB. There is no
+    ingestion infrastructure to deploy.
+- **Cost:** Fly is a few dollars a month. Vercel and Neon are free. Claude is
+  about 1–1.5 cents per answer, bounded by `MAX_OUTPUT_TOKENS` per answer and
+  by the daily cap overall.
 
 ## 12. Build phases
 
