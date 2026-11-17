@@ -81,7 +81,7 @@ test("a follow-up streams a second turn and shows the rewritten query", async ({
   );
 
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
 
   await page.getByLabel("Question").fill("What were Apple's total net sales in fiscal 2024?");
   await page.getByRole("button", { name: "Ask" }).click();

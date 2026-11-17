@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { coverageSentence, shortName } from "../coverage";
+import { initialAnswerState } from "../answer";
+import { coverageLine, coverageSentence, foundNothing, shortName } from "../coverage";
 import type { Company } from "../types";
 
 const company = (ticker: string, name: string, first: string, last: string, forms = ["10-K", "10-Q"]): Company => ({
@@ -66,5 +67,31 @@ describe("coverageSentence", () => {
   it("returns null when the API sent no coverage fields, so the page can fall back", () => {
     expect(coverageSentence([{ cik: 1, ticker: "AAPL", name: "Apple Inc.", filings: 13 }])).toBeNull();
     expect(coverageSentence([])).toBeNull();
+  });
+});
+
+describe("coverageLine", () => {
+  it("names the companies, forms and range in one line", () => {
+    expect(coverageLine(CORPUS.slice(0, 2))).toBe(
+      "Covers only Apple and Amazon · 10-K and 10-Q filings, Oct 2023 – Jul 2026",
+    );
+  });
+
+  it("is null without coverage fields", () => {
+    expect(coverageLine([{ cik: 1, ticker: "AAPL", name: "Apple Inc.", filings: 13 }])).toBeNull();
+  });
+});
+
+describe("foundNothing", () => {
+  const done = { ...initialAnswerState, status: "done" as const };
+
+  it("is true for a finished answer with no citations", () => {
+    expect(foundNothing(done)).toBe(true);
+  });
+
+  it("is false while streaming, with citations, or for an unparsed citation block", () => {
+    expect(foundNothing({ ...done, status: "streaming" })).toBe(false);
+    expect(foundNothing({ ...done, citations: new Map([[1, {} as never]]) })).toBe(false);
+    expect(foundNothing({ ...done, notice: "unverified" })).toBe(false);
   });
 });

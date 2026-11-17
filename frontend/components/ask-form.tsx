@@ -14,6 +14,8 @@ export function AskForm({
   onSubmit,
   docked = false,
   quiet = false,
+  placeholder = "e.g. Apple's net sales in fiscal 2024",
+  scopeLabel,
 }: {
   companies: Company[];
   disabled: boolean;
@@ -25,6 +27,10 @@ export function AskForm({
   // A secondary Ask button, while another call to action (the tutorial's
   // welcome card) is the one primary button on screen. Still fully usable.
   quiet?: boolean;
+  placeholder?: string;
+  // A visible label in front of the ticker buttons. The evidence layout uses
+  // it to say they are the whole corpus, not optional extras.
+  scopeLabel?: string;
 }) {
   const [question, setQuestion] = useState("");
   const [tickers, setTickers] = useState<string[]>([]);
@@ -63,11 +69,14 @@ export function AskForm({
         <input
           aria-label="Question"
           className="rounded-md border border-slate-600 bg-slate-950 px-3.5 py-2.5 text-[15px] text-slate-100 placeholder:text-slate-600 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
-          placeholder="e.g. Apple's net sales in fiscal 2024"
+          placeholder={placeholder}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
         />
         <div className="flex flex-wrap items-center gap-1">
+          {scopeLabel !== undefined && companies.length > 0 && (
+            <span className="mr-1 text-xs text-slate-400">{scopeLabel}</span>
+          )}
           {companies.map((company) => {
             const selected = tickers.includes(company.ticker);
             const atCap = !selected && tickers.length >= MAX_TICKERS;

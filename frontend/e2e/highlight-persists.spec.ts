@@ -36,7 +36,7 @@ test("the citation highlight survives a re-render of the page", async ({ page })
     }),
   );
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await page.getByLabel("Question").fill("What were total net sales?");
   await page.getByRole("button", { name: "Ask" }).click();
   await page.getByRole("button", { name: "[1]" }).click();

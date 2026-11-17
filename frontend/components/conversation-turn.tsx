@@ -21,6 +21,7 @@ export function ConversationTurn({
   coachAbovePanel,
   coachBelowAnswer,
   coachBelowTurn,
+  sources,
 }: {
   question: string;
   state: AnswerState;
@@ -33,6 +34,9 @@ export function ConversationTurn({
   coachAbovePanel?: ReactNode;
   coachBelowAnswer?: ReactNode;
   coachBelowTurn?: ReactNode;
+  // Replaces the sources panel when given (the evidence layout puts its
+  // evidence cards here on a phone, and nothing on a wide screen).
+  sources?: ReactNode;
 }) {
   const groups = useMemo(() => groupSources(state.citations), [state.citations]);
 
@@ -61,7 +65,7 @@ export function ConversationTurn({
         expanded={expanded}
         onSettled={onSettled}
       />
-      <SourcesPanel groups={groups} onSelect={onSelect} />
+      {sources === undefined ? <SourcesPanel groups={groups} onSelect={onSelect} /> : sources}
       {coachBelowTurn}
     </article>
   );

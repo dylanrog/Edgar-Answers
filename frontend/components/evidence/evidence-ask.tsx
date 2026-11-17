@@ -1,0 +1,427 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+import { AskForm } from "@/components/ask-form";
+import { ConversationTurn } from "@/components/conversation-turn";
+import { EvidenceList, cardId } from "@/components/evidence/evidence-list";
+import { FilingDrawer } from "@/components/evidence/filing-drawer";
+import { TourCallout, TourWelcome } from "@/components/tour-coach";
+import { initialAnswerState, reduceAnswer } from "@/lib/answer";
+import type { AnswerState } from "@/lib/answer";
+import { askStream, fetchCompanies } from "@/lib/api";
+import type { AskFilters } from "@/lib/api";
+import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
+import { coverage, coverageLine, coverageSentence, foundNothing } from "@/lib/coverage";
+import { TUTORIAL, askFresh } from "@/lib/tutorial";
+import {
+  askEvent,
+  firstVerifiedMarker,
+  hasSeenTour,
+  markTourSeen,
+  reduceTour,
+} from "@/lib/tour";
+import type { TourEvent, TourStep } from "@/lib/tour";
+import type { Citation, Company } from "@/lib/types";
+
+const noop = () => {};
+const WIDE = "(min-width: 768px)";
+
+// `id` is a stable React key: index keys let a replaced thread reuse the old
+// turn's component state (its already-settled panel).
+type TurnView = { id: number; question: string; state: AnswerState };
+
+/** Which card is selected: a turn and one of its markers. */
+type Selection = { turnId: number; marker: number };
+
+function subscribeWide(onChange: () => void) {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+/** Two columns (evidence on the right) or one (evidence inline). Read once
+ *  per render from matchMedia, so each card exists in exactly one place. The
+ *  prerender assumes one column; the client corrects it before paint. */
+function useWide(): boolean {
+  return useSyncExternalStore(
+    subscribeWide,
+    () => window.matchMedia(WIDE).matches,
+    () => false,
+  );
+}
+
+/**
+ * The evidence layout (spec 2026-11-17): the answer on the left, each
+ * citation's proof -- cut from the real filing and highlighted -- on the
+ * right; on a phone the proof sits under the answer. The original layout lives
+ * on in `ClassicAsk` (served at /classic) as the revert path.
+ */
+export function EvidenceAsk() {
+  const [turns, setTurns] = useState<TurnView[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const nextTurnId = useRef(0);
+  const askAbort = useRef<AbortController | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const [scrollRequest, setScrollRequest] = useState(0);
+  const [drawer, setDrawer] = useState<{ citation: Citation; opener: HTMLElement | null } | null>(
+    null,
+  );
+  const [tour, setTour] = useState<TourStep>("off");
+  // See ClassicAsk: "off" only means "not read yet" until the mount check ran.
+  const [tourChecked, setTourChecked] = useState(false);
+  const [foldedTurn, setFoldedTurn] = useState<number | null>(null);
+  const wide = useWide();
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        if (!hasSeenTour()) setTour(reduceTour("off", { type: "start" }));
+      } finally {
+        setTourChecked(true);
+      }
+    });
+  }, []);
+
+  function dispatch(event: TourEvent): TourStep {
+    const next = reduceTour(tour, event);
+    setTour(next);
+    if (next === "off" && (event.type === "skip" || event.type === "finish")) {
+      markTourSeen();
+    }
+    return next;
+  }
+
+  useEffect(() => {
+    fetchCompanies()
+      .then(setCompanies)
+      .catch(() => setCompanies([]));
+  }, []);
+
+  const names = useMemo(
+    () => Object.fromEntries(companies.map((c) => [c.ticker, c.name])),
+    [companies],
+  );
+  const scope = useMemo(() => coverage(companies), [companies]);
+
+  const streaming = turns.at(-1)?.state.status === "streaming";
+  const latestId = turns.at(-1)?.id ?? null;
+  // The turn whose evidence the right column shows: the clicked one, else the latest.
+  const shownTurnId = selection?.turnId ?? latestId;
+
+  const threadRef = useRef<HTMLDivElement>(null);
+  const openedLatest = useRef(false);
+
+  useEffect(() => {
+    const last = threadRef.current?.querySelector("article:last-of-type");
+    last?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [turns.length]);
+
+  // Bring the selected card on screen after the click has rendered. On a wide
+  // screen the evidence column scrolls on its own; on a phone the page does.
+  useEffect(() => {
+    if (scrollRequest === 0 || selection === null) return;
+    document
+      .getElementById(cardId(selection.turnId, selection.marker))
+      ?.scrollIntoView({ behavior: "smooth", block: wide ? "nearest" : "start" });
+    // Only a new request scrolls; a re-render with the same selection must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollRequest]);
+
+  function patchLastTurn(update: (state: AnswerState) => AnswerState) {
+    setTurns((previous) => {
+      if (previous.length === 0) return previous;
+      const next = [...previous];
+      const last = next[next.length - 1];
+      next[next.length - 1] = { ...last, state: update(last.state) };
+      return next;
+    });
+  }
+
+  async function ask(question: string, filters: AskFilters, options?: { tourEvent?: TourEvent }) {
+    dispatch(options?.tourEvent ?? askEvent(tour));
+    openedLatest.current = false;
+    setSelection(null);
+    askAbort.current?.abort();
+    const controller = new AbortController();
+    askAbort.current = controller;
+    const conversationId = getOrCreateConversationId();
+    const id = nextTurnId.current++;
+    setTurns((previous) => [
+      ...previous,
+      { id, question, state: { ...initialAnswerState, status: "streaming" } },
+    ]);
+    try {
+      for await (const event of askStream(question, filters, conversationId, controller.signal)) {
+        if (controller.signal.aborted) return;
+        patchLastTurn((state) => reduceAnswer(state, event));
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      patchLastTurn((state) => ({
+        ...state,
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : "Could not reach the API.",
+      }));
+    }
+  }
+
+  function newConversation() {
+    askAbort.current?.abort();
+    startNewConversation();
+    setTurns([]);
+    setSelection(null);
+    setDrawer(null);
+  }
+
+  function selectCard(turnId: number, marker: number) {
+    setSelection({ turnId, marker });
+    setScrollRequest((n) => n + 1);
+  }
+
+  function select(citation: Citation, turnId: number) {
+    // Unverified and unattributable citations are inert by design (§6.3).
+    if (!citation.verified || citation.accession === "") return;
+    dispatch({ type: "citationClicked" });
+    if (turnId === latestId) openedLatest.current = true;
+    selectCard(turnId, citation.marker);
+  }
+
+  /** At the closing, on a wide screen, select the follow-up's first verified
+   *  card so its highlighted 2024 figure is in view beside the answer. Not on
+   *  a phone, where scrolling to it would leave the closing card. */
+  function showPayoff(turnId: number, state: AnswerState) {
+    if (!wide || openedLatest.current) return;
+    const marker = firstVerifiedMarker(state.citations);
+    if (marker !== null) selectCard(turnId, marker);
+  }
+
+  const openFiling = useCallback((citation: Citation, opener: HTMLElement) => {
+    setDrawer({ citation, opener });
+  }, []);
+  const closeFiling = useCallback(() => setDrawer(null), []);
+
+  function startTutorialQuestion() {
+    askFresh(TUTORIAL.question, {
+      newConversation,
+      ask: (question, filters) => ask(question, filters, { tourEvent: { type: "asked" } }),
+    });
+  }
+
+  function askFollowUp() {
+    ask(TUTORIAL.followUp, {}, { tourEvent: { type: "followUp" } });
+  }
+
+  function takeTour() {
+    newConversation();
+    dispatch({ type: "start" });
+  }
+
+  function callout(
+    step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
+    target?: Citation,
+  ) {
+    const selected =
+      selection === null
+        ? undefined
+        : turns.find((t) => t.id === selection.turnId)?.state.citations.get(selection.marker);
+    return (
+      <TourCallout
+        step={step}
+        marker={target?.marker}
+        onSkip={() => dispatch({ type: "skip" })}
+        onNext={() => dispatch({ type: "next" })}
+        onFinish={() => dispatch({ type: "finish" })}
+        onRetry={startTutorialQuestion}
+        onFollowUp={askFollowUp}
+        figure={((target ?? selected)?.cells.length ?? 0) > 0}
+        followUpResolved={turns.at(-1)?.state.standaloneQuestion != null}
+        unverified={[...(turns.at(-1)?.state.citations.values() ?? [])].some((c) => !c.verified)}
+        outOfCredits={turns.at(-1)?.state.errorCode === "credits_exhausted"}
+        disabled={streaming}
+      />
+    );
+  }
+
+  function evidenceFor(turn: TurnView) {
+    return (
+      <EvidenceList
+        turnId={turn.id}
+        citations={turn.state.citations}
+        selectedMarker={selection?.turnId === turn.id ? selection.marker : null}
+        onOpenFiling={openFiling}
+        coach={tour === "source" && selection?.turnId === turn.id ? callout("source") : null}
+      />
+    );
+  }
+
+  const nothingHint = (
+    <p className="mt-4 rounded-md border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+      This demo only covers {scope ? `${scope.count} companies (${scope.names})` : "ten companies"}
+      {scope ? `, with filings from ${scope.range}` : ""}. Questions outside that can&apos;t be
+      answered from it.
+    </p>
+  );
+
+  const shownTurn = turns.find((t) => t.id === shownTurnId);
+  const line = coverageLine(companies);
+
+  return (
+    <main className="flex flex-col bg-slate-950 text-slate-200 md:grid md:h-screen md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <section className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r">
+        <div className="px-5 pb-3 pt-5">
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">EDGAR ANSWERS</h1>
+            <div className="flex items-baseline gap-4">
+              {tourChecked && tour === "off" && (
+                <button
+                  type="button"
+                  onClick={takeTour}
+                  className="text-xs text-slate-400 underline hover:text-slate-200"
+                >
+                  Take the tutorial
+                </button>
+              )}
+              {turns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    newConversation();
+                    if (tour !== "off") dispatch({ type: "start" });
+                  }}
+                  className="text-xs text-slate-400 underline hover:text-slate-200"
+                >
+                  New conversation
+                </button>
+              )}
+            </div>
+          </div>
+          {line !== null && (
+            <p data-testid="coverage-line" className="mt-1.5 text-xs leading-snug text-slate-400">
+              {line}
+            </p>
+          )}
+        </div>
+
+        {turns.length > 0 && (
+          <div ref={threadRef} className="px-5 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
+            {turns.map((turn, index) => {
+              const latest = index === turns.length - 1;
+              const lastState = turn.state;
+              const emphasized =
+                latest && tour === "click" ? firstVerifiedMarker(turn.state.citations) : null;
+              return (
+                <ConversationTurn
+                  key={turn.id}
+                  question={turn.question}
+                  state={turn.state}
+                  onSelect={(citation) => select(citation, turn.id)}
+                  names={names}
+                  expanded={latest && turn.id !== foldedTurn}
+                  onSettled={
+                    latest
+                      ? () => {
+                          const before = tour;
+                          const next = dispatch(
+                            lastState.status === "error"
+                              ? { type: "errored" }
+                              : {
+                                  type: "settled",
+                                  hasVerified: firstVerifiedMarker(lastState.citations) !== null,
+                                },
+                          );
+                          if (next === "closing" && before !== "closing") {
+                            setFoldedTurn(turn.id);
+                            showPayoff(turn.id, lastState);
+                          }
+                        }
+                      : noop
+                  }
+                  emphasizeMarker={emphasized}
+                  coachAbovePanel={
+                    latest && (tour === "watch" || tour === "followup") ? callout(tour) : null
+                  }
+                  coachBelowAnswer={
+                    emphasized !== null ? callout("click", turn.state.citations.get(emphasized)) : null
+                  }
+                  coachBelowTurn={
+                    latest && (tour === "more" || tour === "closing" || tour === "interrupted")
+                      ? callout(tour)
+                      : null
+                  }
+                  sources={foundNothing(turn.state) ? nothingHint : wide ? null : evidenceFor(turn)}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {turns.length === 0 && !tourChecked && <div aria-busy="true" className="min-h-64 flex-1" />}
+
+        {turns.length === 0 && tour === "welcome" && (
+          <TourWelcome
+            onAsk={startTutorialQuestion}
+            onSkip={() => dispatch({ type: "skip" })}
+            disabled={streaming}
+          />
+        )}
+
+        {(turns.length > 0 || tourChecked) && (
+          <AskForm
+            companies={companies}
+            disabled={streaming}
+            onSubmit={ask}
+            docked={turns.length > 0}
+            quiet={tour === "welcome"}
+            scopeLabel="Limit to:"
+            placeholder={
+              scope ? `Ask about these ${scope.count} companies' filings…` : undefined
+            }
+          />
+        )}
+
+        {turns.length === 0 && tour === "welcome" && <div className="flex-1" />}
+
+        {turns.length === 0 && tourChecked && tour !== "welcome" && (
+          <div className="flex-1 px-5 pt-4">
+            <p className="mb-3 text-slate-400" data-testid="coverage">
+              {coverageSentence(companies) ?? "Ask a question about a filing."}
+            </p>
+          </div>
+        )}
+      </section>
+
+      {wide && (
+        <section aria-label="Evidence column" className="flex min-h-0 min-w-0 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-1">
+            {shownTurn === undefined ? (
+              <p className="pt-4 text-sm text-slate-400">
+                Each answer&apos;s evidence appears here: the exact table or sentence it quotes,
+                cut from the original filing and highlighted.
+              </p>
+            ) : shownTurn.state.citations.size > 0 ? (
+              <>
+                {shownTurn.id !== latestId && (
+                  <p className="pt-4 text-xs text-slate-400">
+                    Showing evidence for an earlier answer: “{shownTurn.question}”
+                  </p>
+                )}
+                {evidenceFor(shownTurn)}
+              </>
+            ) : (
+              <p className="pt-4 text-sm text-slate-400">
+                {shownTurn.state.status === "streaming"
+                  ? "Evidence appears as each quote is checked against its filing."
+                  : "This answer has no evidence to show."}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {drawer !== null && (
+        <FilingDrawer citation={drawer.citation} opener={drawer.opener} onClose={closeFiling} />
+      )}
+    </main>
+  );
+}
