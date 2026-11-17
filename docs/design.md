@@ -749,7 +749,10 @@ figure-narrowing logic read the same collapsed prose the client saw.
 ### 6.5 Other endpoints
 
 - `GET /filings/{accession}` → `{viewer_html, ticker, form_type, filing_date, period_end}`
-- `GET /companies` → curated list for the filter UI
+- `GET /companies` → `[{cik, ticker, name, filings, form_types, first_filed, last_filed}]`,
+  companies with at least one filing. The filter UI shows the tickers. The empty
+  state turns the form types and the filing date range into a sentence telling the
+  visitor what the demo covers. The last three fields are additive (2026-11).
 - `GET /healthz`
 
 ## 7. Frontend (Next.js App Router + TypeScript)

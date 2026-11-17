@@ -70,4 +70,9 @@ export type Company = {
   ticker: string;
   name: string;
   filings: number;
+  /** Optional so a frontend deployed ahead of the API still renders. */
+  form_types?: string[];
+  /** ISO dates of the company's first and last stored filing. */
+  first_filed?: string;
+  last_filed?: string;
 };

@@ -10,6 +10,7 @@ import { TourCallout, TourWelcome } from "@/components/tour-coach";
 import { initialAnswerState, reduceAnswer } from "@/lib/answer";
 import type { AnswerState } from "@/lib/answer";
 import { askStream, fetchCompanies } from "@/lib/api";
+import { coverageSentence } from "@/lib/coverage";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
 import { TUTORIAL, askFresh } from "@/lib/tutorial";
@@ -403,7 +404,9 @@ export default function AskPage() {
 
         {turns.length === 0 && tourChecked && tour !== "welcome" && (
           <div className="flex-1 px-5 pt-4">
-            <p className="mb-3 text-slate-500">Ask a question about a filing.</p>
+            <p className="mb-3 text-slate-500" data-testid="coverage">
+              {coverageSentence(companies) ?? "Ask a question about a filing."}
+            </p>
           </div>
         )}
       </section>

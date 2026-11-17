@@ -162,12 +162,13 @@ def test_filings_endpoint_404s_for_an_unknown_accession(stubbed_client):
 @pytest.mark.db
 def test_companies_endpoint_lists_companies_with_filings(stubbed_client):
     body = stubbed_client.get("/companies").json()
-    assert {
+    company = next(c for c in body if c["ticker"] == "TSTE")
+    assert {k: company[k] for k in ("cik", "name", "filings")} == {
         "cik": 999999005,
-        "ticker": "TSTE",
         "name": "Test Co E",
         "filings": 1,
-    } in body
+    }
+    assert set(company) >= {"form_types", "first_filed", "last_filed"}
 
 
 def test_ask_preflight_allows_the_frontend_origin():
