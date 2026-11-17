@@ -62,16 +62,28 @@ def load_filing(conn: psycopg.Connection, accession: str) -> dict | None:
 
 def load_companies(conn: psycopg.Connection) -> list[dict]:
     """Only companies that actually have filings -- the filter UI should not
-    offer a ticker that returns nothing."""
+    offer a ticker that returns nothing. Each carries its form types and the
+    dates of its first and last filing, which the empty state turns into a
+    sentence saying what the corpus covers."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT c.cik, c.ticker, c.name, count(f.id) FROM companies c"
-            " JOIN filings f ON f.cik = c.cik"
+            "SELECT c.cik, c.ticker, c.name, count(f.id),"
+            " array_agg(DISTINCT f.form_type ORDER BY f.form_type),"
+            " min(f.filing_date), max(f.filing_date)"
+            " FROM companies c JOIN filings f ON f.cik = c.cik"
             " GROUP BY c.cik, c.ticker, c.name ORDER BY c.ticker"
         )
         return [
-            {"cik": cik, "ticker": ticker, "name": name, "filings": count}
-            for cik, ticker, name, count in cur.fetchall()
+            {
+                "cik": cik,
+                "ticker": ticker,
+                "name": name,
+                "filings": count,
+                "form_types": list(form_types),
+                "first_filed": first.isoformat(),
+                "last_filed": last.isoformat(),
+            }
+            for cik, ticker, name, count, form_types, first, last in cur.fetchall()
         ]
 
 
