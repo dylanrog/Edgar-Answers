@@ -60,7 +60,12 @@ export function EvidenceCard({
       </header>
 
       {openable ? (
-        <Excerpt citation={citation} />
+        // Keyed on what the excerpt shows: a different citation mounts a fresh
+        // excerpt, so its quote never sits over the last citation's table.
+        <Excerpt
+          key={`${citation.accession}|${citation.sids.join(",")}|${citation.cells.map((c) => `${c.sid}:${c.cell}`).join(",")}`}
+          citation={citation}
+        />
       ) : (
         <p className="px-3 py-3 text-sm text-slate-500 line-through decoration-red-500/70">
           “{citation.quote}”
@@ -134,7 +139,12 @@ function Excerpt({ citation }: { citation: Citation }) {
     >
       {status === "loading" && <p className="text-xs text-slate-500">Loading the filing…</p>}
       {status === "error" && <p className="text-xs text-red-400">The filing could not be loaded.</p>}
-      {status === "missing" && <p className="text-sm text-slate-400">“{citation.quote}”</p>}
+      {status === "missing" && (
+        <p className="text-sm text-slate-400">
+          “{citation.quote}”{" "}
+          <span className="text-xs text-slate-500">(open the full filing to see it in place)</span>
+        </p>
+      )}
       <div ref={contentRef} className="filing-html" />
     </div>
   );

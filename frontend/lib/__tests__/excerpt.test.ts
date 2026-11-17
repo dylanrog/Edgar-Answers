@@ -60,6 +60,21 @@ describe("buildExcerpt", () => {
     expect(FILING.querySelector('tr[data-sid="4"]')).not.toBeNull();
   });
 
+  it("keeps the prose part of a citation that spans a table row and a sentence", () => {
+    const excerpt = buildExcerpt(FILING, [4, 6]);
+    expect(excerpt?.querySelectorAll("table")).toHaveLength(1);
+    expect(excerpt?.querySelector('span[data-sid="6"]')).not.toBeNull();
+  });
+
+  it("gives a row of a nested table the outer table, and strips ids from the clones", () => {
+    const nested = filing(
+      '<table id="outer"><tr><td>Header</td></tr><tr><td><table><tr data-sid="7"><td>Row</td></tr></table></td></tr></table>',
+    );
+    const excerpt = buildExcerpt(nested, [7]);
+    expect(excerpt?.textContent).toContain("Header");
+    expect(excerpt?.querySelector("[id]")).toBeNull();
+  });
+
   it("returns null for no sids or sids the filing lacks", () => {
     expect(buildExcerpt(FILING, [])).toBeNull();
     expect(buildExcerpt(FILING, [99])).toBeNull();

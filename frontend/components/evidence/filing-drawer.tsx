@@ -45,13 +45,9 @@ export function FilingDrawer({
 
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Full filing">
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label="Close the filing"
-        onClick={onClose}
-        className="absolute inset-0 h-full w-full cursor-default bg-black/60"
-      />
+      {/* The backdrop closes on a click, but is not a second close button
+          for screen readers or the keyboard: Close and Escape are those. */}
+      <div aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/60" />
       <div className="absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-700 bg-slate-950 shadow-2xl md:w-[60%]">
         <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
           <div className="min-w-0 flex-1">

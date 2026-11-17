@@ -235,5 +235,22 @@ test.describe("on a phone", () => {
     const dialog = page.getByRole("dialog", { name: "Full filing" });
     const box = await dialog.locator("div").nth(1).boundingBox();
     expect(box?.width).toBeGreaterThanOrEqual(389);
+    await dialog.getByRole("button", { name: "Close", exact: true }).tap();
+
+    // The follow-up scrolls its own question into view, not turn 1's first
+    // evidence card (both are <article>s).
+    await page.getByRole("button", { name: "Next", exact: true }).tap();
+    await page.getByRole("button", { name: `Ask "${tutorial.followUp}"`, exact: true }).tap();
+    await expect(callout(page).filter({ hasText: "any document collection" })).toBeVisible();
+    await expect(page.getByText(tutorial.followUp, { exact: true }).last()).toBeInViewport();
+  });
+
+  test("the page behind an open drawer is inert", async ({ page }) => {
+    await stub(page, [TURN1], { seenTour: true });
+    await page.goto("/ask");
+    await askTyped(page, "Compare them");
+    await card(page, 1).getByRole("button", { name: "Open full filing" }).tap();
+    await expect(page.getByRole("dialog", { name: "Full filing" })).toBeVisible();
+    expect(await page.locator("main > section").first().evaluate((el) => (el as HTMLElement).inert)).toBe(true);
   });
 });

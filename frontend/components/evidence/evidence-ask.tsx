@@ -25,7 +25,9 @@ import type { TourEvent, TourStep } from "@/lib/tour";
 import type { Citation, Company } from "@/lib/types";
 
 const noop = () => {};
-const WIDE = "(min-width: 768px)";
+// Tailwind's md, in rem as Tailwind writes it, so JS and CSS agree at any
+// default font size.
+const WIDE = "(min-width: 48rem)";
 
 // `id` is a stable React key: index keys let a replaced thread reuse the old
 // turn's component state (its already-settled panel).
@@ -33,6 +35,26 @@ type TurnView = { id: number; question: string; state: AnswerState };
 
 /** Which card is selected: a turn and one of its markers. */
 type Selection = { turnId: number; marker: number };
+
+const USER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+
+/** Keeps `target` in view while the page around it settles: for `ms`, any
+ *  size change of the page or a card re-aims the scroll, instantly. The
+ *  visitor's first wheel, touch, press or key ends it. Returns a stop function. */
+function keepInView(target: Element, block: ScrollLogicalPosition, ms = 1500): () => void {
+  if (typeof ResizeObserver === "undefined") return () => {};
+  const observer = new ResizeObserver(() => target.scrollIntoView({ block }));
+  observer.observe(document.body);
+  for (const card of document.querySelectorAll("[id^=evidence-]")) observer.observe(card);
+  const stop = () => {
+    observer.disconnect();
+    clearTimeout(timer);
+    for (const type of USER_INPUT) window.removeEventListener(type, stop, true);
+  };
+  const timer = setTimeout(stop, ms);
+  for (const type of USER_INPUT) window.addEventListener(type, stop, { capture: true, passive: true });
+  return stop;
+}
 
 function subscribeWide(onChange: () => void) {
   const query = window.matchMedia(WIDE);
@@ -113,7 +135,9 @@ export function EvidenceAsk() {
   const openedLatest = useRef(false);
 
   useEffect(() => {
-    const last = threadRef.current?.querySelector("article:last-of-type");
+    // Direct children only: on a phone each turn holds evidence cards, which
+    // are <article>s too.
+    const last = threadRef.current?.querySelector(":scope > article:last-of-type");
     last?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [turns.length]);
 
@@ -121,9 +145,14 @@ export function EvidenceAsk() {
   // screen the evidence column scrolls on its own; on a phone the page does.
   useEffect(() => {
     if (scrollRequest === 0 || selection === null) return;
-    document
-      .getElementById(cardId(selection.turnId, selection.marker))
-      ?.scrollIntoView({ behavior: "smooth", block: wide ? "nearest" : "start" });
+    const target = document.getElementById(cardId(selection.turnId, selection.marker));
+    if (target === null) return;
+    const block = wide ? "nearest" : "start";
+    target.scrollIntoView({ behavior: "smooth", block });
+    // Cards above the target grow as their excerpts load (a turn shown for the
+    // first time mounts every card at its loading height), which would push
+    // the target away. Re-aim while that settles, until the visitor steers.
+    return keepInView(target, block);
     // Only a new request scrolls; a re-render with the same selection must not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollRequest]);
@@ -250,6 +279,9 @@ export function EvidenceAsk() {
         citations={turn.state.citations}
         selectedMarker={selection?.turnId === turn.id ? selection.marker : null}
         onOpenFiling={openFiling}
+        // Keyed per turn: showing another turn mounts fresh cards rather than
+        // reusing this turn's card [1] for that turn's [1].
+        key={turn.id}
         coach={tour === "source" && selection?.turnId === turn.id ? callout("source") : null}
       />
     );
@@ -268,7 +300,10 @@ export function EvidenceAsk() {
 
   return (
     <main className="flex flex-col bg-slate-950 text-slate-200 md:grid md:h-screen md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <section className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r">
+      <section
+        inert={drawer !== null}
+        className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r"
+      >
         <div className="px-5 pb-3 pt-5">
           <div className="flex items-baseline justify-between gap-4">
             <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">EDGAR ANSWERS</h1>
@@ -296,11 +331,14 @@ export function EvidenceAsk() {
               )}
             </div>
           </div>
-          {line !== null && (
-            <p data-testid="coverage-line" className="mt-1.5 text-xs leading-snug text-slate-400">
-              {line}
-            </p>
-          )}
+          {/* Two lines reserved before /companies answers, so the line arriving
+              doesn't push the welcome card down under a first visitor's eyes. */}
+          <p
+            data-testid={line !== null ? "coverage-line" : undefined}
+            className="mt-1.5 min-h-[2lh] text-xs leading-snug text-slate-400"
+          >
+            {line}
+          </p>
         </div>
 
         {turns.length > 0 && (
@@ -392,7 +430,11 @@ export function EvidenceAsk() {
       </section>
 
       {wide && (
-        <section aria-label="Evidence column" className="flex min-h-0 min-w-0 flex-col">
+        <section
+          aria-label="Evidence column"
+          inert={drawer !== null}
+          className="flex min-h-0 min-w-0 flex-col"
+        >
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-1">
             {shownTurn === undefined ? (
               <p className="pt-4 text-sm text-slate-400">

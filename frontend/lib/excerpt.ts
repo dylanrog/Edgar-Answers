@@ -22,14 +22,30 @@ export function buildExcerpt(
   const out = doc.createDocumentFragment();
   const tables = new Set<Element>();
   for (const el of cited) {
-    const table = el.closest("table");
+    const table = outermostTable(el);
     if (table !== null) tables.add(table);
   }
-  if (tables.size > 0) {
-    for (const table of tables) out.append(table.cloneNode(true));
-    return out;
-  }
+  for (const table of tables) out.append(table.cloneNode(true));
+  // A citation can span a table row and a sentence: the prose part gets its
+  // window too, after the table, rather than being dropped.
+  const proseSids = sids.filter((sid) =>
+    [...filing.querySelectorAll(`[data-sid="${sid}"]`)].some((el) => el.closest("table") === null),
+  );
+  if (proseSids.length > 0) out.append(proseWindow(filing, proseSids, doc));
+  // Cloned ids would duplicate the drawer's, so an in-filing anchor could jump
+  // to a card behind it.
+  for (const el of out.querySelectorAll("[id]")) el.removeAttribute("id");
+  return out;
+}
 
+/** A row in a nested table belongs with the outer table's header rows. */
+function outermostTable(el: Element): Element | null {
+  let table = el.closest("table");
+  while (table?.parentElement?.closest("table")) table = table.parentElement.closest("table");
+  return table;
+}
+
+function proseWindow(filing: ParentNode, sids: number[], doc: Document): HTMLParagraphElement {
   const first = Math.min(...sids) - 1;
   const last = Math.max(...sids) + 1;
   const paragraph = doc.createElement("p");
@@ -44,6 +60,5 @@ export function buildExcerpt(
       paragraph.append(el.cloneNode(true));
     }
   }
-  out.append(paragraph);
-  return out;
+  return paragraph;
 }
