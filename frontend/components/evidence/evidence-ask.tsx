@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { AskForm } from "@/components/ask-form";
 import { ConversationTurn } from "@/components/conversation-turn";
+import { Composer } from "@/components/evidence/composer";
 import { EvidenceList, cardId } from "@/components/evidence/evidence-list";
 import { FilingDrawer } from "@/components/evidence/filing-drawer";
-import { TourCallout, TourWelcome } from "@/components/tour-coach";
+import { Landing } from "@/components/evidence/landing";
+import { TourCallout } from "@/components/tour-coach";
 import { initialAnswerState, reduceAnswer } from "@/lib/answer";
 import type { AnswerState } from "@/lib/answer";
 import { askStream, fetchCompanies } from "@/lib/api";
 import type { AskFilters } from "@/lib/api";
 import { getOrCreateConversationId, startNewConversation } from "@/lib/conversation";
-import { coverage, coverageLine, coverageSentence, foundNothing } from "@/lib/coverage";
+import { coverage, coverageSummary, foundNothing } from "@/lib/coverage";
 import { TUTORIAL, askFresh } from "@/lib/tutorial";
 import {
   askEvent,
@@ -250,6 +251,12 @@ export function EvidenceAsk() {
     step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
     target?: Citation,
   ) {
+    // The click step points at the latest answer's first verified citation.
+    if (step === "click" && target === undefined) {
+      const latest = turns.at(-1)?.state.citations;
+      const marker = latest === undefined ? null : firstVerifiedMarker(latest);
+      target = marker === null ? undefined : latest?.get(marker);
+    }
     const selected =
       selection === null
         ? undefined
@@ -268,6 +275,7 @@ export function EvidenceAsk() {
         unverified={[...(turns.at(-1)?.state.citations.values() ?? [])].some((c) => !c.verified)}
         outOfCredits={turns.at(-1)?.state.errorCode === "credits_exhausted"}
         disabled={streaming}
+        variant="dock"
       />
     );
   }
@@ -282,67 +290,78 @@ export function EvidenceAsk() {
         // Keyed per turn: showing another turn mounts fresh cards rather than
         // reusing this turn's card [1] for that turn's [1].
         key={turn.id}
-        coach={tour === "source" && selection?.turnId === turn.id ? callout("source") : null}
       />
     );
   }
 
+  const summary = coverageSummary(companies);
   const nothingHint = (
     <p className="mt-4 rounded-md border border-amber-800/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
-      This demo only covers {scope ? `${scope.count} companies (${scope.names})` : "ten companies"}
-      {scope ? `, with filings from ${scope.range}` : ""}. Questions outside that can&apos;t be
-      answered from it.
+      {/* One string: JSX drops the space between an expression and text that
+          follows on the next line, which ran "NVIDIA.Questions" together. */}
+      {[
+        summary ?? "This app only covers ten companies' SEC filings.",
+        scope ? `Those are ${scope.names}.` : "",
+        "Questions outside that can't be answered from it.",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     </p>
   );
 
   const shownTurn = turns.find((t) => t.id === shownTurnId);
-  const line = coverageLine(companies);
+  // While the tour runs, its panel takes the input bar's place (design canvas,
+  // round 2, idea 2): no input means "follow along"; the input coming back
+  // means "your turn".
+  const inTour = tour !== "off" && tour !== "welcome";
+
+  // Until the mount-time check has run, nothing: a first-time visitor must not
+  // see the chat flash before the landing replaces it.
+  if (!tourChecked) return <main aria-busy="true" className="min-h-dvh bg-slate-950" />;
+
+  if (tour === "welcome" && turns.length === 0) {
+    return (
+      <Landing
+        companies={companies}
+        onTour={startTutorialQuestion}
+        onSkip={() => dispatch({ type: "skip" })}
+        disabled={streaming}
+      />
+    );
+  }
 
   return (
-    <main className="flex flex-col bg-slate-950 text-slate-200 md:grid md:h-screen md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <main className="flex min-h-dvh flex-col bg-slate-950 text-slate-200 md:grid md:h-dvh md:min-h-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <section
         inert={drawer !== null}
-        className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r"
+        className="flex min-w-0 flex-1 flex-col border-slate-800 md:min-h-0 md:border-r"
       >
-        <div className="px-5 pb-3 pt-5">
-          <div className="flex items-baseline justify-between gap-4">
-            <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">EDGAR ANSWERS</h1>
-            <div className="flex items-baseline gap-4">
-              {tourChecked && tour === "off" && (
-                <button
-                  type="button"
-                  onClick={takeTour}
-                  className="text-xs text-slate-400 underline hover:text-slate-200"
-                >
-                  Take the tutorial
-                </button>
-              )}
-              {turns.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    newConversation();
-                    if (tour !== "off") dispatch({ type: "start" });
-                  }}
-                  className="text-xs text-slate-400 underline hover:text-slate-200"
-                >
-                  New conversation
-                </button>
-              )}
-            </div>
+        <header className="flex items-center gap-4 border-b border-slate-900 px-5 py-3.5">
+          <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">EDGAR ANSWERS</h1>
+          <div className="ml-auto flex items-center gap-4">
+            {tour === "off" && (
+              <button
+                type="button"
+                onClick={takeTour}
+                className="min-h-10 text-sm text-blue-300 hover:text-blue-200"
+              >
+                Take the tour
+              </button>
+            )}
+            {turns.length > 0 && !inTour && (
+              <button
+                type="button"
+                onClick={newConversation}
+                className="min-h-10 text-sm text-blue-300 hover:text-blue-200"
+              >
+                New chat
+              </button>
+            )}
           </div>
-          {/* Two lines reserved before /companies answers, so the line arriving
-              doesn't push the welcome card down under a first visitor's eyes. */}
-          <p
-            data-testid={line !== null ? "coverage-line" : undefined}
-            className="mt-1.5 min-h-[2lh] text-xs leading-snug text-slate-400"
-          >
-            {line}
-          </p>
-        </div>
+        </header>
 
-        {turns.length > 0 && (
-          <div ref={threadRef} className="px-5 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto">
+        {turns.length > 0 ? (
+          <div ref={threadRef} className="flex-1 px-5 pb-4 pt-4 md:min-h-0 md:overflow-y-auto">
             {turns.map((turn, index) => {
               const latest = index === turns.length - 1;
               const lastState = turn.state;
@@ -376,57 +395,33 @@ export function EvidenceAsk() {
                       : noop
                   }
                   emphasizeMarker={emphasized}
-                  coachAbovePanel={
-                    latest && (tour === "watch" || tour === "followup") ? callout(tour) : null
-                  }
-                  coachBelowAnswer={
-                    emphasized !== null ? callout("click", turn.state.citations.get(emphasized)) : null
-                  }
-                  coachBelowTurn={
-                    latest && (tour === "more" || tour === "closing" || tour === "interrupted")
-                      ? callout(tour)
-                      : null
-                  }
                   sources={foundNothing(turn.state) ? nothingHint : wide ? null : evidenceFor(turn)}
                 />
               );
             })}
           </div>
-        )}
-
-        {turns.length === 0 && !tourChecked && <div aria-busy="true" className="min-h-64 flex-1" />}
-
-        {turns.length === 0 && tour === "welcome" && (
-          <TourWelcome
-            onAsk={startTutorialQuestion}
-            onSkip={() => dispatch({ type: "skip" })}
-            disabled={streaming}
-          />
-        )}
-
-        {(turns.length > 0 || tourChecked) && (
-          <AskForm
-            companies={companies}
-            disabled={streaming}
-            onSubmit={ask}
-            docked={turns.length > 0}
-            quiet={tour === "welcome"}
-            scopeLabel="Limit to:"
-            placeholder={
-              scope ? `Ask about these ${scope.count} companies' filings…` : undefined
-            }
-          />
-        )}
-
-        {turns.length === 0 && tour === "welcome" && <div className="flex-1" />}
-
-        {turns.length === 0 && tourChecked && tour !== "welcome" && (
-          <div className="flex-1 px-5 pt-4">
-            <p className="mb-3 text-slate-400" data-testid="coverage">
-              {coverageSentence(companies) ?? "Ask a question about a filing."}
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-8 py-12 text-center">
+            <p className="text-[22px] font-semibold text-white">What do you want to know?</p>
+            <p className="text-sm leading-relaxed text-slate-400">
+              For example: “What were Apple&apos;s net sales in fiscal 2025?”
             </p>
           </div>
         )}
+
+        {/* Pinned to the bottom of the screen like a chat app's input. */}
+        <div className="sticky bottom-0 z-10 bg-slate-950 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 md:px-5">
+          {tour !== "off" && tour !== "welcome" ? (
+            callout(tour)
+          ) : (
+            <Composer
+              companies={companies}
+              disabled={streaming}
+              onSubmit={ask}
+              placeholder={turns.length > 0 ? "Ask a follow-up…" : "Ask about a filing…"}
+            />
+          )}
+        </div>
       </section>
 
       {wide && (

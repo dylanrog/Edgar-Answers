@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { initialAnswerState } from "../answer";
-import { coverageLine, coverageSentence, foundNothing, shortName } from "../coverage";
+import {
+  coverageCaption,
+  coverageLine,
+  coverageSentence,
+  coverageSummary,
+  foundNothing,
+  shortName,
+} from "../coverage";
 import type { Company } from "../types";
 
 const company = (ticker: string, name: string, first: string, last: string, forms = ["10-K", "10-Q"]): Company => ({
@@ -93,5 +100,21 @@ describe("foundNothing", () => {
     expect(foundNothing({ ...done, status: "streaming" })).toBe(false);
     expect(foundNothing({ ...done, citations: new Map([[1, {} as never]]) })).toBe(false);
     expect(foundNothing({ ...done, notice: "unverified" })).toBe(false);
+  });
+});
+
+describe("coverageSummary and coverageCaption", () => {
+  it("say the coverage once, long on the landing and short under the input", () => {
+    const corpus = [{ ...CORPUS[0], first_filed: "2023-08-04" }, ...CORPUS.slice(1)];
+    expect(coverageSummary(corpus)).toBe(
+      "This app only covers the 10-K and 10-Q SEC filings of 10 companies, from the last 3 years.",
+    );
+    expect(coverageCaption(corpus)).toBe("10-K and 10-Q filings · 10 companies · last 3 years");
+  });
+
+  it("are null without coverage fields", () => {
+    const old = [{ cik: 1, ticker: "AAPL", name: "Apple Inc.", filings: 13 }];
+    expect(coverageSummary(old)).toBeNull();
+    expect(coverageCaption(old)).toBeNull();
   });
 });

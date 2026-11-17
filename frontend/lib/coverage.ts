@@ -72,6 +72,25 @@ export function coverageSentence(companies: Company[]): string | null {
     : `We have ${c.forms} filings from ${c.names}, filed in ${c.span} (${c.range}).`;
 }
 
+/** The landing's one statement of what the demo covers:
+ *  "This app only covers the 10-K and 10-Q SEC filings of 10 companies, from
+ *  the last 3 years." */
+export function coverageSummary(companies: Company[]): string | null {
+  const c = coverage(companies);
+  return c === null
+    ? null
+    : `This app only covers the ${c.forms} SEC filings of ${c.count} companies, from ${c.span}.`;
+}
+
+/** The same fact, short, under the input bar: "10-K and 10-Q filings ·
+ *  10 companies · last 3 years". */
+export function coverageCaption(companies: Company[]): string | null {
+  const c = coverage(companies);
+  return c === null
+    ? null
+    : `${c.forms} filings · ${c.count} companies · ${c.span.replace(/^the /, "")}`;
+}
+
 /** The evidence layout's always-visible header line (spec 2026-11-17 §5). */
 export function coverageLine(companies: Company[]): string | null {
   const c = coverage(companies);
