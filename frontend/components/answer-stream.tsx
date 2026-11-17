@@ -8,7 +8,7 @@ import type { Citation } from "@/lib/types";
 function Dot({ delay }: { delay: string }) {
   return (
     <span
-      className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-500"
+      className="h-1.5 w-1.5 animate-bounce rounded-full bg-ledger-500"
       style={{ animationDelay: delay }}
     />
   );
@@ -24,10 +24,10 @@ export function AnswerStream({
   emphasizeMarker?: number | null;
 }) {
   if (state.status === "idle") {
-    return <p className="text-slate-500">Ask a question about a filing.</p>;
+    return <p className="text-ledger-500">Ask a question about a filing.</p>;
   }
   if (state.status === "done" && state.chunksRetrieved === 0) {
-    return <p className="text-slate-500">No matching filings.</p>;
+    return <p className="text-ledger-500">No matching filings.</p>;
   }
   // The backend runs detection + retrieval + generation before the first
   // token, so an empty streaming turn means "still working", not "empty

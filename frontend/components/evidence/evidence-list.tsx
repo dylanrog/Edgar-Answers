@@ -34,11 +34,11 @@ export function EvidenceList({
   return (
     <section aria-label="Evidence" className="mt-4 flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <h2 className="font-mono text-[10px] tracking-[0.09em] text-slate-400 uppercase">Evidence</h2>
+        <h2 className="font-mono text-[10px] tracking-[0.09em] text-ledger-400 uppercase">Evidence</h2>
         <span
           className={
             "rounded-full px-2 py-0.5 text-[11px] " +
-            (verified === ordered.length ? "bg-green-950 text-green-300" : "bg-red-950 text-red-300")
+            (verified === ordered.length ? "bg-lime-950 text-lime-300" : "bg-red-950 text-red-300")
           }
         >
           {verified} of {ordered.length} {ordered.length === 1 ? "quote" : "quotes"} verified

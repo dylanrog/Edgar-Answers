@@ -51,9 +51,9 @@ export function Composer({
       {filtersOpen && (
         <div
           id="composer-filters"
-          className="mb-2 rounded-2xl border border-slate-700 bg-slate-900 p-3"
+          className="mb-2 rounded-2xl border border-ledger-700 bg-ledger-900 p-3"
         >
-          <p className="mb-2 text-xs text-slate-400">Limit to up to {MAX_TICKERS} companies</p>
+          <p className="mb-2 text-xs text-ledger-400">Limit to up to {MAX_TICKERS} companies</p>
           <div className="flex flex-wrap gap-1.5">
             {companies.map((company) => {
               const selected = tickers.includes(company.ticker);
@@ -68,10 +68,10 @@ export function Composer({
                   className={
                     "min-h-9 rounded-full border px-3 font-mono text-xs " +
                     (selected
-                      ? "border-blue-500 bg-blue-700 text-white"
+                      ? "border-mint-500 bg-mint-700 text-white"
                       : atCap
-                        ? "cursor-not-allowed border-slate-800 text-slate-600"
-                        : "border-slate-700 text-slate-200 hover:border-slate-500")
+                        ? "cursor-not-allowed border-ledger-800 text-ledger-600"
+                        : "border-ledger-700 text-ledger-200 hover:border-ledger-500")
                   }
                 >
                   {company.ticker}
@@ -80,13 +80,13 @@ export function Composer({
             })}
           </div>
           <div className="mt-3 flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-slate-400">
+            <label className="flex items-center gap-2 text-xs text-ledger-400">
               Form
               <select
                 aria-label="Form type"
                 value={formType}
                 onChange={(event) => setFormType(event.target.value)}
-                className="min-h-9 rounded-lg border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-200"
+                className="min-h-9 rounded-lg border border-ledger-700 bg-ledger-950 px-2 font-mono text-xs text-ledger-200"
               >
                 <option value="">All forms</option>
                 <option value="10-K">10-K</option>
@@ -100,7 +100,7 @@ export function Composer({
                   setTickers([]);
                   setFormType("");
                 }}
-                className="text-xs text-slate-400 underline hover:text-slate-200"
+                className="text-xs text-ledger-400 underline hover:text-ledger-200"
               >
                 Clear
               </button>
@@ -110,7 +110,7 @@ export function Composer({
       )}
 
       <form
-        className="flex flex-col gap-2 rounded-[22px] border border-slate-700 bg-slate-900 py-2.5 pl-4 pr-2.5"
+        className="flex flex-col gap-2 rounded-[22px] border border-ledger-700 bg-ledger-900 py-2.5 pl-4 pr-2.5"
         onSubmit={(event) => {
           event.preventDefault();
           if (!question.trim()) return;
@@ -124,7 +124,7 @@ export function Composer({
       >
         <input
           aria-label="Question"
-          className="bg-transparent py-1.5 text-base text-slate-100 placeholder:text-slate-500 focus:outline-none"
+          className="bg-transparent py-1.5 text-base text-ledger-100 placeholder:text-ledger-500 focus:outline-none"
           placeholder={placeholder}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
@@ -138,8 +138,8 @@ export function Composer({
             className={
               "flex min-h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] " +
               (tickers.length > 0 || formType !== ""
-                ? "border-blue-500 text-blue-200"
-                : "border-slate-700 text-slate-300 hover:border-slate-500")
+                ? "border-mint-500 text-mint-200"
+                : "border-ledger-700 text-ledger-300 hover:border-ledger-500")
             }
           >
             {scope}
@@ -152,7 +152,7 @@ export function Composer({
             type="submit"
             aria-label="Ask"
             disabled={disabled}
-            className="ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400"
+            className="ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-mint-400 text-ledger-950 hover:bg-mint-300 disabled:bg-ledger-700 disabled:text-ledger-400"
           >
             <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 19V5" />
@@ -162,7 +162,7 @@ export function Composer({
         </div>
       </form>
       {caption !== null && (
-        <p data-testid="coverage-caption" className="mt-2 text-center text-xs text-slate-400">
+        <p data-testid="coverage-caption" className="mt-2 text-center text-xs text-ledger-400">
           {caption}
         </p>
       )}

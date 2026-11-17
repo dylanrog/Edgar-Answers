@@ -21,7 +21,7 @@ export function CitationChip({
   emphasized?: boolean;
 }) {
   if (citation === undefined) {
-    return <span className="text-slate-600">[{marker}]</span>;
+    return <span className="text-ledger-600">[{marker}]</span>;
   }
   if (!citation.verified) {
     return (
@@ -42,7 +42,7 @@ export function CitationChip({
       type="button"
       onClick={() => onSelect(citation)}
       className={
-        "relative mx-0.5 inline-block rounded bg-blue-900 px-1 align-baseline font-mono text-[10px] leading-none text-blue-200 hover:bg-blue-800 " +
+        "relative mx-0.5 inline-block rounded bg-mint-900 px-1 align-baseline font-mono text-[10px] leading-none text-mint-200 hover:bg-mint-800 " +
         "pointer-coarse:after:absolute pointer-coarse:after:left-1/2 pointer-coarse:after:top-1/2 pointer-coarse:after:h-10 pointer-coarse:after:w-10 pointer-coarse:after:min-w-full pointer-coarse:after:-translate-x-1/2 pointer-coarse:after:-translate-y-1/2 pointer-coarse:after:content-['']" +
         (emphasized ? " ring-2 ring-amber-400" : "")
       }

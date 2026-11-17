@@ -48,19 +48,19 @@ export function FilingDrawer({
       {/* The backdrop closes on a click, but is not a second close button
           for screen readers or the keyboard: Close and Escape are those. */}
       <div aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-black/60" />
-      <div className="absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-700 bg-slate-950 shadow-2xl md:w-[60%]">
-        <div className="flex items-center gap-3 border-b border-slate-800 px-4 py-3">
+      <div className="absolute inset-y-0 right-0 flex w-full flex-col border-l border-ledger-700 bg-ledger-950 shadow-2xl md:w-[60%]">
+        <div className="flex items-center gap-3 border-b border-ledger-800 px-4 py-3">
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-sm font-semibold text-slate-100">
+            <p className="font-mono text-sm font-semibold text-ledger-100">
               {citation.ticker} · {citation.form_type}
             </p>
-            <p className="text-xs text-slate-400">filed {citation.filing_date}</p>
+            <p className="text-xs text-ledger-400">filed {citation.filing_date}</p>
           </div>
           <button
             ref={closeRef}
             type="button"
             onClick={onClose}
-            className="min-h-10 rounded-md border border-slate-600 px-3 text-sm text-slate-200 hover:border-slate-400"
+            className="min-h-10 rounded-md border border-ledger-600 px-3 text-sm text-ledger-200 hover:border-ledger-400"
           >
             Close
           </button>

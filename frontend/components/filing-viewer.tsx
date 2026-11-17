@@ -84,7 +84,7 @@ function FilingPane({
     >
       {error !== null && <p className="text-red-400">{error}</p>}
       {error === null && filing === null && (
-        <p className="text-slate-500">Loading filing…</p>
+        <p className="text-ledger-500">Loading filing…</p>
       )}
       {filing !== null && (
         <div ref={containerRef} className="filing-html" />
@@ -102,7 +102,7 @@ export function FilingViewer({
 }) {
   if (tabs.open.length === 0) {
     return (
-      <p className="p-5 text-slate-500">
+      <p className="p-5 text-ledger-500">
         Sources open here, with the cited sentence or figure highlighted.
       </p>
     );
