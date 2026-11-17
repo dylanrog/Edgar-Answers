@@ -23,7 +23,7 @@ test("the empty state says which forms, companies and years the demo covers", as
     }),
   );
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await expect(page.getByTestId("coverage")).toHaveText(
     "We have 10-K and 10-Q filings from Apple and JPMorgan Chase, filed in the last 3 years (Aug 2023 – Jul 2026).",
   );
@@ -37,6 +37,6 @@ test("an API without coverage fields keeps the generic prompt", async ({ page })
     }),
   );
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await expect(page.getByTestId("coverage")).toHaveText("Ask a question about a filing.");
 });

@@ -309,3 +309,8 @@ Completed on 2026-11-16, except the one item left open.
 - **Re-run the release check** (`python -m evals examples --runs 10 --verbose`
   with `DATABASE_URL` set to the prod URL) after any prompt, retrieval or
   corpus change.
+- **Revert the page layout without a code change.** `/ask` serves the evidence
+  layout (spec 2026-11-17). To put the original split-pane page back, add the
+  Vercel environment variable `NEXT_PUBLIC_LAYOUT=classic` (Production) and
+  **Redeploy**. Remove it and redeploy to switch back. The original page is
+  also always live at `/classic`, for comparison.

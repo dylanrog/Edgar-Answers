@@ -250,7 +250,7 @@ async function reloadHydrated(page: Page) {
 
 /** Plays the tutorial from the welcome card up to the click-the-citation step. */
 async function toClickStep(page: Page) {
-  await page.goto("/ask");
+  await page.goto("/classic");
   await tutorialButton(page).click();
   await expect(page.getByText(CLICK_STEP)).toBeVisible();
 }
@@ -276,7 +276,7 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
     },
   ]);
 
-  await page.goto("/ask");
+  await page.goto("/classic");
   // Welcome: the question, one filled call to action, and Skip tutorial.
   await expect(welcome(page)).toBeVisible();
   await expect(welcome(page).getByText(QUESTION)).toBeVisible();
@@ -372,7 +372,7 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
 
 test("skipping from the welcome card leaves the regular site, for good", async ({ page }) => {
   await stub(page);
-  await page.goto("/ask");
+  await page.goto("/classic");
   await welcome(page).getByRole("button", { name: "Skip tutorial" }).click();
 
   await expect(page.getByText(EMPTY)).toBeVisible();
@@ -411,7 +411,7 @@ test("a typed question at the welcome card leaves for the regular site, with no 
   page,
 }) => {
   const requests = await stub(page, [TYPED]);
-  await page.goto("/ask");
+  await page.goto("/classic");
   await expect(welcome(page)).toBeVisible();
 
   await page.getByLabel("Question").fill("my own question");
@@ -461,7 +461,7 @@ test("no verified citation on turn 1 goes straight to the closing, with the unve
   page,
 }) => {
   await stub(page, [UNVERIFIED_TURN1]);
-  await page.goto("/ask");
+  await page.goto("/classic");
   await tutorialButton(page).click();
 
   await expect(page.getByText(/works on any document collection/)).toBeVisible();
@@ -514,7 +514,7 @@ test("an exhausted API account stops the tutorial without offering Try again", a
   await stub(page, [
     progress(nvdaRef) + sse("error", { message: CREDITS, code: "credits_exhausted" }),
   ]);
-  await page.goto("/ask");
+  await page.goto("/classic");
   await tutorialButton(page).click();
 
   // The server's message is shown once, in the answer; the card doesn't repeat it.
@@ -570,7 +570,7 @@ test("restarting mid-stream aborts the old stream; the new run shows only its ow
     await route.fulfill({ contentType: "text/event-stream", body: TURN1 });
   });
 
-  await page.goto("/ask");
+  await page.goto("/classic");
   await tutorialButton(page).click();
   // Mid-run the header offers "New conversation", which restarts at welcome.
   await page.getByRole("button", { name: "New conversation" }).click();
@@ -595,7 +595,7 @@ test.describe("on a phone", () => {
   test("the whole tutorial fits the screen and each card is brought into view", async ({ page }) => {
     await stub(page, [TURN1_LONG, TURN2]);
     const scrollWidth = () => page.evaluate(() => document.documentElement.scrollWidth);
-    await page.goto("/ask");
+    await page.goto("/classic");
     await expect(welcome(page)).toBeInViewport();
     await tutorialButton(page).click();
     await expect(page.getByText(CLICK_STEP)).toBeVisible();
@@ -640,7 +640,7 @@ test.describe("on a touch screen", () => {
 
   test("the click step says Tap, and the chip's hit area is at least 40 px", async ({ page }) => {
     await stub(page);
-    await page.goto("/ask");
+    await page.goto("/classic");
     await tutorialButton(page).click();
     await expect(
       page.getByText("Tap the pulsing [1] to see that figure in the original filing."),
@@ -682,7 +682,7 @@ test("paragraphs render as separate blocks, and a marker in each still opens its
 }) => {
   await stub(page, [TWO_PARAGRAPHS]);
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await page.getByLabel("Question").fill("Compare them");
   await askButton(page).click();
 
@@ -708,7 +708,7 @@ test("the prerendered page has neither the tutorial link nor the regular site, s
   page,
   request,
 }) => {
-  const html = await (await request.get("/ask")).text();
+  const html = await (await request.get("/classic")).text();
   expect(html).not.toContain("Take the tutorial");
   // Nor the regular empty state: a first visit would see it pushed down and
   // restyled as the welcome card arrives, and its form could be submitted
@@ -719,7 +719,7 @@ test("the prerendered page has neither the tutorial link nor the regular site, s
 
   // A first visit gets the welcome card above the composer once mounted.
   await stub(page);
-  await page.goto("/ask");
+  await page.goto("/classic");
   await expect(welcome(page)).toBeVisible();
   await expect(page.getByLabel("Question")).toBeVisible();
   await expect(page.getByText(EMPTY)).toHaveCount(0);
@@ -763,7 +763,7 @@ test.describe("back to the answer on a phone", () => {
   }) => {
     await stub(page, [TURN1_LONG]);
     await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-    await page.goto("/ask");
+    await page.goto("/classic");
     await page.getByLabel("Question").fill("Compare them");
     await askButton(page).click();
     await chip(page).click();
@@ -787,7 +787,7 @@ test.describe("back to the answer during the tutorial on a phone", () => {
     page,
   }) => {
     await stub(page, [TURN1_LONG]);
-    await page.goto("/ask");
+    await page.goto("/classic");
     await tutorialButton(page).click();
     await chip(page).click();
     await expect(page.locator(".cited-figure")).toBeInViewport();
@@ -804,7 +804,7 @@ test.describe("back to the answer during the tutorial on a phone", () => {
 test("there is no Back to answer button beside the answer on a wide screen", async ({ page }) => {
   await stub(page, [TYPED]);
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await page.getByLabel("Question").fill("q");
   await askButton(page).click();
   await chip(page).click();

@@ -117,7 +117,7 @@ async function stub(page: Page, html = VIEWER_HTML, body = ANSWER) {
 
 async function openCitation(page: Page, text = "115,186") {
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await page.getByLabel("Question").fill("What was Data Center revenue?");
   await page.getByRole("button", { name: "Ask", exact: true }).click();
   await page.getByRole("button", { name: "[1]", exact: true }).click();
@@ -321,7 +321,7 @@ test("the empty viewer says what will open there", async ({ page }) => {
     route.fulfill({ contentType: "application/json", body: "[]" }),
   );
   await page.addInitScript(() => localStorage.setItem("edgar-answers.tour-seen", "1"));
-  await page.goto("/ask");
+  await page.goto("/classic");
   await expect(
     page.getByText("Sources open here, with the cited sentence or figure highlighted."),
   ).toBeVisible();
