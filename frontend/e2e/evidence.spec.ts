@@ -218,10 +218,13 @@ test("the tutorial runs in the input bar's place, step by step, and hands the in
   expect(requests).toHaveLength(2);
   expect(requests[0].conversation_id).toBe(requests[1].conversation_id);
 
+  // Done lands on a fresh chat: the tutorial's conversation was the tour's.
   await dock(page).getByRole("button", { name: "Done" }).click();
   await expect(dock(page)).toHaveCount(0);
   await expect(page.getByLabel("Question")).toBeVisible();
-  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", "Ask a follow-up…");
+  await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", "Ask about a filing…");
+  await expect(page.getByText(tutorial.question, { exact: true })).toHaveCount(0);
+  await expect(page.getByText("What do you want to know?")).toBeVisible();
 });
 
 test("Exit tutorial hands the input back straight away", async ({ page }) => {
@@ -232,6 +235,8 @@ test("Exit tutorial hands the input back straight away", async ({ page }) => {
   await dock(page).getByRole("button", { name: "Exit tutorial" }).click();
   await expect(dock(page)).toHaveCount(0);
   await expect(page.getByLabel("Question")).toBeVisible();
+  await expect(page.getByText(tutorial.question, { exact: true })).toHaveCount(0);
+  await expect(page.getByText("What do you want to know?")).toBeVisible();
   await expect(page.getByRole("button", { name: "Take the tour" })).toBeVisible();
 });
 

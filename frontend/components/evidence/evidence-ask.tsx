@@ -247,6 +247,14 @@ export function EvidenceAsk() {
     dispatch({ type: "start" });
   }
 
+  /** Exit tutorial and Done both land on a fresh chat: the scripted
+   *  conversation was the tour's, not the visitor's, so their own first
+   *  question must not inherit its context. */
+  function endTour(type: "skip" | "finish") {
+    newConversation();
+    dispatch({ type });
+  }
+
   function callout(
     step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
     target?: Citation,
@@ -265,9 +273,9 @@ export function EvidenceAsk() {
       <TourCallout
         step={step}
         marker={target?.marker}
-        onSkip={() => dispatch({ type: "skip" })}
+        onSkip={() => endTour("skip")}
         onNext={() => dispatch({ type: "next" })}
-        onFinish={() => dispatch({ type: "finish" })}
+        onFinish={() => endTour("finish")}
         onRetry={startTutorialQuestion}
         onFollowUp={askFollowUp}
         figure={((target ?? selected)?.cells.length ?? 0) > 0}
@@ -374,7 +382,11 @@ export function EvidenceAsk() {
                   state={turn.state}
                   onSelect={(citation) => select(citation, turn.id)}
                   names={names}
-                  expanded={latest && turn.id !== foldedTurn}
+                  // Folded to its summary line by default; it opens only while
+                  // the tutorial's "watch the panel" steps point at it.
+                  expanded={
+                    latest && turn.id !== foldedTurn && (tour === "watch" || tour === "followup")
+                  }
                   onSettled={
                     latest
                       ? () => {

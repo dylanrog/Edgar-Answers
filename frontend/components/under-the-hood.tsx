@@ -78,7 +78,7 @@ export function UnderTheHood({
             ? "Under the hood"
             : `Under the hood: ${passages} passages · ${verified}/${total} quotes verified${state.status === "error" ? " · stopped with an error" : ""}`}
         </span>
-        <span aria-hidden>{open ? "▾" : "▸"}</span>
+        <span aria-hidden className="text-base leading-none">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
         <ul className="mt-2 space-y-1.5" aria-label="Pipeline steps">
