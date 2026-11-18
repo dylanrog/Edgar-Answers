@@ -16,7 +16,7 @@ export function FilingTabs({
   if (tabs.open.length === 0) return null;
 
   return (
-    <div className="flex border-b border-slate-800 bg-slate-900 font-mono text-[11px]">
+    <div className="flex border-b border-ledger-800 bg-ledger-900 font-mono text-[11px]">
       {tabs.open.map((accession) => {
         const active = accession === tabs.active;
         return (
@@ -24,8 +24,8 @@ export function FilingTabs({
             key={accession}
             className={
               active
-                ? "flex items-center gap-2 border-b-2 border-blue-500 bg-slate-950 px-3 py-2 text-slate-100"
-                : "flex items-center gap-2 px-3 py-2 text-slate-500 hover:text-slate-300"
+                ? "flex items-center gap-2 border-b-2 border-mint-500 bg-ledger-950 px-3 py-2 text-ledger-100"
+                : "flex items-center gap-2 px-3 py-2 text-ledger-500 hover:text-ledger-300"
             }
           >
             <button type="button" onClick={() => onActivate(accession)}>
@@ -35,7 +35,7 @@ export function FilingTabs({
               type="button"
               aria-label={`Close ${labels[accession] ?? accession}`}
               onClick={() => onClose(accession)}
-              className="text-slate-600 hover:text-slate-300"
+              className="text-ledger-600 hover:text-ledger-300"
             >
               ×
             </button>

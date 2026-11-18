@@ -284,10 +284,10 @@ export function ClassicAsk() {
   }
 
   return (
-    <main className="flex flex-col bg-slate-950 text-slate-200 md:grid md:h-screen md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      <section className="flex min-w-0 flex-col border-b border-slate-800 md:min-h-0 md:border-b-0 md:border-r">
+    <main className="flex flex-col bg-ledger-950 text-ledger-200 md:grid md:h-screen md:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <section className="flex min-w-0 flex-col border-b border-ledger-800 md:min-h-0 md:border-b-0 md:border-r">
         <div className="flex items-baseline justify-between px-5 pb-3 pt-5">
-          <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">
+          <h1 className="font-mono text-sm font-bold tracking-wide text-ledger-100">
             EDGAR ANSWERS
           </h1>
           <div className="flex items-baseline gap-4">
@@ -296,7 +296,7 @@ export function ClassicAsk() {
               <button
                 type="button"
                 onClick={takeTour}
-                className="text-xs text-slate-500 underline hover:text-slate-300"
+                className="text-xs text-ledger-500 underline hover:text-ledger-300"
               >
                 Take the tutorial
               </button>
@@ -309,7 +309,7 @@ export function ClassicAsk() {
                   // Mid-tour, an empty thread leaves callouts nothing to anchor to.
                   if (tour !== "off") dispatch({ type: "start" });
                 }}
-                className="text-xs text-slate-500 underline hover:text-slate-300"
+                className="text-xs text-ledger-500 underline hover:text-ledger-300"
               >
                 New conversation
               </button>
@@ -409,7 +409,7 @@ export function ClassicAsk() {
 
         {turns.length === 0 && tourChecked && tour !== "welcome" && (
           <div className="flex-1 px-5 pt-4">
-            <p className="mb-3 text-slate-500" data-testid="coverage">
+            <p className="mb-3 text-ledger-500" data-testid="coverage">
               {coverageSentence(companies) ?? "Ask a question about a filing."}
             </p>
           </div>
@@ -430,7 +430,7 @@ export function ClassicAsk() {
           <button
             type="button"
             onClick={backToAnswer}
-            className="flex min-h-10 shrink-0 items-center gap-1 px-3 text-left text-sm text-blue-300 hover:text-blue-200 md:hidden"
+            className="flex min-h-10 shrink-0 items-center gap-1 px-3 text-left text-sm text-mint-300 hover:text-mint-200 md:hidden"
           >
             <span aria-hidden>↑</span> Back to answer
           </button>
@@ -441,7 +441,7 @@ export function ClassicAsk() {
           onActivate={(accession) => setTabs((previous) => openTab(previous, accession))}
           onClose={(accession) => setTabs((previous) => closeTab(previous, accession))}
         />
-        <div className="min-h-0 flex-1 bg-slate-950">
+        <div className="min-h-0 flex-1 bg-ledger-950">
           <FilingViewer tabs={tabs} highlights={highlights} />
         </div>
       </section>

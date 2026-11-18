@@ -31,30 +31,30 @@ export function EvidenceCard({
       data-marker={citation.marker}
       aria-current={selected ? "true" : undefined}
       className={
-        "overflow-hidden rounded-lg border bg-slate-900 " +
-        (selected ? "border-blue-500 ring-1 ring-blue-500/50" : openable ? "border-slate-700" : "border-red-900")
+        "overflow-hidden rounded-lg border bg-ledger-900 " +
+        (selected ? "border-mint-500 ring-1 ring-mint-500/50" : openable ? "border-ledger-700" : "border-red-900")
       }
     >
-      <header className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-slate-800 px-3 py-2 text-xs">
+      <header className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b border-ledger-800 px-3 py-2 text-xs">
         <span
           className={
             "rounded px-1.5 font-mono font-semibold " +
-            (openable ? "bg-blue-900 text-blue-100" : "bg-red-950 text-red-300")
+            (openable ? "bg-mint-900 text-mint-100" : "bg-red-950 text-red-300")
           }
         >
           {citation.marker}
         </span>
         {citation.accession === "" ? (
-          <span className="font-mono text-slate-300">unattributable</span>
+          <span className="font-mono text-ledger-300">unattributable</span>
         ) : (
           <>
-            <span className="font-mono font-semibold text-slate-100">
+            <span className="font-mono font-semibold text-ledger-100">
               {citation.ticker} · {citation.form_type}
             </span>
-            <span className="text-slate-400">filed {citation.filing_date}</span>
+            <span className="text-ledger-400">filed {citation.filing_date}</span>
           </>
         )}
-        <span className={"ml-auto " + (openable ? "text-green-400" : "text-red-400")}>
+        <span className={"ml-auto " + (openable ? "text-lime-400" : "text-red-400")}>
           {openable ? "Exact match in the filing" : "Quote not found in the filing"}
         </span>
       </header>
@@ -67,17 +67,17 @@ export function EvidenceCard({
           citation={citation}
         />
       ) : (
-        <p className="px-3 py-3 text-sm text-slate-500 line-through decoration-red-500/70">
+        <p className="px-3 py-3 text-sm text-ledger-500 line-through decoration-red-500/70">
           “{citation.quote}”
         </p>
       )}
 
       {openable && (
-        <footer className="flex justify-end border-t border-slate-800 px-3 py-1.5">
+        <footer className="flex justify-end border-t border-ledger-800 px-3 py-1.5">
           <button
             type="button"
             onClick={(event) => onOpenFiling(citation, event.currentTarget)}
-            className="min-h-9 text-xs text-blue-300 underline hover:text-blue-200"
+            className="min-h-9 text-xs text-mint-300 underline hover:text-mint-200"
           >
             Open full filing
           </button>
@@ -135,14 +135,14 @@ function Excerpt({ citation }: { citation: Citation }) {
   return (
     <div
       ref={boxRef}
-      className="filing-pane evidence-excerpt max-h-64 overflow-auto bg-slate-950 px-3 py-2"
+      className="filing-pane evidence-excerpt max-h-64 overflow-auto bg-ledger-950 px-3 py-2"
     >
-      {status === "loading" && <p className="text-xs text-slate-500">Loading the filing…</p>}
+      {status === "loading" && <p className="text-xs text-ledger-500">Loading the filing…</p>}
       {status === "error" && <p className="text-xs text-red-400">The filing could not be loaded.</p>}
       {status === "missing" && (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-ledger-400">
           “{citation.quote}”{" "}
-          <span className="text-xs text-slate-500">(open the full filing to see it in place)</span>
+          <span className="text-xs text-ledger-500">(open the full filing to see it in place)</span>
         </p>
       )}
       <div ref={contentRef} className="filing-html" />

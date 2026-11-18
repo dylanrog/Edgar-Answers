@@ -14,9 +14,9 @@ const GLYPH: Record<StepStatus, string> = {
 };
 
 const GLYPH_COLOR: Record<StepStatus, string> = {
-  pending: "text-slate-600",
-  running: "animate-pulse text-blue-400",
-  done: "text-emerald-400",
+  pending: "text-ledger-600",
+  running: "animate-pulse text-mint-400",
+  done: "text-lime-400",
   failed: "text-red-400",
 };
 
@@ -66,19 +66,19 @@ export function UnderTheHood({
   const passages = state.progress.retrieved?.passages ?? state.chunksRetrieved ?? 0;
 
   return (
-    <div className="mt-3 rounded border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs">
+    <div className="mt-3 rounded border border-ledger-800 bg-ledger-900/60 px-3 py-2 text-xs">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setManual(!open)}
-        className="flex w-full items-center justify-between text-left text-slate-400 hover:text-slate-200"
+        className="flex w-full items-center justify-between text-left text-ledger-400 hover:text-ledger-200"
       >
         <span>
           {open
             ? "Under the hood"
             : `Under the hood: ${passages} passages · ${verified}/${total} quotes verified${state.status === "error" ? " · stopped with an error" : ""}`}
         </span>
-        <span aria-hidden>{open ? "▾" : "▸"}</span>
+        <span aria-hidden className="text-base leading-none">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
         <ul className="mt-2 space-y-1.5" aria-label="Pipeline steps">
@@ -87,10 +87,10 @@ export function UnderTheHood({
               <span className={`w-3 shrink-0 ${GLYPH_COLOR[line.status]}`} aria-hidden>
                 {GLYPH[line.status]}
               </span>
-              <span className="text-slate-300">
+              <span className="text-ledger-300">
                 {line.text}
                 {line.detail && (
-                  <span className="block text-slate-500">{line.detail}</span>
+                  <span className="block text-ledger-500">{line.detail}</span>
                 )}
               </span>
             </li>

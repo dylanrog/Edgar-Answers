@@ -93,7 +93,6 @@ export function EvidenceAsk() {
   const [tour, setTour] = useState<TourStep>("off");
   // See ClassicAsk: "off" only means "not read yet" until the mount check ran.
   const [tourChecked, setTourChecked] = useState(false);
-  const [foldedTurn, setFoldedTurn] = useState<number | null>(null);
   const wide = useWide();
 
   useEffect(() => {
@@ -247,6 +246,14 @@ export function EvidenceAsk() {
     dispatch({ type: "start" });
   }
 
+  /** Exit tutorial and Done both land on a fresh chat: the scripted
+   *  conversation was the tour's, not the visitor's, so their own first
+   *  question must not inherit its context. */
+  function endTour(type: "skip" | "finish") {
+    newConversation();
+    dispatch({ type });
+  }
+
   function callout(
     step: "watch" | "click" | "source" | "more" | "followup" | "closing" | "interrupted",
     target?: Citation,
@@ -265,9 +272,9 @@ export function EvidenceAsk() {
       <TourCallout
         step={step}
         marker={target?.marker}
-        onSkip={() => dispatch({ type: "skip" })}
+        onSkip={() => endTour("skip")}
         onNext={() => dispatch({ type: "next" })}
-        onFinish={() => dispatch({ type: "finish" })}
+        onFinish={() => endTour("finish")}
         onRetry={startTutorialQuestion}
         onFollowUp={askFollowUp}
         figure={((target ?? selected)?.cells.length ?? 0) > 0}
@@ -317,7 +324,7 @@ export function EvidenceAsk() {
 
   // Until the mount-time check has run, nothing: a first-time visitor must not
   // see the chat flash before the landing replaces it.
-  if (!tourChecked) return <main aria-busy="true" className="min-h-dvh bg-slate-950" />;
+  if (!tourChecked) return <main aria-busy="true" className="min-h-dvh bg-ledger-950" />;
 
   if (tour === "welcome" && turns.length === 0) {
     return (
@@ -331,19 +338,19 @@ export function EvidenceAsk() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col bg-slate-950 text-slate-200 md:grid md:h-dvh md:min-h-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <main className="flex min-h-dvh flex-col bg-ledger-950 text-ledger-200 md:grid md:h-dvh md:min-h-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <section
         inert={drawer !== null}
-        className="flex min-w-0 flex-1 flex-col border-slate-800 md:min-h-0 md:border-r"
+        className="flex min-w-0 flex-1 flex-col border-ledger-800 md:min-h-0 md:border-r"
       >
-        <header className="flex items-center gap-4 border-b border-slate-900 px-5 py-3.5">
-          <h1 className="font-mono text-sm font-bold tracking-wide text-slate-100">EDGAR ANSWERS</h1>
+        <header className="flex items-center gap-4 border-b border-ledger-900 px-5 py-3.5">
+          <h1 className="font-mono text-sm font-bold tracking-wide text-ledger-100">EDGAR ANSWERS</h1>
           <div className="ml-auto flex items-center gap-4">
             {tour === "off" && (
               <button
                 type="button"
                 onClick={takeTour}
-                className="min-h-10 text-sm text-blue-300 hover:text-blue-200"
+                className="min-h-10 text-sm text-mint-300 hover:text-mint-200"
               >
                 Take the tour
               </button>
@@ -352,7 +359,7 @@ export function EvidenceAsk() {
               <button
                 type="button"
                 onClick={newConversation}
-                className="min-h-10 text-sm text-blue-300 hover:text-blue-200"
+                className="min-h-10 text-sm text-mint-300 hover:text-mint-200"
               >
                 New chat
               </button>
@@ -374,7 +381,9 @@ export function EvidenceAsk() {
                   state={turn.state}
                   onSelect={(citation) => select(citation, turn.id)}
                   names={names}
-                  expanded={latest && turn.id !== foldedTurn}
+                  // Always starts folded to its live summary line, while the
+                  // answer streams too; the visitor opens it themselves.
+                  expanded={false}
                   onSettled={
                     latest
                       ? () => {
@@ -388,7 +397,6 @@ export function EvidenceAsk() {
                                 },
                           );
                           if (next === "closing" && before !== "closing") {
-                            setFoldedTurn(turn.id);
                             showPayoff(turn.id, lastState);
                           }
                         }
@@ -403,14 +411,14 @@ export function EvidenceAsk() {
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-8 py-12 text-center">
             <p className="text-[22px] font-semibold text-white">What do you want to know?</p>
-            <p className="text-sm leading-relaxed text-slate-400">
+            <p className="text-sm leading-relaxed text-ledger-400">
               For example: “What were Apple&apos;s net sales in fiscal 2025?”
             </p>
           </div>
         )}
 
         {/* Pinned to the bottom of the screen like a chat app's input. */}
-        <div className="sticky bottom-0 z-10 bg-slate-950 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 md:px-5">
+        <div className="sticky bottom-0 z-10 bg-ledger-950 px-3 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 md:px-5">
           {tour !== "off" && tour !== "welcome" ? (
             callout(tour)
           ) : (
@@ -432,21 +440,21 @@ export function EvidenceAsk() {
         >
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-1">
             {shownTurn === undefined ? (
-              <p className="pt-4 text-sm text-slate-400">
+              <p className="pt-4 text-sm text-ledger-400">
                 Each answer&apos;s evidence appears here: the exact table or sentence it quotes,
                 cut from the original filing and highlighted.
               </p>
             ) : shownTurn.state.citations.size > 0 ? (
               <>
                 {shownTurn.id !== latestId && (
-                  <p className="pt-4 text-xs text-slate-400">
+                  <p className="pt-4 text-xs text-ledger-400">
                     Showing evidence for an earlier answer: “{shownTurn.question}”
                   </p>
                 )}
                 {evidenceFor(shownTurn)}
               </>
             ) : (
-              <p className="pt-4 text-sm text-slate-400">
+              <p className="pt-4 text-sm text-ledger-400">
                 {shownTurn.state.status === "streaming"
                   ? "Evidence appears as each quote is checked against its filing."
                   : "This answer has no evidence to show."}

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020617;
-  --foreground: #e2e8f0;
+  --background: #07120e;
+  --foreground: #d5e4dc;
 }
 
 @theme inline {
@@ -10,6 +10,38 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* The "Ledger" palette. `ledger` is the green-black neutral (it replaced
+   Tailwind's slate, step for step), `mint` the interactive accent (replacing
+   blue). Verified states use Tailwind's own `lime`, so "this quote checked
+   out" never reads as "this is clickable"; red stays the unverified colour and
+   amber the evidence highlight. Filled mint buttons take dark text
+   (`text-ledger-950`): white on mint-400 is under 2:1. */
+@theme {
+  --color-ledger-50: #f4faf7;
+  --color-ledger-100: #f1f8f4;
+  --color-ledger-200: #d5e4dc;
+  --color-ledger-300: #bfd3c8;
+  --color-ledger-400: #8da89a;
+  --color-ledger-500: #6e8a7c;
+  --color-ledger-600: #4f6b5e;
+  --color-ledger-700: #2b4a3f;
+  --color-ledger-800: #18302a;
+  --color-ledger-900: #0c1d17;
+  --color-ledger-950: #07120e;
+
+  --color-mint-50: #ecfdf5;
+  --color-mint-100: #d1fae5;
+  --color-mint-200: #a7f3d0;
+  --color-mint-300: #6ee7b7;
+  --color-mint-400: #34d399;
+  --color-mint-500: #10b981;
+  --color-mint-600: #059669;
+  --color-mint-700: #047857;
+  --color-mint-800: #065f46;
+  --color-mint-900: #064e3b;
+  --color-mint-950: #022c22;
 }
 
 /* Dark is now viable because the canonicalizer strips colour-bearing inline
@@ -26,7 +58,7 @@ body {
 /* Injected filing HTML. Tailwind never sees this markup, so these are plain
    global rules. */
 .filing-html {
-  color: #cbd5e1;
+  color: #bfd3c8;
   font-family: Georgia, "Times New Roman", serif;
   line-height: 1.75;
 }
@@ -41,18 +73,18 @@ body {
 
 /* Replaces the row shading that stripping `background` removed. */
 .filing-html tr:nth-child(even) {
-  background-color: #0f172a;
+  background-color: #0a1813;
 }
 
 .filing-html td,
 .filing-html th {
   padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid #18302a;
 }
 
 .filing-html b,
 .filing-html strong {
-  color: #f1f5f9;
+  color: #f1f8f4;
 }
 
 /* Applied imperatively by lib/highlight.ts to spans inside injected viewer

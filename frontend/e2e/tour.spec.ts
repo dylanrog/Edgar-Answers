@@ -281,14 +281,14 @@ test("the full tutorial: ask, watch, click, source, follow-up in the same conver
   await expect(welcome(page)).toBeVisible();
   await expect(welcome(page).getByText(QUESTION)).toBeVisible();
   await expect(tutorialButton(page)).toHaveCount(1);
-  await expect(tutorialButton(page)).toHaveClass(/bg-blue-600/);
+  await expect(tutorialButton(page)).toHaveClass(/bg-mint-400/);
   await expect(welcome(page).getByText("Takes under a minute.")).toBeVisible();
   await expect(welcome(page).getByRole("button")).toHaveCount(2);
   await expect(welcome(page).getByRole("button", { name: "Skip tutorial" })).toBeVisible();
   // While the tutorial runs, the header link to start it is hidden, and the
   // composer's Ask is secondary so the welcome card has the one primary button.
   await expect(takeTutorial(page)).toHaveCount(0);
-  await expect(askButton(page)).not.toHaveClass(/bg-blue-600/);
+  await expect(askButton(page)).not.toHaveClass(/bg-mint-400/);
   await expect(askButton(page)).toBeEnabled();
   await expect(page.getByLabel("Question")).toHaveAttribute("placeholder", PLACEHOLDER);
   await tutorialButton(page).click();
@@ -377,7 +377,7 @@ test("skipping from the welcome card leaves the regular site, for good", async (
 
   await expect(page.getByText(EMPTY)).toBeVisible();
   // Back on the regular site the composer's Ask is the primary button again.
-  await expect(askButton(page)).toHaveClass(/bg-blue-600/);
+  await expect(askButton(page)).toHaveClass(/bg-mint-400/);
   await expect(tutorialButton(page)).toHaveCount(0);
   await expect(welcome(page)).toHaveCount(0);
   await expect(callout(page)).toHaveCount(0);

@@ -10,7 +10,7 @@ function SkipButton({ onSkip, label = "Skip tutorial", className }: { onSkip: ()
     <button
       type="button"
       onClick={onSkip}
-      className={className ?? "text-xs text-slate-500 underline hover:text-slate-300"}
+      className={className ?? "text-xs text-ledger-500 underline hover:text-ledger-300"}
     >
       {label}
     </button>
@@ -38,22 +38,22 @@ function DockFrame({ step, children }: { step: CalloutStep; children: ReactNode 
     <section
       aria-label="Tutorial"
       data-testid="tour-callout"
-      className="rounded-2xl border-[1.5px] border-blue-500 bg-blue-950 px-4 pb-3 pt-3 text-slate-100 shadow-[0_-12px_32px_rgba(2,6,23,0.9)]"
+      className="rounded-2xl border-[1.5px] border-mint-500 bg-mint-950 px-4 pb-3 pt-3 text-ledger-100 shadow-[0_-12px_32px_rgba(2,6,23,0.9)]"
     >
       <div className="mb-2 flex items-center gap-2">
-        <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-white uppercase">
+        <span className="rounded-full bg-mint-400 px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] text-ledger-950 uppercase">
           Tutorial
         </span>
         {n !== undefined && (
           <>
-            <span className="text-xs text-blue-200">
+            <span className="text-xs text-mint-200">
               Step {n} of {DOCK_STEPS}
             </span>
             <span aria-hidden className="ml-1 flex gap-1">
               {Array.from({ length: DOCK_STEPS }, (_, i) => (
                 <span
                   key={i}
-                  className={"h-1.5 w-1.5 rounded-full " + (i < n ? "bg-blue-300" : "bg-blue-800")}
+                  className={"h-1.5 w-1.5 rounded-full " + (i < n ? "bg-mint-300" : "bg-mint-800")}
                 />
               ))}
             </span>
@@ -94,23 +94,23 @@ export function TourWelcome({
 }) {
   return (
     <div className="px-5 pb-4" data-testid="tour-welcome">
-      <p className="text-base text-slate-200">
+      <p className="text-base text-ledger-200">
         <strong className="font-semibold text-white">
           Answers from SEC filings, with every quote checked.
         </strong>{" "}
         Here&apos;s a question to show you how it works:
       </p>
-      <div className="mt-3 rounded border border-blue-500/60 bg-blue-950/40 p-3">
-        <p className="text-sm text-slate-100">&ldquo;{TUTORIAL.question}&rdquo;</p>
+      <div className="mt-3 rounded border border-mint-500/60 bg-mint-950/40 p-3">
+        <p className="text-sm text-ledger-100">&ldquo;{TUTORIAL.question}&rdquo;</p>
         <button
           type="button"
           onClick={onAsk}
           disabled={disabled}
-          className="mt-3 rounded-md bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-900/50 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500"
+          className="mt-3 rounded-md bg-mint-400 px-5 py-2.5 text-sm font-semibold text-ledger-950 shadow-lg shadow-mint-900/50 hover:bg-mint-300 disabled:bg-ledger-800 disabled:text-ledger-500"
         >
           Ask this question
         </button>
-        <p className="mt-2 text-xs text-slate-400">Takes under a minute.</p>
+        <p className="mt-2 text-xs text-ledger-400">Takes under a minute.</p>
       </div>
       <div className="mt-3">
         <SkipButton onSkip={onSkip} />
@@ -131,7 +131,7 @@ function Frame({ children, scrollIntoView = false }: { children: ReactNode; scro
       ref={ref}
       role="note"
       data-testid="tour-callout"
-      className="mt-3 rounded border border-blue-500/60 bg-blue-950/40 px-3 py-2 text-sm text-slate-200"
+      className="mt-3 rounded border border-mint-500/60 bg-mint-950/40 px-3 py-2 text-sm text-ledger-200"
     >
       {children}
     </div>
@@ -191,11 +191,15 @@ export function TourCallout({
   const coarse = useCoarsePointer();
   const action =
     variant === "dock"
-      ? "min-h-10 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-400"
-      : "rounded bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-600";
+      ? "min-h-10 rounded-lg bg-mint-400 px-4 text-sm font-semibold text-ledger-950 hover:bg-mint-300 disabled:bg-ledger-700 disabled:text-ledger-400"
+      : "rounded bg-mint-700 px-3 py-1 text-xs font-semibold text-white hover:bg-mint-800";
   const copy = {
+    // The evidence layout keeps Under the hood folded, so its dock doesn't
+    // point at the panel; the classic layout still opens it for this step.
     watch:
-      "Watch the panel: every quote the model uses is checked against the filing before you see it.",
+      variant === "dock"
+        ? "Every quote the model uses is checked against the filing before you see it."
+        : "Watch the panel: every quote the model uses is checked against the filing before you see it.",
     click: `${coarse ? "Tap" : "Click"} the pulsing [${marker ?? 1}] to see that ${figure ? "figure" : "sentence"} in the original filing.`,
     source: `That's the exact ${figure ? "figure" : "sentence"} in the original filing, highlighted. The server confirmed the quote word for word before showing it.`,
     more: "Want to see one more? Follow-ups remember the conversation, so a short question is enough.",
@@ -246,7 +250,7 @@ export function TourCallout({
             <SkipButton
               onSkip={onSkip}
               label="Exit tutorial"
-              className="min-h-10 text-sm text-blue-200 underline hover:text-white"
+              className="min-h-10 text-sm text-mint-200 underline hover:text-white"
             />
           ) : (
             <SkipButton onSkip={onSkip} />
