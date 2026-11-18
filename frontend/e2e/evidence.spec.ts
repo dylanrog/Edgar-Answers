@@ -199,6 +199,8 @@ test("the tutorial runs in the input bar's place, step by step, and hands the in
   // While the tour runs there is no input bar: the tutorial panel is in its place.
   await expect(dock(page)).toContainText("Tutorial");
   await expect(page.getByLabel("Question")).toHaveCount(0);
+  // Under the hood stays folded to its summary line, tutorial or not.
+  await expect(page.getByRole("button", { name: /^Under the hood/ })).toHaveAttribute("aria-expanded", "false");
   await expect(dock(page)).toContainText("Step 2 of 5");
   await expect(dock(page)).toContainText("Click the pulsing [1] to see that figure in the original filing.");
 

@@ -93,7 +93,6 @@ export function EvidenceAsk() {
   const [tour, setTour] = useState<TourStep>("off");
   // See ClassicAsk: "off" only means "not read yet" until the mount check ran.
   const [tourChecked, setTourChecked] = useState(false);
-  const [foldedTurn, setFoldedTurn] = useState<number | null>(null);
   const wide = useWide();
 
   useEffect(() => {
@@ -382,11 +381,9 @@ export function EvidenceAsk() {
                   state={turn.state}
                   onSelect={(citation) => select(citation, turn.id)}
                   names={names}
-                  // Folded to its summary line by default; it opens only while
-                  // the tutorial's "watch the panel" steps point at it.
-                  expanded={
-                    latest && turn.id !== foldedTurn && (tour === "watch" || tour === "followup")
-                  }
+                  // Always starts folded to its live summary line, while the
+                  // answer streams too; the visitor opens it themselves.
+                  expanded={false}
                   onSettled={
                     latest
                       ? () => {
@@ -400,7 +397,6 @@ export function EvidenceAsk() {
                                 },
                           );
                           if (next === "closing" && before !== "closing") {
-                            setFoldedTurn(turn.id);
                             showPayoff(turn.id, lastState);
                           }
                         }

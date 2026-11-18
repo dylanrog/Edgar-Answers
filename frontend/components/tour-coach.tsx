@@ -194,8 +194,12 @@ export function TourCallout({
       ? "min-h-10 rounded-lg bg-mint-400 px-4 text-sm font-semibold text-ledger-950 hover:bg-mint-300 disabled:bg-ledger-700 disabled:text-ledger-400"
       : "rounded bg-mint-700 px-3 py-1 text-xs font-semibold text-white hover:bg-mint-800";
   const copy = {
+    // The evidence layout keeps Under the hood folded, so its dock doesn't
+    // point at the panel; the classic layout still opens it for this step.
     watch:
-      "Watch the panel: every quote the model uses is checked against the filing before you see it.",
+      variant === "dock"
+        ? "Every quote the model uses is checked against the filing before you see it."
+        : "Watch the panel: every quote the model uses is checked against the filing before you see it.",
     click: `${coarse ? "Tap" : "Click"} the pulsing [${marker ?? 1}] to see that ${figure ? "figure" : "sentence"} in the original filing.`,
     source: `That's the exact ${figure ? "figure" : "sentence"} in the original filing, highlighted. The server confirmed the quote word for word before showing it.`,
     more: "Want to see one more? Follow-ups remember the conversation, so a short question is enough.",
